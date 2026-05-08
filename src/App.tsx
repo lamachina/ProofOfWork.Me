@@ -14,6 +14,7 @@ import {
   Inbox,
   LogOut,
   Mail,
+  MessageCircle,
   Moon,
   Paperclip,
   PenLine,
@@ -242,6 +243,7 @@ const BACKUP_APP = "ProofOfWork.Me";
 const BACKUP_VERSION = 1;
 const BACKUP_MAX_BYTES = 5 * 1024 * 1024;
 const UNISAT_DOWNLOAD_URL = "https://unisat.io/download";
+const DISCORD_URL = "https://discord.com/invite/mRA4zbqB";
 const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
 const MAX_DATA_CARRIER_BYTES = 100_000;
@@ -4015,6 +4017,12 @@ function SocialFooter({ compact = false }: { compact?: boolean }) {
           <span className="button-content">
             <GitBranch size={14} />
             <span>GitHub</span>
+          </span>
+        </a>
+        <a href={DISCORD_URL} rel="noreferrer" target="_blank" aria-label="ProofOfWork.Me Discord">
+          <span className="button-content">
+            <MessageCircle size={14} />
+            <span>Discord</span>
           </span>
         </a>
       </nav>

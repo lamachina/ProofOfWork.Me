@@ -10,6 +10,7 @@ import {
   Download,
   FilePenLine,
   FileText,
+  GitBranch,
   Inbox,
   LogOut,
   Mail,
@@ -241,6 +242,8 @@ const BACKUP_APP = "ProofOfWork.Me";
 const BACKUP_VERSION = 1;
 const BACKUP_MAX_BYTES = 5 * 1024 * 1024;
 const UNISAT_DOWNLOAD_URL = "https://unisat.io/download";
+const GITHUB_URL = "https://github.com/proofofworkme";
+const X_URL = "https://x.com/proofofworkme";
 const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const PROTOCOL_PREFIX = "pwm1:";
@@ -3486,6 +3489,7 @@ export default function App() {
               onChange={(event) => void importBackup(event)}
               type="file"
             />
+            <SocialFooter compact />
           </div>
         </aside>
 
@@ -3990,7 +3994,31 @@ function IdLaunchApp({
           <IdRecordList records={registryRecords.slice(0, 12)} empty="No registry records found yet." />
         </section>
       </section>
+
+      <SocialFooter />
     </main>
+  );
+}
+
+function SocialFooter({ compact = false }: { compact?: boolean }) {
+  return (
+    <footer className={compact ? "app-footer compact" : "app-footer"}>
+      <span>ProofOfWork.Me</span>
+      <nav aria-label="Official ProofOfWork.Me links">
+        <a href={X_URL} rel="noreferrer" target="_blank" aria-label="ProofOfWork.Me on X">
+          <span className="button-content">
+            <X size={14} />
+            <span>X</span>
+          </span>
+        </a>
+        <a href={GITHUB_URL} rel="noreferrer" target="_blank" aria-label="ProofOfWork.Me on GitHub">
+          <span className="button-content">
+            <GitBranch size={14} />
+            <span>GitHub</span>
+          </span>
+        </a>
+      </nav>
+    </footer>
   );
 }
 

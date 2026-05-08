@@ -510,6 +510,64 @@ code {
   display: none;
 }
 
+.app-footer {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 0.84rem;
+  gap: 14px;
+  justify-content: center;
+  margin: 0 auto;
+  max-width: 1180px;
+  min-width: 0;
+  padding: 0 18px 28px;
+}
+
+.app-footer nav {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.app-footer a {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-weight: 760;
+  min-height: 32px;
+  padding: 5px 8px;
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.app-footer.compact {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+  justify-content: stretch;
+  margin: 4px 0 0;
+  padding: 12px 0 0;
+}
+
+.app-footer.compact nav {
+  justify-content: start;
+}
+
+.app-footer.compact a {
+  background: var(--surface);
+  border-color: var(--border);
+  min-height: 30px;
+}
+
 .message-column {
   background: var(--surface);
   border-right: 1px solid var(--border);

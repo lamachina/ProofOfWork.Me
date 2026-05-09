@@ -20,6 +20,7 @@ Do not change these without an explicit migration plan:
 Implementation anchors in `src/App.tsx`:
 
 - `ID_REGISTRY_ADDRESSES`
+- `fetchRegistryTransactions`
 - `buildIdRegistrationPayload`
 - `parseIdRegistrationPayload`
 - `idRecordsFromTransactions`
@@ -112,6 +113,8 @@ Rules:
 - Pending registrations can be displayed, but are not final.
 - The compose flow must not route mail to a pending ID. IDs are sendable only after a confirmed registry record resolves to a receive address.
 - Duplicate confirmed registrations are ignored by the resolver.
+- Registry scans must paginate full confirmed address history and merge mempool transactions before applying first-confirmed-wins. Reading only the first mempool.space address page can hide older confirmed winners and make duplicates look available or pending.
+- Registration broadcasts must re-check the full registry immediately before building/signing the PSBT.
 - Owner and receive address are separate fields.
 - PGP public key data is optional and base64url encoded in the registration payload.
 - After broadcast, the app can open a prefilled X post that includes the ID and registry tx link as optional social proof.

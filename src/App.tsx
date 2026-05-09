@@ -248,6 +248,7 @@ const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
 const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
+const MAX_REGISTRY_TX_PAGES = 100;
 const PROTOCOL_PREFIX = "pwm1:";
 
 // Canonical Phase 1 ProofOfWork ID registry.
@@ -1685,13 +1686,87 @@ function parseIdRegistrationPayload(payload: string, targetNetwork: BitcoinNetwo
   };
 }
 
-async function fetchAddressTransactions(targetAddress: string, targetNetwork: BitcoinNetwork) {
-  const response = await fetch(`${mempoolBase(targetNetwork)}/api/address/${targetAddress}/txs`);
+async function fetchAddressTransactionsPage(targetAddress: string, targetNetwork: BitcoinNetwork, path: string) {
+  const response = await fetch(`${mempoolBase(targetNetwork)}/api/address/${targetAddress}/${path}`);
   if (!response.ok) {
     throw new Error(`mempool.space returned ${response.status}`);
   }
 
-  return (await response.json()) as Array<Record<string, unknown>>;
+  const transactions = await response.json();
+  return Array.isArray(transactions) ? (transactions as Array<Record<string, unknown>>) : [];
+}
+
+async function fetchAddressTransactions(targetAddress: string, targetNetwork: BitcoinNetwork) {
+  return fetchAddressTransactionsPage(targetAddress, targetNetwork, "txs");
+}
+
+function transactionTxid(tx: Record<string, unknown>) {
+  return typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid) ? tx.txid.toLowerCase() : "";
+}
+
+function transactionConfirmed(tx: Record<string, unknown>) {
+  const status = tx.status as Record<string, unknown> | undefined;
+  return Boolean(status?.confirmed);
+}
+
+function oldestConfirmedTxid(txs: Array<Record<string, unknown>>) {
+  const confirmedTxs = txs.filter(transactionConfirmed);
+  return confirmedTxs.length > 0 ? transactionTxid(confirmedTxs[confirmedTxs.length - 1]) : "";
+}
+
+function dedupeTransactions(txs: Array<Record<string, unknown>>) {
+  const merged = new Map<string, Record<string, unknown>>();
+
+  for (const tx of txs) {
+    const txid = transactionTxid(tx);
+    if (!txid) {
+      continue;
+    }
+
+    const current = merged.get(txid);
+    if (!current || (transactionConfirmed(tx) && !transactionConfirmed(current))) {
+      merged.set(txid, tx);
+    }
+  }
+
+  return [...merged.values()];
+}
+
+async function fetchRegistryTransactions(registryAddress: string, targetNetwork: BitcoinNetwork) {
+  const recentTxs = await fetchAddressTransactions(registryAddress, targetNetwork);
+  const mempoolTxs = await fetchAddressTransactionsPage(registryAddress, targetNetwork, "txs/mempool");
+
+  let chainPage: Array<Record<string, unknown>>;
+  try {
+    chainPage = await fetchAddressTransactionsPage(registryAddress, targetNetwork, "txs/chain");
+  } catch {
+    chainPage = recentTxs.filter(transactionConfirmed);
+  }
+
+  if (chainPage.length === 0) {
+    chainPage = recentTxs.filter(transactionConfirmed);
+  }
+
+  const chainTxs = [...chainPage];
+  const cursors = new Set<string>();
+  let cursor = oldestConfirmedTxid(chainPage);
+
+  for (let page = 0; cursor && page < MAX_REGISTRY_TX_PAGES; page += 1) {
+    if (cursors.has(cursor)) {
+      break;
+    }
+
+    cursors.add(cursor);
+    const nextPage = await fetchAddressTransactionsPage(registryAddress, targetNetwork, `txs/chain/${cursor}`);
+    if (nextPage.length === 0) {
+      break;
+    }
+
+    chainTxs.push(...nextPage);
+    cursor = oldestConfirmedTxid(nextPage);
+  }
+
+  return dedupeTransactions([...chainTxs, ...mempoolTxs, ...recentTxs]);
 }
 
 function inboxMessagesFromTransactions(
@@ -1865,7 +1940,7 @@ async function fetchIdRegistry(targetNetwork: BitcoinNetwork): Promise<PowIdReco
     return [];
   }
 
-  const txs = await fetchAddressTransactions(registryAddress, targetNetwork);
+  const txs = await fetchRegistryTransactions(registryAddress, targetNetwork);
   return idRecordsFromTransactions(txs, registryAddress, targetNetwork);
 }
 
@@ -2369,9 +2444,14 @@ export default function App() {
   const ownedIdCount = useMemo(() => ownedPowIds(idRegistry, address).length, [address, idRegistry]);
   const confirmedIdCount = useMemo(() => idRegistry.filter((record) => record.confirmed).length, [idRegistry]);
   const pendingIdCount = idRegistry.length - confirmedIdCount;
+  const existingIdRegistration = useMemo(
+    () => idRegistry.find((record) => record.network === network && record.id === normalizedIdName),
+    [idRegistry, network, normalizedIdName],
+  );
   const canRegisterId =
     Boolean(address && registryAddress && idRegistrationPayload && !powIdError(normalizedIdName) && isValidBitcoinAddress(idReceiveAddress.trim(), network)) &&
     idRegistrationBytes <= MAX_DATA_CARRIER_BYTES &&
+    !existingIdRegistration &&
     !busy;
   const refreshInProgress = refreshing || checkingBroadcasts;
   const refreshDisabled = activeFolder === "ids" ? busy || refreshInProgress || !registryAddress : !address || busy || refreshInProgress;
@@ -3051,20 +3131,31 @@ export default function App() {
       return;
     }
 
-    if (idRegistry.some((record) => record.id === normalizedIdName && record.confirmed)) {
-      setStatus({ tone: "bad", text: `${normalizedIdName}@proofofwork.me is already registered.` });
-      return;
-    }
-
     if (idRegistrationBytes > MAX_DATA_CARRIER_BYTES) {
       setStatus({ tone: "bad", text: "ID registration OP_RETURN is over 100 KB." });
       return;
     }
 
     setBusy(true);
-    setStatus({ tone: "idle", text: `Registering ${normalizedIdName}@proofofwork.me...` });
+    setStatus({ tone: "idle", text: `Checking ${normalizedIdName}@proofofwork.me against the full registry...` });
 
     try {
+      const latestRegistry = await fetchIdRegistry(network);
+      setIdRegistry(latestRegistry);
+
+      const existingRecord = latestRegistry.find((record) => record.network === network && record.id === normalizedIdName);
+      if (existingRecord?.confirmed) {
+        setStatus({ tone: "bad", text: `${normalizedIdName}@proofofwork.me is already registered.` });
+        return;
+      }
+
+      if (existingRecord) {
+        setStatus({ tone: "bad", text: `${normalizedIdName}@proofofwork.me is already pending. Wait for confirmation before retrying.` });
+        return;
+      }
+
+      setStatus({ tone: "idle", text: `Registering ${normalizedIdName}@proofofwork.me...` });
+
       const currentNetwork = await getWalletNetwork(window.unisat);
       if (currentNetwork !== network) {
         await switchWalletNetwork(window.unisat, network);

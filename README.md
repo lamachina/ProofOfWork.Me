@@ -56,8 +56,10 @@ Launch invariants for future developers/agents:
 - Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
 - Uses the correct mempool.space explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
+- Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
 - Resolves ProofOfWork IDs in the compose recipient field only after a confirmed registry record exists; pending IDs cannot receive routed mail yet.
+- Re-checks the full registry immediately before broadcasting an ID registration to block stale duplicate claims.
 - Opens a prefilled X post to verify only IDs owned by or routed to the connected wallet.
 - Renders a dedicated Phase 1 ID claim experience on `id.proofofwork.me` using the same registry protocol and address.
 
@@ -131,6 +133,7 @@ Important implementation points:
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.
+- ID registry history fetcher: `fetchRegistryTransactions()`. It must continue paginating confirmed history with `txs/chain/:last_seen_txid` and merging `txs/mempool`.
 - ID read/compat parser: `parseIdRegistrationPayload()` and `idRecordsFromTransactions()`.
 - Confirmed-only ID compose routing: `resolveRecipientInput()`.
 - Dedicated launch UI: `IdLaunchApp`.

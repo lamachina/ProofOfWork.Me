@@ -1442,6 +1442,221 @@ pre {
   padding-top: 13px;
 }
 
+.landing-app {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+.landing-topbar {
+  align-items: center;
+  background: var(--surface-raised);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 0 18px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.landing-brand {
+  align-items: center;
+  color: var(--text);
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.landing-brand > div:last-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.landing-brand span,
+.landing-choice p,
+.landing-protocol p {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.landing-nav {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.landing-nav a {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-weight: 780;
+  min-height: 36px;
+  padding: 7px 10px;
+  text-decoration: none;
+}
+
+.landing-nav a:hover {
+  background: var(--surface-soft);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.landing-hero {
+  align-items: end;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.98), rgba(0, 0, 0, 0.72) 54%, rgba(0, 0, 0, 0.2)),
+    url("/twitter-banner.png") center / cover no-repeat #030508;
+  border-bottom: 1px solid var(--border);
+  color: #f4f7fb;
+  display: grid;
+  min-height: min(72vh, 720px);
+  overflow: hidden;
+  padding: 28px 18px;
+}
+
+.landing-hero-content {
+  display: grid;
+  gap: 16px;
+  margin: 0 auto;
+  max-width: 1180px;
+  min-width: 0;
+  width: 100%;
+}
+
+.landing-kicker {
+  color: var(--accent-strong);
+  font-size: 0.8rem;
+  font-weight: 880;
+  text-transform: uppercase;
+}
+
+.landing-hero h2 {
+  color: #f4f7fb;
+  font-size: clamp(3rem, 10vw, 7rem);
+  letter-spacing: 0;
+  line-height: 0.88;
+  max-width: 1040px;
+  overflow-wrap: normal;
+}
+
+.landing-hero p {
+  color: #c6cfda;
+  font-size: clamp(1rem, 2.2vw, 1.35rem);
+  line-height: 1.45;
+  max-width: 560px;
+}
+
+.landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.landing-actions .primary,
+.landing-actions .secondary {
+  min-height: 44px;
+}
+
+.landing-main {
+  display: grid;
+  gap: 18px;
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: 18px 18px 36px;
+}
+
+.landing-stats {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+}
+
+.landing-stats div,
+.landing-choice,
+.landing-protocol {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.landing-stats div {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+}
+
+.landing-stats span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 780;
+}
+
+.landing-stats strong {
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.landing-stats .secondary {
+  align-self: stretch;
+  justify-content: center;
+}
+
+.landing-choice-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.landing-choice {
+  align-content: start;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px;
+}
+
+.landing-choice > div:nth-child(2) {
+  display: grid;
+  gap: 7px;
+}
+
+.landing-choice .primary,
+.landing-choice .secondary {
+  justify-content: center;
+}
+
+.landing-protocol {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 18px;
+}
+
+.landing-protocol > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.landing-protocol h3 {
+  overflow-wrap: anywhere;
+}
+
 .id-launch-app {
   background: var(--bg);
   color: var(--text);
@@ -1658,6 +1873,39 @@ pre {
     padding: 12px;
   }
 
+  .landing-topbar {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  .landing-nav {
+    justify-content: start;
+  }
+
+  .landing-hero {
+    background:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.96)),
+      url("/twitter-banner.png") center top / cover no-repeat #030508;
+    min-height: 620px;
+    padding: 22px 14px;
+  }
+
+  .landing-main {
+    padding: 16px 14px 28px;
+  }
+
+  .landing-stats,
+  .landing-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-protocol {
+    align-items: stretch;
+    display: grid;
+  }
+
   .id-launch-topbar {
     align-items: stretch;
     display: grid;
@@ -1794,6 +2042,35 @@ pre {
   }
 
   .icon-button {
+    width: 100%;
+  }
+
+  .landing-nav {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .landing-nav a {
+    justify-content: center;
+  }
+
+  .landing-hero {
+    min-height: 560px;
+  }
+
+  .landing-hero h2 {
+    font-size: clamp(2.4rem, 13vw, 3.6rem);
+    line-height: 0.96;
+    overflow-wrap: anywhere;
+  }
+
+  .landing-actions {
+    display: grid;
+  }
+
+  .landing-actions .primary,
+  .landing-actions .secondary {
+    justify-content: center;
     width: 100%;
   }
 

@@ -4,7 +4,20 @@ Bitcoin-native mail and ProofOfWork ID registry, written to BTC OP_RETURN output
 
 ## Phase 1 Launch
 
-The Phase 1 launch target is the ID registry onboarding flow on:
+The public front door is:
+
+```text
+proofofwork.me
+```
+
+The root domain renders a focused landing page that routes users to the two production apps:
+
+```text
+id.proofofwork.me
+computer.proofofwork.me
+```
+
+The Phase 1 registry onboarding flow is:
 
 ```text
 id.proofofwork.me
@@ -119,6 +132,18 @@ To preview the ID launch flow locally:
 http://localhost:5173/?id-launch=1
 ```
 
+To preview the root landing page locally:
+
+```text
+http://localhost:5173/?landing=1
+```
+
+To build a landing-page-only deployment for `proofofwork.me`:
+
+```bash
+VITE_LANDING_ONLY=1 npm run build
+```
+
 To build an ID-registration-only deployment that hides the full mail app on every hostname:
 
 ```bash
@@ -142,6 +167,8 @@ Before issuing refunds, check `ID_REFUNDS.md` so old confirmed duplicates that w
 Important implementation points:
 
 - ID launch route switch: `isIdLaunchRoute()` in `src/App.tsx`.
+- Root landing route switch: `isLandingRoute()` in `src/App.tsx`.
+- Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.

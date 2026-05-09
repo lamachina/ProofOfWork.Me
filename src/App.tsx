@@ -246,6 +246,8 @@ const UNISAT_DOWNLOAD_URL = "https://unisat.io/download";
 const DISCORD_URL = "https://discord.com/invite/mRA4zbqB";
 const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
+const ID_APP_URL = "https://id.proofofwork.me";
+const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_REGISTRY_TX_PAGES = 100;
@@ -273,6 +275,16 @@ function isIdLaunchRoute() {
   const hostname = window.location.hostname.toLowerCase();
   // Production subdomain: id.proofofwork.me. Local/dev preview: ?id-launch=1.
   return hostname === "id.proofofwork.me" || window.location.search.includes("id-launch=1");
+}
+
+function isLandingRoute() {
+  if (import.meta.env.VITE_LANDING_ONLY === "1") {
+    return true;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  // Production front door: proofofwork.me. Local/dev preview: ?landing=1.
+  return hostname === "proofofwork.me" || hostname === "www.proofofwork.me" || window.location.search.includes("landing=1");
 }
 
 function loadTheme(): ThemeMode {
@@ -2291,6 +2303,7 @@ async function signAndBroadcastPsbt({
 
 export default function App() {
   const idLaunchMode = isIdLaunchRoute();
+  const landingMode = isLandingRoute();
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
   const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
@@ -2580,6 +2593,15 @@ export default function App() {
   }, [idLaunchMode]);
 
   useEffect(() => {
+    if (!landingMode) {
+      return;
+    }
+
+    setNetwork("livenet");
+    void refreshIds(true);
+  }, [landingMode]);
+
+  useEffect(() => {
     const trimmedRecipient = recipient.trim();
     if (!trimmedRecipient || isValidBitcoinAddress(trimmedRecipient, network) || !registryAddress) {
       return undefined;
@@ -2603,6 +2625,10 @@ export default function App() {
   }, [network, recipient, registryAddress]);
 
   useEffect(() => {
+    if (landingMode) {
+      return;
+    }
+
     if (!window.unisat) {
       return;
     }
@@ -2619,9 +2645,13 @@ export default function App() {
         }
       })
       .catch(() => undefined);
-  }, [hasUnisat, idLaunchMode]);
+  }, [hasUnisat, idLaunchMode, landingMode]);
 
   useEffect(() => {
+    if (landingMode) {
+      return;
+    }
+
     if (!window.unisat?.on) {
       return;
     }
@@ -2682,7 +2712,7 @@ export default function App() {
       window.unisat?.removeListener?.("networkChanged", networkChanged);
       window.unisat?.removeListener?.("chainChanged", chainChanged);
     };
-  }, [hasUnisat, idLaunchMode, network]);
+  }, [hasUnisat, idLaunchMode, landingMode, network]);
 
   function applyDraft(draft: DraftMessage) {
     setRecipient(draft.recipient);
@@ -3350,6 +3380,17 @@ export default function App() {
     }
   }
 
+  if (landingMode) {
+    return (
+      <LandingApp
+        registryRecords={idRegistry.filter((record) => record.network === "livenet")}
+        setTheme={setTheme}
+        theme={theme}
+        onRefresh={() => void refreshIds()}
+      />
+    );
+  }
+
   if (idLaunchMode) {
     return (
       <IdLaunchApp
@@ -3785,6 +3826,153 @@ export default function App() {
           </>
         )}
       </section>
+    </main>
+  );
+}
+
+function LandingApp({
+  registryRecords,
+  setTheme,
+  theme,
+  onRefresh,
+}: {
+  registryRecords: PowIdRecord[];
+  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
+  theme: ThemeMode;
+  onRefresh: () => void;
+}) {
+  const confirmedRecords = registryRecords.filter((record) => record.confirmed);
+  const pendingRecords = registryRecords.filter((record) => !record.confirmed);
+  const registryAddress = registryAddressForNetwork("livenet");
+
+  return (
+    <main className="landing-app">
+      <header className="landing-topbar">
+        <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
+          <div className="brand-mark" aria-hidden="true">
+            PoW
+          </div>
+          <div>
+            <h1>ProofOfWork.Me</h1>
+            <span>The final network</span>
+          </div>
+        </a>
+
+        <nav className="landing-nav" aria-label="ProofOfWork.Me apps">
+          <a href={ID_APP_URL}>IDs</a>
+          <a href={COMPUTER_APP_URL}>Computer</a>
+          <button
+            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
+            className="icon-button"
+            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            type="button"
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+        </nav>
+      </header>
+
+      <section className="landing-hero">
+        <div className="landing-hero-content">
+          <span className="landing-kicker">Bitcoin-native identity, mail, and files</span>
+          <h2>ProofOfWork.Me</h2>
+          <p>
+            Claim a permanent on-chain ID, then use it as your Bitcoin-native inbox across the open network.
+          </p>
+          <div className="landing-actions">
+            <a className="primary link-button" href={ID_APP_URL}>
+              <span className="button-content">
+                <AtSign size={17} />
+                <span>Claim an ID</span>
+              </span>
+            </a>
+            <a className="secondary link-button" href={COMPUTER_APP_URL}>
+              <span className="button-content">
+                <Mail size={17} />
+                <span>Open Computer</span>
+              </span>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-main" aria-label="ProofOfWork.Me onboarding">
+        <section className="landing-stats" aria-label="ProofOfWork ID registry stats">
+          <div>
+            <span>Total IDs</span>
+            <strong>{registryRecords.length.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Confirmed</span>
+            <strong>{confirmedRecords.length.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Pending</span>
+            <strong>{pendingRecords.length.toLocaleString()}</strong>
+          </div>
+          <button className="secondary" onClick={onRefresh} type="button">
+            <span className="button-content">
+              <RefreshCw size={16} />
+              <span>Refresh Registry</span>
+            </span>
+          </button>
+        </section>
+
+        <section className="landing-choice-grid" aria-label="Choose an app">
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <AtSign size={24} />
+            </div>
+            <div>
+              <h3>Claim Your ID</h3>
+              <p>
+                Register <code>user@proofofwork.me</code> to your Bitcoin receive address through the canonical mainnet registry.
+              </p>
+            </div>
+            <a className="primary link-button" href={ID_APP_URL}>
+              <span className="button-content">
+                <AtSign size={16} />
+                <span>Go to IDs</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <Mail size={24} />
+            </div>
+            <div>
+              <h3>Open Computer</h3>
+              <p>Send and receive Bitcoin-native mail, replies, and small files with local drafts, archive, favorites, and backups.</p>
+            </div>
+            <a className="secondary link-button" href={COMPUTER_APP_URL}>
+              <span className="button-content">
+                <Mail size={16} />
+                <span>Open App</span>
+              </span>
+            </a>
+          </article>
+        </section>
+
+        <section className="landing-protocol">
+          <div>
+            <span className="landing-kicker">Canonical registry</span>
+            <h3>{shortAddress(registryAddress)}</h3>
+            <p>
+              ProofOfWork IDs are resolved from Bitcoin. First confirmed valid registration wins, and the app only routes mail to confirmed IDs.
+            </p>
+          </div>
+          <a className="secondary link-button" href={`https://mempool.space/address/${registryAddress}`} rel="noreferrer" target="_blank">
+            <span className="button-content">
+              <ArrowUpRight size={16} />
+              <span>View Registry</span>
+            </span>
+          </a>
+        </section>
+      </section>
+
+      <SocialFooter />
     </main>
   );
 }

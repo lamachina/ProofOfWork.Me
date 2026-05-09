@@ -3838,10 +3838,13 @@ function IdLaunchApp({
   theme: ThemeMode;
   onRefresh: () => void;
 }) {
+  const [showAllRegistryRecords, setShowAllRegistryRecords] = useState(false);
   const normalizedId = normalizePowId(idName);
   const ownedIds = ownedPowIds(registryRecords, address);
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
+  const visibleRegistryRecords = showAllRegistryRecords ? registryRecords : registryRecords.slice(0, 12);
+  const hiddenRegistryRecordCount = Math.max(0, registryRecords.length - visibleRegistryRecords.length);
   const confirmedMatch = normalizedId ? confirmedRecords.find((record) => record.id === normalizedId) : undefined;
   const pendingMatch = normalizedId ? pendingRecords.find((record) => record.id === normalizedId) : undefined;
   const availabilityTone = !normalizedId ? "idle" : confirmedMatch ? "bad" : pendingMatch ? "idle" : "good";
@@ -4084,7 +4087,18 @@ function IdLaunchApp({
               </span>
             </button>
           </div>
-          <IdRecordList records={registryRecords.slice(0, 12)} empty="No registry records found yet." />
+          <IdRecordList records={visibleRegistryRecords} empty="No registry records found yet." />
+          {registryRecords.length > 12 ? (
+            <button className="secondary registry-expand-button" onClick={() => setShowAllRegistryRecords((current) => !current)} type="button">
+              <span className="button-content">
+                <span>
+                  {showAllRegistryRecords
+                    ? "Show fewer IDs"
+                    : `Show all IDs (${hiddenRegistryRecordCount.toLocaleString()} more)`}
+                </span>
+              </span>
+            </button>
+          ) : null}
         </section>
       </section>
 

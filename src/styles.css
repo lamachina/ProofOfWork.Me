@@ -863,6 +863,10 @@ select {
   gap: 10px;
 }
 
+.registry-expand-button {
+  justify-content: center;
+}
+
 .id-record {
   background: var(--surface);
   border: 1px solid var(--border);

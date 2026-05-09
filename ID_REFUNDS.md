@@ -14,6 +14,13 @@ These refunds were reported as issued by the project operator after running the 
 
 Total issued in this batch: **14,000 sats**.
 
+## 2026-05-09 Refund Notice Email
+
+After issuing the refunds above, the project operator sent an on-chain ProofOfWork.Me mail notice to `bitcoin@proofofwork.me`.
+
+- Notice tx: `d27483346c1f12fb3f46d288ce265a6e6d684c6f1ffb39cc729acfb80ace5676`
+- Explorer: `https://mempool.space/tx/d27483346c1f12fb3f46d288ce265a6e6d684c6f1ffb39cc729acfb80ace5676`
+
 ## Audit Command
 
 Run this command to generate a fresh duplicate/refund report:

@@ -125,6 +125,16 @@ To build an ID-registration-only deployment that hides the full mail app on ever
 VITE_ID_LAUNCH_ONLY=1 npm run build
 ```
 
+## Registry Audit
+
+To find duplicate or failed ProofOfWork ID registrations for refund review:
+
+```bash
+npm run audit:ids
+```
+
+The audit scans the full canonical registry history, merges mempool transactions, applies first-confirmed-wins, and writes JSON/CSV reports to `/tmp`. Confirmed duplicates are listed as refund candidates. Pending duplicates are listed separately as a watchlist until they confirm or drop.
+
 ## Developer Map
 
 Important implementation points:

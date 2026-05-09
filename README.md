@@ -135,6 +135,8 @@ npm run audit:ids
 
 The audit scans the full canonical registry history, merges mempool transactions, applies first-confirmed-wins, and writes JSON/CSV reports to `/tmp`. Confirmed duplicates are listed as refund candidates. Pending duplicates are listed separately as a watchlist until they confirm or drop.
 
+Before issuing refunds, check `ID_REFUNDS.md` so old confirmed duplicates that were already refunded are not paid twice.
+
 ## Developer Map
 
 Important implementation points:

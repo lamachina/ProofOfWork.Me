@@ -864,7 +864,7 @@ function folderSubtitle(folder: Folder) {
   }
 
   if (folder === "outbox") {
-    return "Pending broadcasts";
+    return "Pending and dropped broadcasts";
   }
 
   if (folder === "drafts") {
@@ -1992,7 +1992,7 @@ async function fetchTransactionHex(txid: string, ownerNetwork: BitcoinNetwork) {
 }
 
 async function fetchBroadcastStatus(txid: string, ownerNetwork: BitcoinNetwork): Promise<BroadcastStatus> {
-  const response = await fetch(`${mempoolBase(ownerNetwork)}/api/tx/${txid}/status`);
+  const response = await fetch(`${mempoolBase(ownerNetwork)}/api/tx/${txid}`);
   if (response.status === 404) {
     return "dropped";
   }
@@ -2001,8 +2001,9 @@ async function fetchBroadcastStatus(txid: string, ownerNetwork: BitcoinNetwork):
     throw new Error(`Could not check transaction ${shortAddress(txid)}.`);
   }
 
-  const txStatus = (await response.json()) as Record<string, unknown>;
-  return txStatus.confirmed ? "confirmed" : "pending";
+  const tx = (await response.json()) as Record<string, unknown>;
+  const txStatus = tx.status as Record<string, unknown> | undefined;
+  return txStatus?.confirmed ? "confirmed" : "pending";
 }
 
 function broadcastTargetsFor(
@@ -2816,7 +2817,7 @@ export default function App() {
     saveDraft(draft);
     setSavedDraft(draft);
     applyDraft(draft);
-    setStatus({ tone: "good", text: "Dropped message restored as draft." });
+    setStatus({ tone: "good", text: "Dropped message restored as a draft. Review it, then send to sign a fresh transaction." });
   }
 
   function openFolder(folder: Folder) {
@@ -5322,7 +5323,7 @@ function Reader({
             <button className="secondary small" onClick={() => onRestoreDraft(message)} type="button">
               <span className="button-content">
                 <FilePenLine size={15} />
-                <span>Restore Draft</span>
+                <span>Rebuild Draft</span>
               </span>
             </button>
           ) : null}

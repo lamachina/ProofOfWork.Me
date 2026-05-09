@@ -55,6 +55,8 @@ Launch invariants for future developers/agents:
 - Shows confirmed inbound mail in Inbox.
 - Tracks local broadcast attempts as pending, confirmed, or dropped.
 - Keeps pending and dropped broadcasts in Outbox.
+- Checks pending broadcasts with the full transaction lookup so missing txs become dropped instead of staying pending forever.
+- Lets dropped broadcasts be rebuilt from their local draft data; users must sign a fresh transaction to resend.
 - Recovers confirmed sent mail from chain data, so Sent and Files do not depend only on browser history.
 - Sorts Incoming, Inbox, and Sent by highest sats, newest, oldest, or thread.
 - Replies to a message by embedding the parent txid so messages can form threads.

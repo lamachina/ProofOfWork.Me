@@ -80,9 +80,11 @@ Production domains:
 proofofwork.me              landing page
 id.proofofwork.me           focused ID registry app
 computer.proofofwork.me     full mail/computer app
+desktop.proofofwork.me      public read-only file desktop
 ```
 
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
+The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
 
 Local preview:
 
@@ -120,6 +122,7 @@ Rules:
 - First confirmed valid registration wins.
 - Pending registrations can be displayed, but are not final.
 - The compose flow must not route mail to a pending ID. IDs are sendable only after a confirmed registry record resolves to a receive address.
+- Public Desktop search follows the same confirmed-only ID resolver rule.
 - Duplicate confirmed registrations are ignored by the resolver.
 - Registry scans must paginate full confirmed address history and merge mempool transactions before applying first-confirmed-wins. Reading only the first mempool.space address page can hide older confirmed winners and make duplicates look available or pending.
 - Production registry reads should go through the ProofOfWork OP_RETURN API. The API reads confirmed state from the ProofOfWork node/indexer stack and may merge a pending mempool fallback for unconfirmed visibility.
@@ -247,6 +250,7 @@ Phase 1 production uses same-origin API proxies:
 https://proofofwork.me/api/*
 https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
+https://desktop.proofofwork.me/api/*
 ```
 
 Pending registry records are useful for network visibility, but first-confirmed-wins only becomes final after block confirmation. Pending IDs must never be routable in compose.

@@ -25,14 +25,17 @@ The Phase 1 launch does not anchor app releases on-chain yet.
 Current launch surfaces:
 
 ```text
-id.proofofwork.me      -> focused mainnet ID registry onboarding
-proofofwork.me         -> full mail app
+proofofwork.me          -> landing/router page
+id.proofofwork.me       -> focused mainnet ID registry onboarding
+computer.proofofwork.me -> full mail/computer app
+desktop.proofofwork.me  -> public read-only file desktop
 ```
 
-Both are served as static frontend builds. `id.proofofwork.me` is selected in code by hostname, with local preview available at:
+These are served as static frontend builds. `id.proofofwork.me` and `desktop.proofofwork.me` are selected in code by hostname, with local previews available at:
 
 ```text
 http://localhost:5173/?id-launch=1
+http://localhost:5173/?desktop=1
 ```
 
 Future on-chain app anchoring should verify releases without changing the canonical ID registry address or `pwid1:r2` format.

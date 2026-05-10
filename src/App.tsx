@@ -261,6 +261,7 @@ const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
+const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
 const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "").trim().replace(/\/+$/u, "");
 const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
@@ -3951,6 +3952,24 @@ function LandingApp({
       </section>
 
       <section className="landing-main" aria-label="ProofOfWork.Me onboarding">
+        <section className="landing-video" aria-label="ProofOfWork.Me launch video">
+          <div className="landing-video-copy">
+            <span className="landing-kicker">Launch video</span>
+            <h3>The Final Network</h3>
+            <p>Watch the ProofOfWork.Me launch story, then claim an ID or open the Bitcoin computer.</p>
+          </div>
+          <div className="landing-video-frame">
+            <iframe
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              loading="lazy"
+              referrerPolicy="strict-origin-when-cross-origin"
+              src={`${LANDING_VIDEO_EMBED_URL}?rel=0&modestbranding=1`}
+              title="ProofOfWork.Me launch video"
+            />
+          </div>
+        </section>
+
         <section className="landing-stats" aria-label="ProofOfWork ID registry stats">
           <div>
             <span>Total IDs</span>

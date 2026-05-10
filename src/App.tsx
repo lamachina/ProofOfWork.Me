@@ -59,6 +59,7 @@ type Folder =
   | "files"
   | "desktop"
   | "ids"
+  | "marketplace"
   | "contacts"
   | "custom";
 type SortMode = "value" | "newest" | "oldest" | "thread" | "largest" | "filetype" | "sender";
@@ -1328,6 +1329,10 @@ function folderLabel(folder: Folder) {
     return "IDs";
   }
 
+  if (folder === "marketplace") {
+    return "Marketplace";
+  }
+
   if (folder === "desktop") {
     return "Desktop";
   }
@@ -1366,6 +1371,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "ids") {
     return "ProofOfWork ID registry";
+  }
+
+  if (folder === "marketplace") {
+    return "ID listings and transfers";
   }
 
   if (folder === "desktop") {
@@ -4015,7 +4024,7 @@ export default function App() {
       ? true
       : activeFolder === "desktop"
         ? desktopLoading || !desktopProfile
-        : activeFolder === "ids"
+        : activeFolder === "ids" || activeFolder === "marketplace"
           ? busy || refreshInProgress || !registryAddress
           : !address || busy || refreshInProgress;
 
@@ -5781,7 +5790,9 @@ export default function App() {
           <button
             className="secondary"
             disabled={refreshDisabled}
-            onClick={() => void (activeFolder === "ids" ? refreshIds() : activeFolder === "desktop" ? loadDesktopTarget() : refreshMail(activeFolder))}
+            onClick={() =>
+              void (activeFolder === "ids" || activeFolder === "marketplace" ? refreshIds() : activeFolder === "desktop" ? loadDesktopTarget() : refreshMail(activeFolder))
+            }
             title="Refresh mail and transaction statuses"
             type="button"
           >
@@ -5962,6 +5973,13 @@ export default function App() {
               </span>
               <strong>{ownedIdCount}</strong>
             </button>
+            <button aria-current={activeFolder === "marketplace"} onClick={() => openFolder("marketplace")} type="button">
+              <span className="folder-label">
+                <Users size={17} />
+                <span>Marketplace</span>
+              </span>
+              <strong>{ownerControlledIds.length}</strong>
+            </button>
             <button aria-current={activeFolder === "contacts"} onClick={() => openFolder("contacts")} type="button">
               <span className="folder-label">
                 <Users size={17} />
@@ -6067,6 +6085,34 @@ export default function App() {
             submitTransfer={transferId}
             submitUpdate={updateIdReceiver}
             submit={registerId}
+          />
+        ) : activeFolder === "marketplace" ? (
+          <MarketplaceWorkspace
+            address={address}
+            busy={busy}
+            canCreateSaleAuthorization={canCreateSaleAuthorization}
+            canPurchaseId={canPurchaseId}
+            createSaleAuthorization={createIdSaleAuthorization}
+            idPurchaseBytes={idPurchaseBytes}
+            idPurchaseOwnerAddress={idPurchaseOwnerAddress}
+            idPurchaseReceiveAddress={idPurchaseReceiveAddress}
+            idSaleAuthorization={idSaleAuthorization}
+            idSaleBuyerAddress={idSaleBuyerAddress}
+            idSalePriceSats={idSalePriceSats}
+            idSaleReceiveAddress={idSaleReceiveAddress}
+            managedIdName={managedIdName}
+            network={network}
+            registryAddress={registryAddress}
+            registryRecords={idRegistry}
+            setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
+            setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
+            setIdSaleAuthorization={setIdSaleAuthorization}
+            setIdSaleBuyerAddress={setIdSaleBuyerAddress}
+            setIdSalePriceSats={setIdSalePriceSats}
+            setIdSaleReceiveAddress={setIdSaleReceiveAddress}
+            setManagedIdName={setManagedIdName}
+            submitPurchase={purchaseId}
+            onRefresh={() => void refreshIds()}
           />
         ) : activeFolder === "contacts" ? (
           <ContactsWorkspace
@@ -7160,6 +7206,172 @@ function MarketplaceApp({
 
       <SocialFooter />
     </main>
+  );
+}
+
+function MarketplaceWorkspace({
+  address,
+  busy,
+  canCreateSaleAuthorization,
+  canPurchaseId,
+  createSaleAuthorization,
+  idPurchaseBytes,
+  idPurchaseOwnerAddress,
+  idPurchaseReceiveAddress,
+  idSaleAuthorization,
+  idSaleBuyerAddress,
+  idSalePriceSats,
+  idSaleReceiveAddress,
+  managedIdName,
+  network,
+  registryAddress,
+  registryRecords,
+  setIdPurchaseOwnerAddress,
+  setIdPurchaseReceiveAddress,
+  setIdSaleAuthorization,
+  setIdSaleBuyerAddress,
+  setIdSalePriceSats,
+  setIdSaleReceiveAddress,
+  setManagedIdName,
+  submitPurchase,
+  onRefresh,
+}: {
+  address: string;
+  busy: boolean;
+  canCreateSaleAuthorization: boolean;
+  canPurchaseId: boolean;
+  createSaleAuthorization: () => void;
+  idPurchaseBytes: number;
+  idPurchaseOwnerAddress: string;
+  idPurchaseReceiveAddress: string;
+  idSaleAuthorization: string;
+  idSaleBuyerAddress: string;
+  idSalePriceSats: number;
+  idSaleReceiveAddress: string;
+  managedIdName: string;
+  network: BitcoinNetwork;
+  registryAddress: string;
+  registryRecords: PowIdRecord[];
+  setIdPurchaseOwnerAddress: (value: string) => void;
+  setIdPurchaseReceiveAddress: (value: string) => void;
+  setIdSaleAuthorization: (value: string) => void;
+  setIdSaleBuyerAddress: (value: string) => void;
+  setIdSalePriceSats: (value: number) => void;
+  setIdSaleReceiveAddress: (value: string) => void;
+  setManagedIdName: (value: string) => void;
+  submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
+  onRefresh: () => void;
+}) {
+  const confirmedRecords = registryRecords.filter((record) => record.network === network && record.confirmed);
+  const pendingRecords = registryRecords.filter((record) => record.network === network && !record.confirmed);
+  const ownerControlledIds = confirmedRecords.filter((record) => record.ownerAddress === address);
+  const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
+
+  return (
+    <section className="ids-workspace">
+      <div className="files-toolbar">
+        <div>
+          <h2>Marketplace</h2>
+          <span>
+            {registryAddress
+              ? `${confirmedRecords.length.toLocaleString()} confirmed IDs · ${pendingRecords.length.toLocaleString()} pending`
+              : `No ID marketplace configured for ${networkLabel(network)}`}
+          </span>
+        </div>
+        <button className="secondary small" disabled={busy || !registryAddress} onClick={onRefresh} type="button">
+          <span className="button-content">
+            <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
+            <span>{busy ? "Refreshing" : "Refresh"}</span>
+          </span>
+        </button>
+      </div>
+
+      <div className="ids-content marketplace-content">
+        <section className="id-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Wallet size={24} />
+            </div>
+            <div>
+              <h3>List an ID</h3>
+              <p>Create an off-chain signed listing authorization for one of your confirmed IDs.</p>
+            </div>
+          </div>
+
+          {ownerControlledIds.length === 0 ? (
+            <p className="field-note">{address ? "This wallet does not own any confirmed IDs yet." : "Connect the owner wallet to list confirmed IDs."}</p>
+          ) : (
+            <>
+              <label>
+                ID
+                <select value={managedId?.id ?? ""} onChange={(event) => setManagedIdName(event.target.value)}>
+                  {ownerControlledIds.map((record) => (
+                    <option key={`${record.network}-${record.id}`} value={record.id}>
+                      {record.id}@proofofwork.me
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {managedId ? (
+                <dl className="id-manage-state">
+                  <div>
+                    <dt>Owner</dt>
+                    <dd>{shortAddress(managedId.ownerAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>Receives</dt>
+                    <dd>{shortAddress(managedId.receiveAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>Registry</dt>
+                    <dd>{shortAddress(registryAddress)}</dd>
+                  </div>
+                </dl>
+              ) : null}
+              <p className="field-note">
+                Listings are signed locally. Buyers pay the seller plus the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.
+              </p>
+            </>
+          )}
+        </section>
+
+        <IdMarketplaceCard
+          busy={busy}
+          canCreateSaleAuthorization={canCreateSaleAuthorization}
+          canPurchaseId={canPurchaseId}
+          createSaleAuthorization={createSaleAuthorization}
+          idPurchaseBytes={idPurchaseBytes}
+          idPurchaseOwnerAddress={idPurchaseOwnerAddress}
+          idPurchaseReceiveAddress={idPurchaseReceiveAddress}
+          idSaleAuthorization={idSaleAuthorization}
+          idSaleBuyerAddress={idSaleBuyerAddress}
+          idSalePriceSats={idSalePriceSats}
+          idSaleReceiveAddress={idSaleReceiveAddress}
+          managedId={managedId}
+          network={network}
+          setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
+          setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
+          setIdSaleAuthorization={setIdSaleAuthorization}
+          setIdSaleBuyerAddress={setIdSaleBuyerAddress}
+          setIdSalePriceSats={setIdSalePriceSats}
+          setIdSaleReceiveAddress={setIdSaleReceiveAddress}
+          submitPurchase={submitPurchase}
+        />
+
+        <section className="id-card ids-registry-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Inbox size={24} />
+            </div>
+            <div>
+              <h3>Registry Supply</h3>
+              <p>Confirmed IDs are marketplace assets. The standalone marketplace uses the same registry.</p>
+            </div>
+          </div>
+          <IdRecordList records={confirmedRecords} empty={registryAddress ? "No confirmed registry records found yet." : "Switch to Mainnet to browse the ID marketplace."} />
+        </section>
+      </div>
+    </section>
   );
 }
 

@@ -108,6 +108,7 @@ Launch invariants for future developers/agents:
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
 - Lets current ID owners create off-chain signed listing authorizations so buyers can fund marketplace-style ID transfers.
+- Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Can read registry, mail, files, and transaction status from a first-party ProofOfWork OP_RETURN API when `VITE_POW_API_BASE` is configured.
@@ -339,6 +340,7 @@ Important implementation points:
 - Dedicated registration-only launch UI: `IdLaunchApp`.
 - Full app ID workspace: `IdsWorkspace`.
 - Standalone marketplace UI: `MarketplaceApp`.
+- Computer marketplace workspace: `MarketplaceWorkspace`.
 - OP_RETURN API: `server/proof-api.mjs`.
 - OP_RETURN infrastructure notes: `OP_RETURN_INFRASTRUCTURE.md`.
 - ID refund log: `ID_REFUNDS.md`.

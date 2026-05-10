@@ -232,7 +232,7 @@ VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 To build the public Desktop app for production:
 
 ```bash
-VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
+VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 ```
 
 To run localhost against the production API:

@@ -31,7 +31,7 @@ computer.proofofwork.me -> full mail/computer app
 desktop.proofofwork.me  -> public read-only file desktop
 ```
 
-These are served as static frontend builds. `id.proofofwork.me` and `desktop.proofofwork.me` are selected in code by hostname, with local previews available at:
+These are served as static frontend builds. `id.proofofwork.me` and `desktop.proofofwork.me` are selected in code by hostname or dedicated build flags, with local previews available at:
 
 ```text
 http://localhost:5173/?id-launch=1

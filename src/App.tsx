@@ -335,8 +335,7 @@ const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
-// Use the Computer host fallback until desktop.proofofwork.me DNS is fully live.
-const DESKTOP_APP_URL = "https://computer.proofofwork.me/?desktop=1";
+const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
 const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "").trim().replace(/\/+$/u, "");
 const MAX_DATA_CARRIER_BYTES = 100_000;
@@ -380,6 +379,10 @@ function isLandingRoute() {
 }
 
 function isDesktopRoute() {
+  if (import.meta.env.VITE_DESKTOP_ONLY === "1") {
+    return true;
+  }
+
   const hostname = window.location.hostname.toLowerCase();
   // Production public file desktop: desktop.proofofwork.me. Local/dev preview: ?desktop=1.
   return hostname === "desktop.proofofwork.me" || window.location.search.includes("desktop=1");

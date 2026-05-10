@@ -76,7 +76,7 @@ Production builds:
 VITE_LANDING_ONLY=1 VITE_POW_API_BASE=https://proofofwork.me npm run build
 VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
 VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
-VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
+VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 ```
 
 ## Endpoints

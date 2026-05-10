@@ -96,6 +96,14 @@ The default Files experience should feel more like a desktop/file manager than a
 
 This creates a Finder/Gmail/Google Drive style attachment surface while staying serverless. The file bytes still come from valid ProofOfWork.Me OP_RETURN payloads, and the source message remains available without dominating the Files view.
 
+Files and Desktop should preview common content in-app before falling back to download:
+
+- Images render inline.
+- Audio and video use native browser players.
+- PDFs use the browser PDF viewer when available.
+- Text, Markdown, JSON, and code files render in a readable monospace viewer with one-click copy for humans and agents.
+- Unknown file types keep a polished metadata/download fallback.
+
 ## Desktop
 
 Desktop is the public read-only version of Files. On `desktop.proofofwork.me`, it is a standalone search engine, not the full Computer mailbox shell.
@@ -106,6 +114,7 @@ Behavior:
 - Resolve ProofOfWork IDs only when confirmed.
 - Load confirmed mail for the resolved address.
 - Show confirmed attachments as a desktop-style public file space.
+- Preview supported files directly from the on-chain attachment bytes.
 - Support the same file filters and file-oriented sorts as Files.
 - Do not require wallet connection for browsing.
 - Do not show local-only metadata such as drafts, folders, favorites, archives, or contacts.

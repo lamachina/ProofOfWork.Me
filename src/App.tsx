@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Clock,
+  Copy,
   Download,
   FilePenLine,
   FileText,
@@ -72,6 +73,8 @@ type MailAttachment = {
   sha256: string;
   data: string;
 };
+
+type AttachmentPreviewKind = "image" | "audio" | "video" | "pdf" | "text" | "unsupported";
 
 type MailRecipient = {
   address: string;
@@ -1275,6 +1278,105 @@ function attachmentKind(attachment: MailAttachment): FileFilter {
 
 function isImageAttachment(attachment: MailAttachment) {
   return attachment.mime.toLowerCase().startsWith("image/");
+}
+
+function isAudioAttachment(attachment: MailAttachment) {
+  return attachment.mime.toLowerCase().startsWith("audio/");
+}
+
+function isVideoAttachment(attachment: MailAttachment) {
+  return attachment.mime.toLowerCase().startsWith("video/");
+}
+
+function isPdfAttachment(attachment: MailAttachment) {
+  return attachment.mime.toLowerCase() === "application/pdf" || attachment.name.toLowerCase().endsWith(".pdf");
+}
+
+function isTextAttachment(attachment: MailAttachment) {
+  const mime = attachment.mime.toLowerCase();
+  const name = attachment.name.toLowerCase();
+
+  return (
+    mime.startsWith("text/") ||
+    [
+      "application/json",
+      "application/javascript",
+      "application/typescript",
+      "application/xml",
+      "application/yaml",
+      "application/x-yaml",
+      "application/toml",
+      "application/sql",
+      "image/svg+xml",
+    ].includes(mime) ||
+    /\.(c|cc|cpp|cs|css|csv|env|go|h|hpp|html|java|js|json|jsx|kt|lua|md|php|pl|py|r|rb|rs|sh|sol|sql|svelte|swift|toml|ts|tsx|txt|vue|xml|yaml|yml)$/u.test(
+      name,
+    )
+  );
+}
+
+function attachmentPreviewKind(attachment: MailAttachment): AttachmentPreviewKind {
+  if (isImageAttachment(attachment)) {
+    return "image";
+  }
+
+  if (isAudioAttachment(attachment)) {
+    return "audio";
+  }
+
+  if (isVideoAttachment(attachment)) {
+    return "video";
+  }
+
+  if (isPdfAttachment(attachment)) {
+    return "pdf";
+  }
+
+  if (isTextAttachment(attachment)) {
+    return "text";
+  }
+
+  return "unsupported";
+}
+
+function attachmentText(attachment: MailAttachment) {
+  try {
+    return new TextDecoder("utf-8", { fatal: false }).decode(base64UrlDecodeBytes(attachment.data));
+  } catch {
+    return "";
+  }
+}
+
+function attachmentCodeLabel(attachment: MailAttachment) {
+  const mime = attachment.mime.toLowerCase();
+  const extension = attachment.name.split(".").pop()?.toLowerCase();
+
+  if (mime === "application/json" || extension === "json") {
+    return "JSON";
+  }
+
+  if (extension) {
+    return extension.toUpperCase();
+  }
+
+  return mime.startsWith("text/") ? "Text" : "Code";
+}
+
+async function copyTextToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.left = "-9999px";
+  textarea.style.position = "fixed";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
 }
 
 function fileFilterLabel(filter: FileFilter) {
@@ -6560,6 +6662,102 @@ function FilePreview({ attachment }: { attachment: MailAttachment }) {
   );
 }
 
+function AttachmentViewer({ attachment }: { attachment: MailAttachment }) {
+  const [copied, setCopied] = useState(false);
+  const href = attachmentHref(attachment);
+  const previewKind = attachmentPreviewKind(attachment);
+  const text = previewKind === "text" ? attachmentText(attachment) : "";
+
+  async function copyText() {
+    if (!text) {
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  if (previewKind === "image") {
+    return (
+      <section className="attachment-viewer image-viewer" aria-label={`${attachment.name} preview`}>
+        <img alt={attachment.name} src={href} />
+      </section>
+    );
+  }
+
+  if (previewKind === "audio") {
+    return (
+      <section className="attachment-viewer media-viewer" aria-label={`${attachment.name} audio player`}>
+        <audio controls preload="metadata" src={href}>
+          <a download={attachment.name} href={href}>
+            Download {attachment.name}
+          </a>
+        </audio>
+      </section>
+    );
+  }
+
+  if (previewKind === "video") {
+    return (
+      <section className="attachment-viewer media-viewer video-viewer" aria-label={`${attachment.name} video player`}>
+        <video controls preload="metadata" src={href}>
+          <a download={attachment.name} href={href}>
+            Download {attachment.name}
+          </a>
+        </video>
+      </section>
+    );
+  }
+
+  if (previewKind === "pdf") {
+    return (
+      <section className="attachment-viewer pdf-viewer" aria-label={`${attachment.name} PDF preview`}>
+        <object data={href} type="application/pdf">
+          <div>
+            <FileText size={34} />
+            <strong>PDF preview unavailable</strong>
+            <a className="secondary small link-button" download={attachment.name} href={href}>
+              Download PDF
+            </a>
+          </div>
+        </object>
+      </section>
+    );
+  }
+
+  if (previewKind === "text") {
+    return (
+      <section className="attachment-viewer text-viewer" aria-label={`${attachment.name} text preview`}>
+        <div className="attachment-viewer-head">
+          <span>{attachmentCodeLabel(attachment)}</span>
+          <button className="secondary small" onClick={() => void copyText()} type="button">
+            <span className="button-content">
+              {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+              <span>{copied ? "Copied" : "Copy"}</span>
+            </span>
+          </button>
+        </div>
+        <pre>
+          <code>{text}</code>
+        </pre>
+      </section>
+    );
+  }
+
+  return (
+    <section className="attachment-viewer unsupported-viewer" aria-label={`${attachment.name} file preview`}>
+      <FileText size={34} />
+      <strong>No inline preview</strong>
+      <p>This file type is saved on-chain. Download it to open with a local app.</p>
+    </section>
+  );
+}
+
 function FileInspector({
   activeNetwork,
   message,
@@ -6586,11 +6784,11 @@ function FileInspector({
 
   return (
     <aside className="file-inspector">
-      <FilePreview attachment={attachment} />
       <div className="file-detail-title">
         <h3>{attachment.name}</h3>
         <span>{attachment.mime}</span>
       </div>
+      <AttachmentViewer attachment={attachment} />
       <div className="file-detail-actions">
         <a className="primary link-button" download={attachment.name} href={attachmentHref(attachment)}>
           <span className="button-content">

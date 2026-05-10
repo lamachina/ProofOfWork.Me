@@ -16,6 +16,7 @@ Core operating rules:
 
 - Preserve the canonical registry and ID rules unless the user explicitly asks for a migration.
 - Keep wallet signing local. Never handle seed phrases or private keys.
+- For ID sales, preserve the split between direct owner-funded transfers and buyer-funded `buy2` transfers with off-chain seller signatures.
 - Treat confirmed Bitcoin history as canonical and pending mempool data as best-effort visibility.
 - Build features so future agents can inspect, verify, and act from chain-readable records.
 - Keep product/UI copy calm and precise; keep launch/social copy alive with the ProofOfWork.Me voice.

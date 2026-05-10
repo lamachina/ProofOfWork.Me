@@ -104,6 +104,7 @@ Launch invariants for future developers/agents:
 - Uses the correct mempool.space explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
+- Lets current ID owners create off-chain signed sale authorizations so buyers can fund marketplace-style ID transfers.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Can read registry, mail, files, and transaction status from a first-party ProofOfWork OP_RETURN API when `VITE_POW_API_BASE` is configured.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
@@ -201,9 +202,11 @@ ID owners can mutate confirmed IDs with the same canonical registry address and 
 ```text
 pwid1:u:<id-base64url>:<receive-address>
 pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>
+pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-address?>
 ```
 
-Both events require a 1,000 sat registry payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
+`pwid1:u` and `pwid1:t` require a 1,000 sat registry payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
+`pwid1:buy2` is the buyer-funded marketplace path: the seller signs a `pwid-sale-v1` authorization off-chain, and the buyer funds both the registry fee and the signed seller payment in one transaction. The resolver accepts it only if the current owner signature, seller payment, optional buyer lock, and optional receive-address lock all match.
 
 ## Run
 

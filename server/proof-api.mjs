@@ -3,10 +3,12 @@
 import http from "node:http";
 import net from "node:net";
 import { URL } from "node:url";
+import bip322 from "bip322-js";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 
 bitcoin.initEccLib(ecc);
+const { Verifier } = bip322;
 
 const HOST = process.env.HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PORT ?? 8081);
@@ -24,6 +26,7 @@ const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
 const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
 const ID_REGISTRATION_PRICE_SATS = 1000;
+const ID_SALE_AUTH_VERSION = "pwid-sale-v1";
 const MAX_ATTACHMENT_BYTES = 60_000;
 const ID_REGISTRY_ADDRESSES = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
@@ -666,6 +669,22 @@ function registryPaymentAmount(vout, registryAddress) {
   return typeof paymentOutput?.value === "number" ? paymentOutput.value : 0;
 }
 
+function paymentAmountBeforeIdProtocol(vout, address) {
+  const protocolIndex = firstIdProtocolOutputIndex(vout);
+  return vout.reduce((total, output, index) => {
+    if (
+      output.scriptpubkey_address === address &&
+      typeof output.value === "number" &&
+      output.value > 0 &&
+      (protocolIndex === -1 || index < protocolIndex)
+    ) {
+      return total + output.value;
+    }
+
+    return total;
+  }, 0);
+}
+
 function normalizePowId(value) {
   return value
     .trim()
@@ -794,6 +813,147 @@ function parseIdTransferPayload(payload, network) {
   };
 }
 
+function saleAuthorizationDraft({ buyerAddress, expiresAt, id, nonce, priceSats, receiveAddress, sellerAddress }) {
+  return {
+    buyerAddress: buyerAddress?.trim() || undefined,
+    expiresAt: expiresAt?.trim() || undefined,
+    id: normalizePowId(id),
+    nonce,
+    priceSats: Math.floor(priceSats),
+    receiveAddress: receiveAddress?.trim() || undefined,
+    sellerAddress: sellerAddress.trim(),
+    version: ID_SALE_AUTH_VERSION,
+  };
+}
+
+function saleAuthorizationMessage(authorization) {
+  return [
+    "ProofOfWork.Me ID Sale",
+    `version:${authorization.version}`,
+    `id:${normalizePowId(authorization.id)}@proofofwork.me`,
+    `seller:${authorization.sellerAddress}`,
+    `priceSats:${Math.floor(authorization.priceSats)}`,
+    `buyer:${authorization.buyerAddress || "*"}`,
+    `receiver:${authorization.receiveAddress || "*"}`,
+    `nonce:${authorization.nonce}`,
+    `expiresAt:${authorization.expiresAt || ""}`,
+  ].join("\n");
+}
+
+function parseSaleAuthorizationJson(value, network) {
+  const parsed = JSON.parse(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Sale authorization must be a JSON object.");
+  }
+
+  const id = normalizePowId(typeof parsed.id === "string" ? parsed.id : "");
+  const sellerAddress = typeof parsed.sellerAddress === "string" ? parsed.sellerAddress.trim() : "";
+  const buyerAddress = typeof parsed.buyerAddress === "string" ? parsed.buyerAddress.trim() : "";
+  const receiveAddress = typeof parsed.receiveAddress === "string" ? parsed.receiveAddress.trim() : "";
+  const signature = typeof parsed.signature === "string" ? parsed.signature.trim() : "";
+  const nonce = typeof parsed.nonce === "string" ? parsed.nonce.trim() : "";
+  const expiresAt = typeof parsed.expiresAt === "string" ? parsed.expiresAt.trim() : "";
+  const priceSats = typeof parsed.priceSats === "number" ? Math.floor(parsed.priceSats) : Number.NaN;
+
+  if (parsed.version !== ID_SALE_AUTH_VERSION || !id || !isValidBitcoinAddress(sellerAddress, network)) {
+    throw new Error("Sale authorization is invalid.");
+  }
+
+  if (buyerAddress && !isValidBitcoinAddress(buyerAddress, network)) {
+    throw new Error("Sale buyer address is invalid.");
+  }
+
+  if (receiveAddress && !isValidBitcoinAddress(receiveAddress, network)) {
+    throw new Error("Sale receive address is invalid.");
+  }
+
+  if (!Number.isSafeInteger(priceSats) || priceSats < 0 || !nonce || nonce.length > 160 || !signature) {
+    throw new Error("Sale authorization terms are invalid.");
+  }
+
+  if (expiresAt && Number.isNaN(Date.parse(expiresAt))) {
+    throw new Error("Sale authorization expiry is invalid.");
+  }
+
+  return {
+    ...saleAuthorizationDraft({
+      buyerAddress,
+      expiresAt,
+      id,
+      nonce,
+      priceSats,
+      receiveAddress,
+      sellerAddress,
+    }),
+    signature,
+  };
+}
+
+function saleAuthorizationMessageDraft(authorization) {
+  return saleAuthorizationDraft(authorization);
+}
+
+function saleAuthorizationVerified(authorization) {
+  try {
+    return Verifier.verifySignature(
+      authorization.sellerAddress,
+      saleAuthorizationMessage(saleAuthorizationMessageDraft(authorization)),
+      authorization.signature,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function saleAuthorizationExpired(authorization, eventCreatedAt) {
+  if (!authorization.expiresAt) {
+    return false;
+  }
+
+  return Date.parse(eventCreatedAt) > Date.parse(authorization.expiresAt);
+}
+
+function parseIdMarketplaceTransferPayload(payload, network) {
+  if (!payload.startsWith("buy2:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length < 3 || parts.length > 4) {
+    return null;
+  }
+
+  const [, authorizationEncoded, owner, receiver] = parts;
+  let authorization;
+  try {
+    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), network);
+  } catch {
+    return null;
+  }
+
+  const receiveAddress = receiver?.trim() || owner;
+  if (!isValidBitcoinAddress(owner, network) || !isValidBitcoinAddress(receiveAddress, network)) {
+    return null;
+  }
+
+  if (authorization.buyerAddress && authorization.buyerAddress !== owner) {
+    return null;
+  }
+
+  if (authorization.receiveAddress && authorization.receiveAddress !== receiveAddress) {
+    return null;
+  }
+
+  return {
+    id: authorization.id,
+    ownerAddress: owner,
+    priceSats: authorization.priceSats,
+    receiveAddress,
+    saleAuthorization: authorization,
+    sellerAddress: authorization.sellerAddress,
+  };
+}
+
 function parseIdEventPayload(payload, network) {
   const registration = parseIdRegistrationPayload(payload, network);
   if (registration) {
@@ -816,6 +976,14 @@ function parseIdEventPayload(payload, network) {
     return {
       kind: "transfer",
       ...transfer,
+    };
+  }
+
+  const marketplaceTransfer = parseIdMarketplaceTransferPayload(payload, network);
+  if (marketplaceTransfer) {
+    return {
+      kind: "marketTransfer",
+      ...marketplaceTransfer,
     };
   }
 
@@ -875,6 +1043,22 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
       ];
     }
 
+    if (eventMessage.kind === "marketTransfer") {
+      return [
+        {
+          ...baseEvent,
+          id: eventMessage.id,
+          kind: "marketTransfer",
+          ownerAddress: eventMessage.ownerAddress,
+          priceSats: eventMessage.priceSats,
+          receiveAddress: eventMessage.receiveAddress,
+          saleAuthorization: eventMessage.saleAuthorization,
+          sellerAddress: eventMessage.sellerAddress,
+          sellerPaymentSats: paymentAmountBeforeIdProtocol(vout, eventMessage.sellerAddress),
+        },
+      ];
+    }
+
     return [
       {
         ...baseEvent,
@@ -916,7 +1100,32 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
       continue;
     }
 
-    if (!current || !event.inputAddresses.includes(current.ownerAddress)) {
+    if (!current) {
+      continue;
+    }
+
+    if (event.kind === "marketTransfer") {
+      if (
+        current.ownerAddress !== event.sellerAddress ||
+        event.sellerPaymentSats < event.priceSats ||
+        saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+        !saleAuthorizationVerified(event.saleAuthorization)
+      ) {
+        continue;
+      }
+
+      records.set(event.id, {
+        ...current,
+        amountSats: event.amountSats,
+        createdAt: event.createdAt,
+        ownerAddress: event.ownerAddress,
+        receiveAddress: event.receiveAddress,
+        txid: event.txid,
+      });
+      continue;
+    }
+
+    if (!event.inputAddresses.includes(current.ownerAddress)) {
       continue;
     }
 

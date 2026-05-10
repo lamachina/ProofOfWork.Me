@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",
+    "bip322-js": "^3.0.0",
     "bitcoinjs-lib": "^7.0.1",
     "buffer": "^6.0.3",
     "lucide-react": "^1.14.0",

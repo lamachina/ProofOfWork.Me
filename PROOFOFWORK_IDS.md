@@ -14,6 +14,7 @@ Do not change these without an explicit migration plan:
 - Registration event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
 - Receiver update event: `pwid1:u:<id-base64url>:<receive-address>`
 - Transfer event: `pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>`
+- Buyer-funded marketplace transfer event: `pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-address?>`
 - Resolver rule: first confirmed valid registration wins
 - Casing rule: IDs are case-insensitive forever
 - Pending rule: pending IDs are visible but not final, and mail must not route to them
@@ -26,6 +27,7 @@ Implementation anchors in `src/App.tsx`:
 - `buildIdRegistrationPayload`
 - `buildIdReceiverUpdatePayload`
 - `buildIdTransferPayload`
+- `buildIdMarketplaceTransferPayload`
 - `parseIdEventPayload`
 - `parseIdRegistrationPayload`
 - `idRecordsFromTransactions`
@@ -46,6 +48,7 @@ They are not traditional DNS records. They are on-chain mail IDs resolved by the
 - First valid registration wins.
 - Registration requires a 1,000 sat payment to the canonical registry address.
 - Transfers update the current owner/receiver.
+- Marketplace transfers let a seller sign sale terms off-chain while the buyer funds the on-chain registry event.
 - Future messages resolve to the current receiver.
 - The app resolves IDs by scanning registry history and applying valid events in chain order.
 - All registry mutations use the same canonical registry address and pay the registry fee.
@@ -117,6 +120,7 @@ Current mutation payloads:
 ```text
 pwid1:u:<id-base64url>:<receive-address>
 pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>
+pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-address?>
 ```
 
 Rules:
@@ -128,6 +132,12 @@ Rules:
 - Receiver updates and transfers must be paid from the current owner address, because the resolver verifies the current owner appears in the transaction inputs.
 - `pwid1:u` changes only the receive address. The owner remains unchanged.
 - `pwid1:t` changes ownership. If the new receive address is omitted, the new owner address also becomes the receive address.
+- `pwid1:buy2` changes ownership using an off-chain signed sale authorization from the current owner. The buyer can fund the transaction, so the seller does not need spendable sats.
+- A `buy2` transaction must pay the registry fee before the ID OP_RETURN and must also pay the signed sale price to the current owner before the ID OP_RETURN.
+- A `buy2` sale authorization uses JSON version `pwid-sale-v1` and is base64url encoded inside the OP_RETURN payload.
+- The sale authorization signs canonical text with the ID, seller address, price, optional buyer lock, optional receive-address lock, nonce, and optional expiry.
+- The resolver applies `buy2` only when the signature verifies for the current owner, the current owner still matches the seller, and the buyer/receiver constraints match the event.
+- Sale authorizations are off-chain bearer objects. Anyone holding an open authorization can execute it by paying the signed price and registry fee.
 - IDs are case-insensitive forever. `User`, `user`, and `USER` all resolve to `user`.
 - The app normalizes IDs to lowercase for writing, display, lookup, and first-claim comparisons.
 - There is no arbitrary app-level ID length or character whitelist.
@@ -166,7 +176,7 @@ The chain remains canonical:
 
 Everything below this point is future planning. It must not silently change Phase 1 behavior.
 
-The metaprotocol should be marketplace-ready from the start, even if marketplace UI comes later.
+The metaprotocol is marketplace-ready from the start.
 
 Possible registry events:
 
@@ -174,6 +184,7 @@ Possible registry events:
 pwid1:r2:<id-base64url>:<owner>:<receiver>:<pgp-public-key-base64url?>
 pwid1:u:<id-base64url>:<receiver>
 pwid1:t:<id-base64url>:<new-owner>:<new-receiver?>
+pwid1:buy2:<sale-authorization-json-base64url>:<new-owner>:<new-receiver?>
 pwid1:k:<id-base64url>:<pgp-public-key-base64url>
 pwid1:list:<id-base64url>:<price>:<currency>
 pwid1:unlist:<id-base64url>
@@ -188,7 +199,8 @@ Rules to preserve:
 - All event ID fields should be base64url encoded and normalized case-insensitively by resolvers.
 - `r2` is valid only if the ID is unclaimed.
 - `u`, `t`, `k`, `list`, `unlist`, and `accept` are valid only from the current owner.
-- `u` and `t` are live registry events. Marketplace events are future-planned.
+- `u`, `t`, and `buy2` are live registry events.
+- `buy2` is valid only with a current-owner sale authorization and matching seller payment.
 - `buy` is valid only against an active listing.
 - Marketplace events should be verifiable from chain history.
 - The resolver should expose both current owner and current receiver.
@@ -199,6 +211,8 @@ IDs should behave like transferable assets.
 
 - Owners can list IDs for sale.
 - Buyers can purchase listed IDs.
+- Seller-funded direct transfers use `pwid1:t`.
+- Buyer-funded purchases use `pwid1:buy2` plus a signed `pwid-sale-v1` authorization.
 - Bidders can place offers.
 - Owners can accept bids.
 - Owners can unlist IDs.

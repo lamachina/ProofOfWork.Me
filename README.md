@@ -107,7 +107,7 @@ Launch invariants for future developers/agents:
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
-- Lets current ID owners create off-chain signed listing authorizations so buyers can fund marketplace-style ID transfers.
+- Lets current ID owners publish on-chain marketplace listings, delist them, and execute buyer-funded ID transfers.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
@@ -136,6 +136,7 @@ https://proofofwork.me/api/*
 https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
+https://marketplace.proofofwork.me/api/*
 ```
 
 Current production behavior:
@@ -208,11 +209,14 @@ ID owners can mutate confirmed IDs through the same canonical registry address:
 ```text
 pwid1:u:<id-base64url>:<receive-address>
 pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>
+pwid1:list2:<sale-authorization-json-base64url>
+pwid1:delist2:<listing-txid>
 pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-address?>
 ```
 
 `pwid1:r2` registrations require a 1,000 sat registry payment. `pwid1:u` and `pwid1:t` require a 546 sat mutation payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
-`pwid1:buy2` is the buyer-funded marketplace path: the seller signs a `pwid-sale-v1` authorization off-chain, and the buyer funds both the 546 sat mutation payment and the signed seller payment in one transaction. The resolver accepts it only if the current owner signature, seller payment, optional buyer lock, and optional receive-address lock all match.
+`pwid1:list2` publishes an on-chain marketplace listing for a signed `pwid-sale-v1` sale authorization. `pwid1:delist2` cancels a listing by txid. Both require a 546 sat mutation payment and must be spent from the current owner address. Any confirmed ownership transfer invalidates active listings for that ID.
+`pwid1:buy2` is the buyer-funded marketplace path: the buyer funds both the 546 sat mutation payment and the signed seller payment in one transaction. The resolver accepts it only if the current owner signature, seller payment, optional buyer lock, optional receive-address lock, and current ownership all match.
 
 ## Run
 

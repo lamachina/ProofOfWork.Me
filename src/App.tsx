@@ -242,6 +242,22 @@ type PowIdRecord = {
   createdAt: string;
 };
 
+type PowIdListing = {
+  amountSats: number;
+  buyerAddress?: string;
+  confirmed: boolean;
+  createdAt: string;
+  expiresAt?: string;
+  id: string;
+  listingId: string;
+  network: BitcoinNetwork;
+  priceSats: number;
+  receiveAddress?: string;
+  saleAuthorization: PowIdSaleAuthorization;
+  sellerAddress: string;
+  txid: string;
+};
+
 type PowIdSaleAuthorizationDraft = {
   buyerAddress?: string;
   expiresAt?: string;
@@ -308,6 +324,29 @@ type PowIdEvent =
       saleAuthorization: PowIdSaleAuthorization;
       sellerAddress: string;
       sellerPaymentSats: number;
+      txid: string;
+    }
+  | {
+      amountSats: number;
+      confirmed: boolean;
+      createdAt: string;
+      id: string;
+      inputAddresses: string[];
+      kind: "list";
+      network: BitcoinNetwork;
+      priceSats: number;
+      saleAuthorization: PowIdSaleAuthorization;
+      sellerAddress: string;
+      txid: string;
+    }
+  | {
+      amountSats: number;
+      confirmed: boolean;
+      createdAt: string;
+      inputAddresses: string[];
+      kind: "delist";
+      listingId: string;
+      network: BitcoinNetwork;
       txid: string;
     };
 
@@ -386,6 +425,7 @@ type PaymentOutputSpec = {
 };
 
 type PowRegistryApiResponse = {
+  listings?: PowIdListing[];
   records?: PowIdRecord[];
 };
 
@@ -1826,6 +1866,14 @@ function buildIdMarketplaceTransferPayload(authorization: PowIdSaleAuthorization
   return `${ID_PROTOCOL_PREFIX}buy2:${encodeTextBase64Url(JSON.stringify(authorization))}:${ownerAddress}${receiver ? `:${receiver}` : ""}`;
 }
 
+function buildIdListingPayload(authorization: PowIdSaleAuthorization) {
+  return `${ID_PROTOCOL_PREFIX}list2:${encodeTextBase64Url(JSON.stringify(authorization))}`;
+}
+
+function buildIdDelistingPayload(listingId: string) {
+  return `${ID_PROTOCOL_PREFIX}delist2:${listingId}`;
+}
+
 function protocolOutputScripts(payloads: string[]) {
   const scripts = payloads.map((payload) => {
     const script = opReturnScriptForPayload(payload);
@@ -2671,7 +2719,7 @@ function registryPaymentAmount(vout: Array<Record<string, unknown>>, registryAdd
   }, 0);
 }
 
-function idEventMinimumPaymentSats(kind: "register" | "update" | "transfer" | "marketTransfer") {
+function idEventMinimumPaymentSats(kind: "register" | "update" | "transfer" | "marketTransfer" | "list" | "delist") {
   return kind === "register" ? ID_REGISTRATION_PRICE_SATS : ID_MUTATION_PRICE_SATS;
 }
 
@@ -2858,6 +2906,47 @@ function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: Bitco
   };
 }
 
+function parseIdListingPayload(payload: string, targetNetwork: BitcoinNetwork) {
+  if (!payload.startsWith("list2:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const [, authorizationEncoded] = parts;
+  let authorization: PowIdSaleAuthorization;
+  try {
+    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), targetNetwork);
+  } catch {
+    return null;
+  }
+
+  return {
+    id: authorization.id,
+    priceSats: authorization.priceSats,
+    saleAuthorization: authorization,
+    sellerAddress: authorization.sellerAddress,
+  };
+}
+
+function parseIdDelistingPayload(payload: string) {
+  if (!payload.startsWith("delist2:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length !== 2 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
+    return null;
+  }
+
+  return {
+    listingId: parts[1].toLowerCase(),
+  };
+}
+
 function parseIdEventPayload(payload: string, targetNetwork: BitcoinNetwork) {
   const registration = parseIdRegistrationPayload(payload, targetNetwork);
   if (registration) {
@@ -2888,6 +2977,22 @@ function parseIdEventPayload(payload: string, targetNetwork: BitcoinNetwork) {
     return {
       kind: "marketTransfer" as const,
       ...marketplaceTransfer,
+    };
+  }
+
+  const listing = parseIdListingPayload(payload, targetNetwork);
+  if (listing) {
+    return {
+      kind: "list" as const,
+      ...listing,
+    };
+  }
+
+  const delisting = parseIdDelistingPayload(payload);
+  if (delisting) {
+    return {
+      kind: "delist" as const,
+      ...delisting,
     };
   }
 
@@ -3099,11 +3204,11 @@ function publicDesktopMail(inboxMessages: InboxMessage[], sentMessages: SentMess
   ];
 }
 
-function idRecordsFromTransactions(
+function idRegistryStateFromTransactions(
   txs: Array<Record<string, unknown>>,
   registryAddress: string,
   targetNetwork: BitcoinNetwork,
-): PowIdRecord[] {
+): { listings: PowIdListing[]; records: PowIdRecord[] } {
   const events = txs.flatMap((tx): PowIdEvent[] => {
     const vin = Array.isArray(tx.vin) ? (tx.vin as Array<Record<string, unknown>>) : [];
     const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
@@ -3178,6 +3283,29 @@ function idRecordsFromTransactions(
       ];
     }
 
+    if (eventMessage.kind === "list") {
+      return [
+        {
+          ...baseEvent,
+          id: eventMessage.id,
+          kind: "list",
+          priceSats: eventMessage.priceSats,
+          saleAuthorization: eventMessage.saleAuthorization,
+          sellerAddress: eventMessage.sellerAddress,
+        },
+      ];
+    }
+
+    if (eventMessage.kind === "delist") {
+      return [
+        {
+          ...baseEvent,
+          kind: "delist",
+          listingId: eventMessage.listingId,
+        },
+      ];
+    }
+
     return [
       {
         ...baseEvent,
@@ -3196,11 +3324,19 @@ function idRecordsFromTransactions(
     .filter((event): event is Extract<PowIdEvent, { kind: "register" }> => !event.confirmed && event.kind === "register")
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
   const records = new Map<string, PowIdRecord>();
+  const listings = new Map<string, PowIdListing>();
+
+  function invalidateListingsForId(id: string) {
+    for (const [listingId, listing] of listings) {
+      if (listing.id === id) {
+        listings.delete(listingId);
+      }
+    }
+  }
 
   for (const event of confirmedEvents) {
-    const current = records.get(event.id);
-
     if (event.kind === "register") {
+      const current = records.get(event.id);
       if (current) {
         continue;
       }
@@ -3219,6 +3355,16 @@ function idRecordsFromTransactions(
       continue;
     }
 
+    if (event.kind === "delist") {
+      const listing = listings.get(event.listingId);
+      const current = listing ? records.get(listing.id) : undefined;
+      if (listing && current && event.inputAddresses.includes(current.ownerAddress)) {
+        listings.delete(event.listingId);
+      }
+      continue;
+    }
+
+    const current = records.get(event.id);
     if (!current) {
       continue;
     }
@@ -3239,6 +3385,36 @@ function idRecordsFromTransactions(
         createdAt: event.createdAt,
         ownerAddress: event.ownerAddress,
         receiveAddress: event.receiveAddress,
+        txid: event.txid,
+      });
+      invalidateListingsForId(event.id);
+      continue;
+    }
+
+    if (event.kind === "list") {
+      if (
+        current.ownerAddress !== event.sellerAddress ||
+        !event.inputAddresses.includes(current.ownerAddress) ||
+        saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+        !saleAuthorizationCanBroadcast(event.saleAuthorization) ||
+        !saleAuthorizationVerified(event.saleAuthorization)
+      ) {
+        continue;
+      }
+
+      listings.set(event.txid, {
+        amountSats: event.amountSats,
+        buyerAddress: event.saleAuthorization.buyerAddress,
+        confirmed: true,
+        createdAt: event.createdAt,
+        expiresAt: event.saleAuthorization.expiresAt,
+        id: event.id,
+        listingId: event.txid,
+        network: event.network,
+        priceSats: event.priceSats,
+        receiveAddress: event.saleAuthorization.receiveAddress,
+        saleAuthorization: event.saleAuthorization,
+        sellerAddress: event.sellerAddress,
         txid: event.txid,
       });
       continue;
@@ -3267,6 +3443,7 @@ function idRecordsFromTransactions(
       receiveAddress: event.receiveAddress,
       txid: event.txid,
     });
+    invalidateListingsForId(event.id);
   }
 
   const accepted = [...records.values()];
@@ -3287,22 +3464,48 @@ function idRecordsFromTransactions(
     }
   }
 
-  return accepted;
+  return {
+    listings: [...listings.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid)),
+    records: accepted,
+  };
+}
+
+function idRecordsFromTransactions(
+  txs: Array<Record<string, unknown>>,
+  registryAddress: string,
+  targetNetwork: BitcoinNetwork,
+): PowIdRecord[] {
+  return idRegistryStateFromTransactions(txs, registryAddress, targetNetwork).records;
+}
+
+function idListingsFromTransactions(
+  txs: Array<Record<string, unknown>>,
+  registryAddress: string,
+  targetNetwork: BitcoinNetwork,
+): PowIdListing[] {
+  return idRegistryStateFromTransactions(txs, registryAddress, targetNetwork).listings;
 }
 
 async function fetchIdRegistry(targetNetwork: BitcoinNetwork): Promise<PowIdRecord[]> {
+  return (await fetchIdRegistryState(targetNetwork)).records;
+}
+
+async function fetchIdRegistryState(targetNetwork: BitcoinNetwork): Promise<{ listings: PowIdListing[]; records: PowIdRecord[] }> {
   const registryAddress = registryAddressForNetwork(targetNetwork);
   if (!registryAddress) {
-    return [];
+    return { listings: [], records: [] };
   }
 
   if (POW_API_BASE) {
     const payload = await fetchProofApiJson<PowRegistryApiResponse>("/api/v1/registry", targetNetwork);
-    return Array.isArray(payload.records) ? payload.records : [];
+    return {
+      listings: Array.isArray(payload.listings) ? payload.listings : [],
+      records: Array.isArray(payload.records) ? payload.records : [],
+    };
   }
 
   const txs = await fetchRegistryTransactions(registryAddress, targetNetwork);
-  return idRecordsFromTransactions(txs, registryAddress, targetNetwork);
+  return idRegistryStateFromTransactions(txs, registryAddress, targetNetwork);
 }
 
 async function fetchUtxos(ownerAddress: string, ownerNetwork: BitcoinNetwork): Promise<MempoolUtxo[]> {
@@ -3698,6 +3901,7 @@ export default function App() {
   const [allSent, setAllSent] = useState<SentMessage[]>(() => loadSentMessages());
   const [chainSent, setChainSent] = useState<SentMessage[]>([]);
   const [idRegistry, setIdRegistry] = useState<PowIdRecord[]>([]);
+  const [idListings, setIdListings] = useState<PowIdListing[]>([]);
   const [lastRegisteredId, setLastRegisteredId] = useState<PowIdRecord | undefined>();
   const [idName, setIdName] = useState("");
   const [idReceiveAddress, setIdReceiveAddress] = useState("");
@@ -4166,7 +4370,7 @@ export default function App() {
   }, [address, amountSats, attachment, ccRecipient, composeOpen, feeRate, memo, network, recipient, replyParentTxid, subject]);
 
   useEffect(() => {
-    if (activeFolder === "ids") {
+    if (activeFolder === "ids" || activeFolder === "marketplace") {
       void refreshIds(true);
     }
   }, [activeFolder, network]);
@@ -4960,6 +5164,7 @@ export default function App() {
   async function refreshIds(silent = false) {
     if (!registryAddress) {
       setIdRegistry([]);
+      setIdListings([]);
       if (!silent) {
         setStatus({ tone: "idle", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
       }
@@ -4972,11 +5177,12 @@ export default function App() {
     }
 
     try {
-      const records = await fetchIdRegistry(network);
-      setIdRegistry(records);
+      const state = await fetchIdRegistryState(network);
+      setIdRegistry(state.records);
+      setIdListings(state.listings);
       if (!silent) {
-        const confirmed = records.filter((record) => record.confirmed).length;
-        const pending = records.length - confirmed;
+        const confirmed = state.records.filter((record) => record.confirmed).length;
+        const pending = state.records.length - confirmed;
         setStatus({ tone: "good", text: `ID registry loaded. ${confirmed} confirmed, ${pending} pending.` });
       }
     } catch (error) {
@@ -5193,71 +5399,73 @@ export default function App() {
       : new Error("Wallet could not sign the sale authorization.");
   }
 
+  async function prepareIdSaleAuthorization() {
+    if (!window.unisat) {
+      throw new Error("Connect UniSat first.");
+    }
+
+    if (!managedIdRecord) {
+      throw new Error("Choose one of your confirmed IDs first.");
+    }
+
+    if (managedIdRecord.ownerAddress !== address) {
+      throw new Error("Only the current owner can create a listing authorization.");
+    }
+
+    if (!Number.isSafeInteger(salePriceSats) || salePriceSats < 0) {
+      throw new Error("Sale price must be zero or more sats.");
+    }
+
+    if (saleBuyerAddress && !isValidBitcoinAddress(saleBuyerAddress, network)) {
+      throw new Error("Specific buyer address is not valid for the selected network.");
+    }
+
+    if (saleReceiveAddress && !isValidBitcoinAddress(saleReceiveAddress, network)) {
+      throw new Error("Locked receive address is not valid for the selected network.");
+    }
+
+    const latestState = await fetchIdRegistryState(network);
+    setIdRegistry(latestState.records);
+    setIdListings(latestState.listings);
+    const latestRecord = latestState.records.find((record) => record.network === network && record.id === managedIdRecord.id && record.confirmed);
+
+    if (!latestRecord) {
+      throw new Error(`${managedIdRecord.id}@proofofwork.me is not confirmed yet.`);
+    }
+
+    if (latestRecord.ownerAddress !== address) {
+      throw new Error(`${managedIdRecord.id}@proofofwork.me is owned by ${shortAddress(latestRecord.ownerAddress)}.`);
+    }
+
+    const currentNetwork = await getWalletNetwork(window.unisat);
+    if (currentNetwork !== network) {
+      await switchWalletNetwork(window.unisat, network);
+    }
+
+    const draft = saleAuthorizationDraft({
+      buyerAddress: saleBuyerAddress,
+      id: latestRecord.id,
+      nonce: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`,
+      priceSats: salePriceSats,
+      receiveAddress: saleReceiveAddress,
+      sellerAddress: latestRecord.ownerAddress,
+    });
+
+    setStatus({ tone: "idle", text: `Signing listing authorization for ${latestRecord.id}@proofofwork.me...` });
+    return signSaleAuthorization(window.unisat, draft);
+  }
+
   async function createIdSaleAuthorization() {
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
       return;
     }
 
-    if (!managedIdRecord) {
-      setStatus({ tone: "bad", text: "Choose one of your confirmed IDs first." });
-      return;
-    }
-
-    if (managedIdRecord.ownerAddress !== address) {
-      setStatus({ tone: "bad", text: "Only the current owner can create a listing authorization." });
-      return;
-    }
-
-    if (!Number.isSafeInteger(salePriceSats) || salePriceSats < 0) {
-      setStatus({ tone: "bad", text: "Sale price must be zero or more sats." });
-      return;
-    }
-
-    if (saleBuyerAddress && !isValidBitcoinAddress(saleBuyerAddress, network)) {
-      setStatus({ tone: "bad", text: "Specific buyer address is not valid for the selected network." });
-      return;
-    }
-
-    if (saleReceiveAddress && !isValidBitcoinAddress(saleReceiveAddress, network)) {
-      setStatus({ tone: "bad", text: "Locked receive address is not valid for the selected network." });
-      return;
-    }
-
     setBusy(true);
-    setStatus({ tone: "idle", text: `Checking current owner for ${managedIdRecord.id}@proofofwork.me...` });
+    setStatus({ tone: "idle", text: `Checking current owner for ${managedIdRecord?.id ?? "ID"}...` });
 
     try {
-      const latestRegistry = await fetchIdRegistry(network);
-      setIdRegistry(latestRegistry);
-      const latestRecord = latestRegistry.find((record) => record.network === network && record.id === managedIdRecord.id && record.confirmed);
-
-      if (!latestRecord) {
-        setStatus({ tone: "bad", text: `${managedIdRecord.id}@proofofwork.me is not confirmed yet.` });
-        return;
-      }
-
-      if (latestRecord.ownerAddress !== address) {
-        setStatus({ tone: "bad", text: `${managedIdRecord.id}@proofofwork.me is owned by ${shortAddress(latestRecord.ownerAddress)}.` });
-        return;
-      }
-
-      const currentNetwork = await getWalletNetwork(window.unisat);
-      if (currentNetwork !== network) {
-        await switchWalletNetwork(window.unisat, network);
-      }
-
-      const draft = saleAuthorizationDraft({
-        buyerAddress: saleBuyerAddress,
-        id: latestRecord.id,
-        nonce: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`,
-        priceSats: salePriceSats,
-        receiveAddress: saleReceiveAddress,
-        sellerAddress: latestRecord.ownerAddress,
-      });
-
-      setStatus({ tone: "idle", text: `Signing listing authorization for ${latestRecord.id}@proofofwork.me...` });
-      const authorization = await signSaleAuthorization(window.unisat, draft);
+      const authorization = await prepareIdSaleAuthorization();
       setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
       setStatus({
         tone: "good",
@@ -5268,6 +5476,74 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function publishIdListing() {
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!registryAddress) {
+      setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+      return;
+    }
+
+    setBusy(true);
+    setStatus({ tone: "idle", text: `Checking current owner for ${managedIdRecord?.id ?? "ID"}...` });
+
+    try {
+      const authorization = await prepareIdSaleAuthorization();
+      const payload = buildIdListingPayload(authorization);
+      if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
+        setStatus({ tone: "bad", text: "ID listing OP_RETURN is over 100 KB." });
+        return;
+      }
+
+      setStatus({ tone: "idle", text: `Publishing listing for ${authorization.id}@proofofwork.me...` });
+      const paymentPsbt = await buildPaymentPsbt({
+        amountSats: ID_MUTATION_PRICE_SATS,
+        feeRate,
+        fromAddress: address,
+        network,
+        protocolPayloads: [payload],
+        toAddress: registryAddress,
+      });
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network,
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+
+      setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
+      setStatus({ tone: "good", text: `${authorization.id}@proofofwork.me listing broadcast: ${shortAddress(txid)}.` });
+      await refreshIds(true);
+    } catch (error) {
+      setStatus({ tone: "bad", text: errorMessage(error, "ID listing failed.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function delistIdListing(listing: PowIdListing) {
+    if (!registryAddress) {
+      setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+      return;
+    }
+
+    if (listing.sellerAddress !== address) {
+      setStatus({ tone: "bad", text: "Only the current listing seller can delist this ID." });
+      return;
+    }
+
+    await broadcastIdMutation({
+      expectedOwner: listing.sellerAddress,
+      id: listing.id,
+      payload: buildIdDelistingPayload(listing.listingId),
+      successText: `Delisting for ${listing.id}@proofofwork.me`,
+    });
   }
 
   async function purchaseId(event: FormEvent<HTMLFormElement>) {
@@ -5335,9 +5611,10 @@ export default function App() {
     setStatus({ tone: "idle", text: `Checking ${authorization.id}@proofofwork.me listing authorization...` });
 
     try {
-      const latestRegistry = await fetchIdRegistry(network);
-      setIdRegistry(latestRegistry);
-      const latestRecord = latestRegistry.find((record) => record.network === network && record.id === authorization.id && record.confirmed);
+      const latestState = await fetchIdRegistryState(network);
+      setIdRegistry(latestState.records);
+      setIdListings(latestState.listings);
+      const latestRecord = latestState.records.find((record) => record.network === network && record.id === authorization.id && record.confirmed);
 
       if (!latestRecord) {
         setStatus({ tone: "bad", text: `${authorization.id}@proofofwork.me is not confirmed yet.` });
@@ -5702,6 +5979,7 @@ export default function App() {
         canPurchaseId={canPurchaseId}
         connectWallet={connectWallet}
         createSaleAuthorization={createIdSaleAuthorization}
+        delistListing={delistIdListing}
         disconnectWallet={disconnectWallet}
         hasUnisat={hasUnisat}
         idPurchaseBytes={idPurchaseBytes}
@@ -5712,7 +5990,9 @@ export default function App() {
         idSalePriceSats={idSalePriceSats}
         idSaleReceiveAddress={idSaleReceiveAddress}
         managedIdName={managedIdRecord?.id ?? ""}
+        publishListing={publishIdListing}
         registryAddress={registryAddressForNetwork("livenet")}
+        registryListings={idListings.filter((listing) => listing.network === "livenet")}
         registryRecords={idRegistry.filter((record) => record.network === "livenet")}
         setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
         setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
@@ -5728,6 +6008,11 @@ export default function App() {
         status={status}
         submitPurchase={purchaseId}
         theme={theme}
+        useListing={(listing) => {
+          setIdSaleAuthorization(JSON.stringify(listing.saleAuthorization, null, 2));
+          setIdPurchaseOwnerAddress(address);
+          setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
+        }}
         onRefresh={() => void refreshIds()}
       />
     );
@@ -6076,6 +6361,7 @@ export default function App() {
             canCreateSaleAuthorization={canCreateSaleAuthorization}
             canPurchaseId={canPurchaseId}
             createSaleAuthorization={createIdSaleAuthorization}
+            delistListing={delistIdListing}
             idPurchaseBytes={idPurchaseBytes}
             idPurchaseOwnerAddress={idPurchaseOwnerAddress}
             idPurchaseReceiveAddress={idPurchaseReceiveAddress}
@@ -6085,7 +6371,9 @@ export default function App() {
             idSaleReceiveAddress={idSaleReceiveAddress}
             managedIdName={managedIdName}
             network={network}
+            publishListing={publishIdListing}
             registryAddress={registryAddress}
+            registryListings={idListings}
             registryRecords={idRegistry}
             setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
             setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
@@ -6095,6 +6383,11 @@ export default function App() {
             setIdSaleReceiveAddress={setIdSaleReceiveAddress}
             setManagedIdName={setManagedIdName}
             submitPurchase={purchaseId}
+            useListing={(listing) => {
+              setIdSaleAuthorization(JSON.stringify(listing.saleAuthorization, null, 2));
+              setIdPurchaseOwnerAddress(address);
+              setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
+            }}
             onRefresh={() => void refreshIds()}
           />
         ) : activeFolder === "contacts" ? (
@@ -6950,6 +7243,7 @@ function MarketplaceApp({
   canPurchaseId,
   connectWallet,
   createSaleAuthorization,
+  delistListing,
   disconnectWallet,
   hasUnisat,
   idPurchaseBytes,
@@ -6960,7 +7254,9 @@ function MarketplaceApp({
   idSalePriceSats,
   idSaleReceiveAddress,
   managedIdName,
+  publishListing,
   registryAddress,
+  registryListings,
   registryRecords,
   setIdPurchaseOwnerAddress,
   setIdPurchaseReceiveAddress,
@@ -6973,6 +7269,7 @@ function MarketplaceApp({
   status,
   submitPurchase,
   theme,
+  useListing,
   onRefresh,
 }: {
   address: string;
@@ -6981,6 +7278,7 @@ function MarketplaceApp({
   canPurchaseId: boolean;
   connectWallet: () => void;
   createSaleAuthorization: () => void;
+  delistListing: (listing: PowIdListing) => void;
   disconnectWallet: () => void;
   hasUnisat: boolean;
   idPurchaseBytes: number;
@@ -6991,7 +7289,9 @@ function MarketplaceApp({
   idSalePriceSats: number;
   idSaleReceiveAddress: string;
   managedIdName: string;
+  publishListing: () => void;
   registryAddress: string;
+  registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   setIdPurchaseOwnerAddress: (value: string) => void;
   setIdPurchaseReceiveAddress: (value: string) => void;
@@ -7004,6 +7304,7 @@ function MarketplaceApp({
   status: { tone: StatusTone; text: string };
   submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
   theme: ThemeMode;
+  useListing: (listing: PowIdListing) => void;
   onRefresh: () => void;
 }) {
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
@@ -7110,7 +7411,7 @@ function MarketplaceApp({
               </div>
               <div>
                 <h3>List an ID</h3>
-                <p>Create an off-chain signed listing authorization for one of your confirmed IDs.</p>
+                <p>Publish an on-chain listing for one of your confirmed IDs. Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.</p>
               </div>
             </div>
 
@@ -7144,7 +7445,7 @@ function MarketplaceApp({
                     </div>
                   </dl>
                 ) : null}
-                <p className="field-note">The signed listing can be shared publicly. The buyer can execute it without the seller spending more sats.</p>
+                <p className="field-note">The published listing includes signed sale terms. Delisting costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and transfers invalidate old listings.</p>
               </>
             )}
           </section>
@@ -7163,6 +7464,7 @@ function MarketplaceApp({
             idSaleReceiveAddress={idSaleReceiveAddress}
             managedId={managedId}
             network="livenet"
+            publishListing={publishListing}
             setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
             setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
             setIdSaleAuthorization={setIdSaleAuthorization}
@@ -7170,6 +7472,13 @@ function MarketplaceApp({
             setIdSalePriceSats={setIdSalePriceSats}
             setIdSaleReceiveAddress={setIdSaleReceiveAddress}
             submitPurchase={submitPurchase}
+          />
+
+          <MarketplaceListingList
+            address={address}
+            listings={registryListings}
+            onDelist={delistListing}
+            onUse={useListing}
           />
 
           <section className="id-card ids-registry-card">
@@ -7198,6 +7507,7 @@ function MarketplaceWorkspace({
   canCreateSaleAuthorization,
   canPurchaseId,
   createSaleAuthorization,
+  delistListing,
   idPurchaseBytes,
   idPurchaseOwnerAddress,
   idPurchaseReceiveAddress,
@@ -7207,7 +7517,9 @@ function MarketplaceWorkspace({
   idSaleReceiveAddress,
   managedIdName,
   network,
+  publishListing,
   registryAddress,
+  registryListings,
   registryRecords,
   setIdPurchaseOwnerAddress,
   setIdPurchaseReceiveAddress,
@@ -7217,6 +7529,7 @@ function MarketplaceWorkspace({
   setIdSaleReceiveAddress,
   setManagedIdName,
   submitPurchase,
+  useListing,
   onRefresh,
 }: {
   address: string;
@@ -7224,6 +7537,7 @@ function MarketplaceWorkspace({
   canCreateSaleAuthorization: boolean;
   canPurchaseId: boolean;
   createSaleAuthorization: () => void;
+  delistListing: (listing: PowIdListing) => void;
   idPurchaseBytes: number;
   idPurchaseOwnerAddress: string;
   idPurchaseReceiveAddress: string;
@@ -7233,7 +7547,9 @@ function MarketplaceWorkspace({
   idSaleReceiveAddress: string;
   managedIdName: string;
   network: BitcoinNetwork;
+  publishListing: () => void;
   registryAddress: string;
+  registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   setIdPurchaseOwnerAddress: (value: string) => void;
   setIdPurchaseReceiveAddress: (value: string) => void;
@@ -7243,6 +7559,7 @@ function MarketplaceWorkspace({
   setIdSaleReceiveAddress: (value: string) => void;
   setManagedIdName: (value: string) => void;
   submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
+  useListing: (listing: PowIdListing) => void;
   onRefresh: () => void;
 }) {
   const confirmedRecords = registryRecords.filter((record) => record.network === network && record.confirmed);
@@ -7277,7 +7594,7 @@ function MarketplaceWorkspace({
             </div>
             <div>
               <h3>List an ID</h3>
-              <p>Create an off-chain signed listing authorization for one of your confirmed IDs.</p>
+              <p>Publish an on-chain listing for one of your confirmed IDs. Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.</p>
             </div>
           </div>
 
@@ -7312,7 +7629,7 @@ function MarketplaceWorkspace({
                 </dl>
               ) : null}
               <p className="field-note">
-                Listings are signed locally. Buyers pay the seller plus the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.
+                The published listing includes signed sale terms. Delisting costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and transfers invalidate old listings.
               </p>
             </>
           )}
@@ -7332,6 +7649,7 @@ function MarketplaceWorkspace({
           idSaleReceiveAddress={idSaleReceiveAddress}
           managedId={managedId}
           network={network}
+          publishListing={publishListing}
           setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
           setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
           setIdSaleAuthorization={setIdSaleAuthorization}
@@ -7339,6 +7657,13 @@ function MarketplaceWorkspace({
           setIdSalePriceSats={setIdSalePriceSats}
           setIdSaleReceiveAddress={setIdSaleReceiveAddress}
           submitPurchase={submitPurchase}
+        />
+
+        <MarketplaceListingList
+          address={address}
+          listings={registryListings.filter((listing) => listing.network === network)}
+          onDelist={delistListing}
+          onUse={useListing}
         />
 
         <section className="id-card ids-registry-card">
@@ -7826,6 +8151,85 @@ function IdsWorkspace({
   );
 }
 
+function MarketplaceListingList({
+  address,
+  listings,
+  onDelist,
+  onUse,
+}: {
+  address: string;
+  listings: PowIdListing[];
+  onDelist: (listing: PowIdListing) => void;
+  onUse: (listing: PowIdListing) => void;
+}) {
+  return (
+    <section className="id-card ids-registry-card marketplace-listings-card">
+      <div className="id-card-head">
+        <div className="empty-icon" aria-hidden="true">
+          <Inbox size={24} />
+        </div>
+        <div>
+          <h3>Active Listings</h3>
+          <p>On-chain listings are canceled by delisting, expiry, or any ownership transfer.</p>
+        </div>
+      </div>
+
+      {listings.length === 0 ? (
+        <p className="field-note">No active on-chain listings yet.</p>
+      ) : (
+        <div className="id-record-list marketplace-listing-list">
+          {listings.map((listing) => (
+            <article className="id-record" key={listing.listingId}>
+              <div>
+                <strong>{listing.id}@proofofwork.me</strong>
+                <span>
+                  {listing.priceSats.toLocaleString()} sats · Listed {formatDate(listing.createdAt)}
+                </span>
+              </div>
+              <dl>
+                <div>
+                  <dt>Seller</dt>
+                  <dd>{shortAddress(listing.sellerAddress)}</dd>
+                </div>
+                <div>
+                  <dt>Buyer</dt>
+                  <dd>{listing.buyerAddress ? shortAddress(listing.buyerAddress) : "Any"}</dd>
+                </div>
+                <div>
+                  <dt>Listing</dt>
+                  <dd>{shortAddress(listing.listingId)}</dd>
+                </div>
+              </dl>
+              <div className="id-record-actions">
+                <button className="primary small" onClick={() => onUse(listing)} type="button">
+                  <span className="button-content">
+                    <Send size={15} />
+                    <span>Use Listing</span>
+                  </span>
+                </button>
+                {address && listing.sellerAddress === address ? (
+                  <button className="secondary small" onClick={() => onDelist(listing)} type="button">
+                    <span className="button-content">
+                      <Trash2 size={15} />
+                      <span>Delist</span>
+                    </span>
+                  </button>
+                ) : null}
+                <a className="secondary small link-button" href={mempoolTxUrl(listing.txid, listing.network)} rel="noreferrer" target="_blank">
+                  <span className="button-content">
+                    <ArrowUpRight size={15} />
+                    <span>View TX</span>
+                  </span>
+                </a>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function IdMarketplaceCard({
   busy,
   canCreateSaleAuthorization,
@@ -7840,6 +8244,7 @@ function IdMarketplaceCard({
   idSaleReceiveAddress,
   managedId,
   network,
+  publishListing,
   setIdPurchaseOwnerAddress,
   setIdPurchaseReceiveAddress,
   setIdSaleAuthorization,
@@ -7861,6 +8266,7 @@ function IdMarketplaceCard({
   idSaleReceiveAddress: string;
   managedId?: PowIdRecord;
   network: BitcoinNetwork;
+  publishListing: () => void;
   setIdPurchaseOwnerAddress: (value: string) => void;
   setIdPurchaseReceiveAddress: (value: string) => void;
   setIdSaleAuthorization: (value: string) => void;
@@ -7932,12 +8338,20 @@ function IdMarketplaceCard({
               value={idSaleReceiveAddress}
             />
           </label>
-          <button className="secondary" disabled={!canCreateSaleAuthorization} onClick={createSaleAuthorization} type="button">
-            <span className="button-content">
-              <FilePenLine size={15} />
-              <span>{busy ? "Signing" : "Create Listing"}</span>
-            </span>
-          </button>
+          <div className="id-record-actions">
+            <button className="primary" disabled={!canCreateSaleAuthorization} onClick={publishListing} type="button">
+              <span className="button-content">
+                <Send size={15} />
+                <span>{busy ? "Publishing" : "Publish Listing"}</span>
+              </span>
+            </button>
+            <button className="secondary small" disabled={!canCreateSaleAuthorization} onClick={createSaleAuthorization} type="button">
+              <span className="button-content">
+                <FilePenLine size={15} />
+                <span>Sign Only</span>
+              </span>
+            </button>
+          </div>
         </div>
 
         <form className="id-action-form" onSubmit={submitPurchase}>

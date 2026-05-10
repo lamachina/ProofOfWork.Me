@@ -9,44 +9,34 @@
 
 ## Current ID Marketplace Model
 
-The current marketplace flow uses off-chain signed listing authorizations:
+The marketplace flow uses on-chain listings backed by seller-signed sale authorizations:
 
 1. The current ID owner chooses an owned confirmed ID.
 2. The owner signs a listing authorization with price, optional buyer lock, optional receive-address lock, nonce, and optional expiry.
-3. A buyer submits the signed authorization.
-4. The buyer funds the seller payment plus the 546 sat registry transfer in one Bitcoin transaction.
-5. The indexer accepts the transfer only if the seller is still the current owner and the signature/terms validate.
+3. The owner publishes that authorization in a `pwid1:list2` registry transaction that pays the 546 sat mutation fee.
+4. The listing txid becomes the listing ID.
+5. A buyer can use the listing to fund the seller payment plus the 546 sat registry transfer in one `pwid1:buy2` transaction.
+6. The indexer accepts the transfer only if the seller is still the current owner and the signature/terms validate.
 
-This is good for early trading because the seller does not need to broadcast a listing transaction.
+The app can still produce a "Sign Only" authorization for manual sharing, but the canonical marketplace book is the on-chain `list2` event stream.
 
 ## Delistings
 
-With off-chain listings, the simplest delisting is to stop publishing the signed authorization. That is not enough once a listing JSON has been shared publicly, because an old signed authorization may still be usable if:
-
-- the seller still owns the ID,
-- the authorization has not expired,
-- and the buyer satisfies the signed terms.
-
-Near-term rule:
-
-- Listings should use expiries.
-- Owners can invalidate all old listings by transferring the ID or changing marketplace rules in a future protocol version.
-
-Long-term rule:
-
-- Add paid on-chain listing and delisting events.
-- A listing event publishes a canonical listing ID.
-- A delisting event cancels that listing ID.
-- Any ownership transfer automatically invalidates active listings for that asset.
-
-Suggested future events:
+Delistings are also on-chain registry events:
 
 ```text
-pwid1:list2:<asset-json-base64url>
+pwid1:list2:<sale-authorization-json-base64url>
 pwid1:delist2:<listing-id>
 ```
 
-Both should pay the 546 sat mutation fee to the canonical registry/marketplace address.
+Both pay the 546 sat mutation fee to the canonical registry address. A `delist2` transaction must be funded by the current owner and cancels the listing by txid.
+
+Automatic invalidation rules:
+
+- Any confirmed `pwid1:t` ownership transfer cancels all active listings for that ID.
+- Any valid confirmed `pwid1:buy2` marketplace transfer cancels all active listings for that ID.
+- Expired sale authorizations are ignored by the resolver.
+- Pending listings and delistings are visible mempool intent only; confirmed history is canonical.
 
 ## General Asset Trading
 

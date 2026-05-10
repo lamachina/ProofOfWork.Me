@@ -10,11 +10,13 @@ Do not change these without an explicit migration plan:
 
 - Mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`
 - Registration price: `1000` sats
-- Mutation price: `546` sats for receiver updates, transfers, buyer-funded marketplace transfers, and future listing/unlisting events
+- Mutation price: `546` sats for receiver updates, transfers, on-chain listings, delistings, and buyer-funded marketplace transfers
 - Protocol prefix: `pwid1:`
 - Registration event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
 - Receiver update event: `pwid1:u:<id-base64url>:<receive-address>`
 - Transfer event: `pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>`
+- Listing event: `pwid1:list2:<sale-authorization-json-base64url>`
+- Delisting event: `pwid1:delist2:<listing-txid>`
 - Buyer-funded marketplace transfer event: `pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-address?>`
 - Resolver rule: first confirmed valid registration wins
 - Casing rule: IDs are case-insensitive forever
@@ -28,10 +30,12 @@ Implementation anchors in `src/App.tsx`:
 - `buildIdRegistrationPayload`
 - `buildIdReceiverUpdatePayload`
 - `buildIdTransferPayload`
+- `buildIdListingPayload`
+- `buildIdDelistingPayload`
 - `buildIdMarketplaceTransferPayload`
 - `parseIdEventPayload`
 - `parseIdRegistrationPayload`
-- `idRecordsFromTransactions`
+- `idRegistryStateFromTransactions`
 - `resolveRecipientInput`
 - `IdLaunchApp`
 - `MarketplaceApp`
@@ -50,9 +54,9 @@ They are not traditional DNS records. They are on-chain mail IDs resolved by the
 - Registry events live in Bitcoin OP_RETURN outputs.
 - First valid registration wins.
 - Registration requires a 1,000 sat payment to the canonical registry address.
-- Receiver updates, transfers, buyer-funded marketplace transfers, and future listing/unlisting events require a 546 sat mutation payment to the same canonical registry address.
+- Receiver updates, transfers, listings, delistings, and buyer-funded marketplace transfers require a 546 sat mutation payment to the same canonical registry address.
 - Transfers update the current owner/receiver.
-- Marketplace transfers let a seller sign sale terms off-chain while the buyer funds the on-chain registry event.
+- Marketplace listings publish seller-signed sale terms on-chain, while buyer-funded transfers execute those terms.
 - Future messages resolve to the current receiver.
 - The app resolves IDs by scanning registry history and applying valid events in chain order.
 - All registry mutations use the same canonical registry address and pay the mutation fee.
@@ -100,7 +104,7 @@ marketplace.proofofwork.me  standalone ID marketplace
 
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
-The Marketplace subdomain can connect UniSat, create signed listing authorizations for owned confirmed IDs, and execute buyer-funded `pwid1:buy2` transfers.
+The Marketplace subdomain can connect UniSat, publish on-chain listings for owned confirmed IDs, delist active listings, and execute buyer-funded `pwid1:buy2` transfers.
 
 Local preview:
 
@@ -133,13 +137,15 @@ Current mutation payloads:
 ```text
 pwid1:u:<id-base64url>:<receive-address>
 pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>
+pwid1:list2:<sale-authorization-json-base64url>
+pwid1:delist2:<listing-txid>
 pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-address?>
 ```
 
 Rules:
 
 - `pwid1:r2` registration transactions must pay at least `1000` sats to the registry address.
-- `pwid1:u`, `pwid1:t`, `pwid1:buy2`, and future listing/unlisting transactions must pay at least `546` sats to the registry address.
+- `pwid1:u`, `pwid1:t`, `pwid1:list2`, `pwid1:delist2`, and `pwid1:buy2` transactions must pay at least `546` sats to the registry address.
 - The registry payment output must appear before the ID OP_RETURN output in the transaction.
 - The OP_RETURN must start with `pwid1:`.
 - Registrations, receiver updates, and transfers all use the same canonical registry address.
@@ -147,6 +153,9 @@ Rules:
 - `pwid1:u` changes only the receive address. The owner remains unchanged.
 - `pwid1:t` changes ownership. If the new receive address is omitted, the new owner address also becomes the receive address.
 - App UI may accept a confirmed ProofOfWork ID as a transfer target, but the written `pwid1:t` event must still contain resolved Bitcoin addresses.
+- `pwid1:list2` publishes a signed sale authorization as an active marketplace listing. The listing txid is the listing ID.
+- `pwid1:delist2` cancels an active listing by listing txid. The transaction must be funded by the current owner.
+- Any confirmed ownership transfer through `pwid1:t` or `pwid1:buy2` automatically invalidates all active listings for that ID.
 - `pwid1:buy2` changes ownership using an off-chain signed sale authorization from the current owner. The buyer can fund the transaction, so the seller does not need spendable sats.
 - A `buy2` transaction must pay the 546 sat mutation fee before the ID OP_RETURN and must also pay the signed sale price to the current owner before the ID OP_RETURN.
 - A `buy2` sale authorization uses JSON version `pwid-sale-v1` and is base64url encoded inside the OP_RETURN payload.
@@ -191,7 +200,7 @@ The chain remains canonical:
 
 Everything below this point is future planning. It must not silently change Phase 1 behavior.
 
-The metaprotocol is marketplace-ready from the start.
+The metaprotocol is marketplace-ready from the start. Live events are repeated here for context; future events must remain compatible with the live registry rules above.
 
 Possible registry events:
 
@@ -199,13 +208,12 @@ Possible registry events:
 pwid1:r2:<id-base64url>:<owner>:<receiver>:<pgp-public-key-base64url?>
 pwid1:u:<id-base64url>:<receiver>
 pwid1:t:<id-base64url>:<new-owner>:<new-receiver?>
+pwid1:list2:<sale-authorization-json-base64url>
+pwid1:delist2:<listing-txid>
 pwid1:buy2:<sale-authorization-json-base64url>:<new-owner>:<new-receiver?>
 pwid1:k:<id-base64url>:<pgp-public-key-base64url>
-pwid1:list:<id-base64url>:<price>:<currency>
-pwid1:unlist:<id-base64url>
 pwid1:bid:<id-base64url>:<bidder>:<price>:<currency>
 pwid1:accept:<id-base64url>:<bid-txid>
-pwid1:buy:<id-base64url>:<listing-txid>
 pwid1:meta:<id-base64url>:<metadata>
 ```
 
@@ -214,11 +222,11 @@ Rules to preserve:
 - All event ID fields should be base64url encoded and normalized case-insensitively by resolvers.
 - `r2` is valid only if the ID is unclaimed.
 - `r2` requires at least `1000` sats to the registry address.
-- `u`, `t`, `k`, `list`, `unlist`, and `accept` are valid only from the current owner.
-- `u`, `t`, `buy2`, `list`, and `unlist` require at least `546` sats to the registry address.
-- `u`, `t`, and `buy2` are live registry events.
+- `u`, `t`, `k`, `list2`, `delist2`, and `accept` are valid only from the current owner.
+- `u`, `t`, `list2`, `delist2`, and `buy2` require at least `546` sats to the registry address.
+- `u`, `t`, `list2`, `delist2`, and `buy2` are live registry events.
 - `buy2` is valid only with a current-owner sale authorization and matching seller payment.
-- `buy` is valid only against an active listing.
+- `buy2` is valid only against current ownership; marketplace UIs should prefer active `list2` listings.
 - Marketplace events should be verifiable from chain history.
 - The resolver should expose both current owner and current receiver.
 
@@ -229,10 +237,11 @@ IDs should behave like transferable assets.
 - Owners can list IDs for sale.
 - Buyers can purchase listed IDs.
 - Seller-funded direct transfers use `pwid1:t`.
-- Buyer-funded purchases use `pwid1:buy2` plus a signed `pwid-sale-v1` authorization.
+- On-chain listings use `pwid1:list2` plus a signed `pwid-sale-v1` authorization.
+- Buyer-funded purchases use `pwid1:buy2`.
 - Bidders can place offers.
 - Owners can accept bids.
-- Owners can unlist IDs.
+- Owners can delist IDs with `pwid1:delist2`.
 - Marketplaces can verify current ownership from the chain.
 - The current receiver determines where new mail is delivered.
 

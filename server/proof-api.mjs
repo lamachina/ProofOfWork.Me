@@ -961,6 +961,47 @@ function parseIdMarketplaceTransferPayload(payload, network) {
   };
 }
 
+function parseIdListingPayload(payload, network) {
+  if (!payload.startsWith("list2:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const [, authorizationEncoded] = parts;
+  let authorization;
+  try {
+    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), network);
+  } catch {
+    return null;
+  }
+
+  return {
+    id: authorization.id,
+    priceSats: authorization.priceSats,
+    saleAuthorization: authorization,
+    sellerAddress: authorization.sellerAddress,
+  };
+}
+
+function parseIdDelistingPayload(payload) {
+  if (!payload.startsWith("delist2:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length !== 2 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
+    return null;
+  }
+
+  return {
+    listingId: parts[1].toLowerCase(),
+  };
+}
+
 function parseIdEventPayload(payload, network) {
   const registration = parseIdRegistrationPayload(payload, network);
   if (registration) {
@@ -994,10 +1035,26 @@ function parseIdEventPayload(payload, network) {
     };
   }
 
+  const listing = parseIdListingPayload(payload, network);
+  if (listing) {
+    return {
+      kind: "list",
+      ...listing,
+    };
+  }
+
+  const delisting = parseIdDelistingPayload(payload);
+  if (delisting) {
+    return {
+      kind: "delist",
+      ...delisting,
+    };
+  }
+
   return null;
 }
 
-function idRecordsFromTransactions(txs, registryAddress, network) {
+function idRegistryStateFromTransactions(txs, registryAddress, network) {
   const events = txs.flatMap((tx) => {
     const vin = Array.isArray(tx.vin) ? tx.vin : [];
     const vout = Array.isArray(tx.vout) ? tx.vout : [];
@@ -1070,6 +1127,29 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
       ];
     }
 
+    if (eventMessage.kind === "list") {
+      return [
+        {
+          ...baseEvent,
+          id: eventMessage.id,
+          kind: "list",
+          priceSats: eventMessage.priceSats,
+          saleAuthorization: eventMessage.saleAuthorization,
+          sellerAddress: eventMessage.sellerAddress,
+        },
+      ];
+    }
+
+    if (eventMessage.kind === "delist") {
+      return [
+        {
+          ...baseEvent,
+          kind: "delist",
+          listingId: eventMessage.listingId,
+        },
+      ];
+    }
+
     return [
       {
         ...baseEvent,
@@ -1088,11 +1168,19 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
     .filter((event) => !event.confirmed && event.kind === "register")
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
   const records = new Map();
+  const listings = new Map();
+
+  function invalidateListingsForId(id) {
+    for (const [listingId, listing] of listings) {
+      if (listing.id === id) {
+        listings.delete(listingId);
+      }
+    }
+  }
 
   for (const event of confirmedEvents) {
-    const current = records.get(event.id);
-
     if (event.kind === "register") {
+      const current = records.get(event.id);
       if (current) {
         continue;
       }
@@ -1111,6 +1199,16 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
       continue;
     }
 
+    if (event.kind === "delist") {
+      const listing = listings.get(event.listingId);
+      const current = listing ? records.get(listing.id) : undefined;
+      if (listing && current && event.inputAddresses.includes(current.ownerAddress)) {
+        listings.delete(event.listingId);
+      }
+      continue;
+    }
+
+    const current = records.get(event.id);
     if (!current) {
       continue;
     }
@@ -1131,6 +1229,35 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
         createdAt: event.createdAt,
         ownerAddress: event.ownerAddress,
         receiveAddress: event.receiveAddress,
+        txid: event.txid,
+      });
+      invalidateListingsForId(event.id);
+      continue;
+    }
+
+    if (event.kind === "list") {
+      if (
+        current.ownerAddress !== event.sellerAddress ||
+        !event.inputAddresses.includes(current.ownerAddress) ||
+        saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+        !saleAuthorizationVerified(event.saleAuthorization)
+      ) {
+        continue;
+      }
+
+      listings.set(event.txid, {
+        amountSats: event.amountSats,
+        buyerAddress: event.saleAuthorization.buyerAddress,
+        confirmed: true,
+        createdAt: event.createdAt,
+        expiresAt: event.saleAuthorization.expiresAt,
+        id: event.id,
+        listingId: event.txid,
+        network: event.network,
+        priceSats: event.priceSats,
+        receiveAddress: event.saleAuthorization.receiveAddress,
+        saleAuthorization: event.saleAuthorization,
+        sellerAddress: event.sellerAddress,
         txid: event.txid,
       });
       continue;
@@ -1159,6 +1286,7 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
       receiveAddress: event.receiveAddress,
       txid: event.txid,
     });
+    invalidateListingsForId(event.id);
   }
 
   const accepted = [...records.values()];
@@ -1179,7 +1307,14 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
     }
   }
 
-  return accepted;
+  return {
+    listings: [...listings.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid)),
+    records: accepted,
+  };
+}
+
+function idRecordsFromTransactions(txs, registryAddress, network) {
+  return idRegistryStateFromTransactions(txs, registryAddress, network).records;
 }
 
 function inboxMessagesFromTransactions(txs, address, network) {
@@ -1283,11 +1418,12 @@ async function registryPayload(network) {
   }
 
   const txs = await fetchRegistryTransactions(registryAddress, network);
-  const records = idRecordsFromTransactions(txs, registryAddress, network);
+  const { listings, records } = idRegistryStateFromTransactions(txs, registryAddress, network);
   const confirmed = records.filter((record) => record.confirmed).length;
 
   return {
     indexedAt: new Date().toISOString(),
+    listings,
     network,
     records,
     registryAddress,

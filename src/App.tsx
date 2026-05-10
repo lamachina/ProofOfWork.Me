@@ -335,7 +335,8 @@ const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
-const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
+// Use the Computer host fallback until desktop.proofofwork.me DNS is fully live.
+const DESKTOP_APP_URL = "https://computer.proofofwork.me/?desktop=1";
 const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
 const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "").trim().replace(/\/+$/u, "");
 const MAX_DATA_CARRIER_BYTES = 100_000;

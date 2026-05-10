@@ -12,6 +12,7 @@ const HOST = process.env.HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PORT ?? 8081);
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "*";
 const MEMPOOL_BASE_MAINNET = stripTrailingSlash(process.env.MEMPOOL_BASE ?? "http://127.0.0.1:8080");
+const PENDING_MEMPOOL_BASE_MAINNET = stripTrailingSlash(process.env.PENDING_MEMPOOL_BASE ?? "https://mempool.space");
 const MEMPOOL_BASE_TESTNET = stripTrailingSlash(process.env.MEMPOOL_BASE_TESTNET ?? "https://mempool.space/testnet");
 const MEMPOOL_BASE_TESTNET4 = stripTrailingSlash(process.env.MEMPOOL_BASE_TESTNET4 ?? "https://mempool.space/testnet4");
 const ELECTRUM_HOST = process.env.ELECTRUM_HOST ?? "127.0.0.1";
@@ -76,6 +77,14 @@ function mempoolBase(network) {
   return MEMPOOL_BASE_MAINNET;
 }
 
+function pendingMempoolBases(network) {
+  if (network !== "livenet") {
+    return [mempoolBase(network)];
+  }
+
+  return [...new Set([MEMPOOL_BASE_MAINNET, PENDING_MEMPOOL_BASE_MAINNET].filter(Boolean))];
+}
+
 function registryAddressForNetwork(network) {
   return ID_REGISTRY_ADDRESSES[network] ?? "";
 }
@@ -108,6 +117,19 @@ async function fetchText(url) {
 async function fetchAddressTransactionsPage(address, network, path) {
   const transactions = await fetchJson(`${mempoolBase(network)}/api/address/${address}/${path}`);
   return Array.isArray(transactions) ? transactions : [];
+}
+
+async function fetchAddressTransactionsPageFromBase(baseUrl, address, path) {
+  const transactions = await fetchJson(`${baseUrl}/api/address/${address}/${path}`);
+  return Array.isArray(transactions) ? transactions : [];
+}
+
+async function fetchAddressMempoolTransactions(address, network) {
+  const pages = await Promise.allSettled(
+    pendingMempoolBases(network).map((baseUrl) => fetchAddressTransactionsPageFromBase(baseUrl, address, "txs/mempool")),
+  );
+
+  return dedupeTransactions(pages.flatMap((page) => (page.status === "fulfilled" ? page.value : [])));
 }
 
 function bitcoinNetwork(network) {
@@ -206,6 +228,30 @@ async function fetchTransaction(txid, network) {
   return fetchJson(`${mempoolBase(network)}/api/tx/${txid}`);
 }
 
+async function fetchTransactionFromBase(baseUrl, txid) {
+  const response = await fetch(`${baseUrl}/api/tx/${txid}`);
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Transaction lookup returned ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function fetchTransactionWithPendingFallback(txid, network) {
+  for (const baseUrl of pendingMempoolBases(network)) {
+    const tx = await fetchTransactionFromBase(baseUrl, txid).catch(() => null);
+    if (tx) {
+      return tx;
+    }
+  }
+
+  return null;
+}
+
 async function fetchAddressTransactionsFromElectrum(address, network) {
   const scripthash = scriptHashForAddress(address, network);
   const history = await electrumRequest("blockchain.scripthash.get_history", [scripthash]);
@@ -263,7 +309,7 @@ function dedupeTransactions(txs) {
 
 async function fetchAddressTransactionsViaMempoolPagination(address, network, maxPages = MAX_ADDRESS_TX_PAGES) {
   const recentTxs = await fetchAddressTransactionsPage(address, network, "txs");
-  const mempoolTxs = await fetchAddressTransactionsPage(address, network, "txs/mempool").catch(() => []);
+  const mempoolTxs = await fetchAddressMempoolTransactions(address, network).catch(() => []);
 
   let chainPage = [];
   try {
@@ -306,7 +352,16 @@ async function fetchAddressTransactionsViaMempoolPagination(address, network, ma
 
 async function fetchAddressTransactions(address, network, maxPages = MAX_ADDRESS_TX_PAGES) {
   if (network === "livenet" && ELECTRUM_HOST && ELECTRUM_PORT) {
-    return fetchAddressTransactionsFromElectrum(address, network);
+    try {
+      const [historyTxs, mempoolTxs] = await Promise.all([
+        fetchAddressTransactionsFromElectrum(address, network),
+        fetchAddressMempoolTransactions(address, network).catch(() => []),
+      ]);
+
+      return dedupeTransactions([...historyTxs, ...mempoolTxs]);
+    } catch {
+      return fetchAddressTransactionsViaMempoolPagination(address, network, maxPages);
+    }
   }
 
   return fetchAddressTransactionsViaMempoolPagination(address, network, maxPages);
@@ -381,7 +436,7 @@ function decodeTextBase64Url(value) {
 }
 
 function sha256Hex(bytes) {
-  return bitcoin.crypto.sha256(Buffer.from(bytes)).toString("hex");
+  return Buffer.from(bitcoin.crypto.sha256(Buffer.from(bytes))).toString("hex");
 }
 
 function normalizeAttachmentName(name) {
@@ -857,8 +912,8 @@ async function mailPayload(address, network) {
 }
 
 async function txStatusPayload(txid, network) {
-  const response = await fetch(`${mempoolBase(network)}/api/tx/${txid}`);
-  if (response.status === 404) {
+  const tx = await fetchTransactionWithPendingFallback(txid, network);
+  if (!tx) {
     return {
       confirmed: false,
       indexedAt: new Date().toISOString(),
@@ -868,11 +923,6 @@ async function txStatusPayload(txid, network) {
     };
   }
 
-  if (!response.ok) {
-    throw new Error(`Transaction lookup returned ${response.status}`);
-  }
-
-  const tx = await response.json();
   const confirmed = transactionConfirmed(tx);
   return {
     confirmed,

@@ -74,7 +74,15 @@ id.proofofwork.me
 
 The ID subdomain renders a focused mainnet claim flow using the same registry address and `pwid1:r2` protocol. It is intentionally narrower than the full mail app: connect UniSat, check availability, register, view registry stats, view owned IDs, view public registry records, and verify owned/routed IDs on X.
 
-The full mail app remains on `proofofwork.me`. The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
+Production domains:
+
+```text
+proofofwork.me              landing page
+id.proofofwork.me           focused ID registry app
+computer.proofofwork.me     full mail/computer app
+```
+
+The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 
 Local preview:
 
@@ -85,7 +93,7 @@ http://localhost:5173/?id-launch=1
 ID-only launch build:
 
 ```bash
-VITE_ID_LAUNCH_ONLY=1 npm run build
+VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
 ```
 
 Use that environment variable for the Phase 1 server so the full mail app stays hidden even if someone opens the bare IP address or a non-ID hostname.
@@ -114,6 +122,7 @@ Rules:
 - The compose flow must not route mail to a pending ID. IDs are sendable only after a confirmed registry record resolves to a receive address.
 - Duplicate confirmed registrations are ignored by the resolver.
 - Registry scans must paginate full confirmed address history and merge mempool transactions before applying first-confirmed-wins. Reading only the first mempool.space address page can hide older confirmed winners and make duplicates look available or pending.
+- Production registry reads should go through the ProofOfWork OP_RETURN API. The API reads confirmed state from the ProofOfWork node/indexer stack and may merge a pending mempool fallback for unconfirmed visibility.
 - Registration broadcasts must re-check the full registry immediately before building/signing the PSBT.
 - Owner and receive address are separate fields.
 - PGP public key data is optional and base64url encoded in the registration payload.
@@ -230,6 +239,16 @@ VITE_POW_API_BASE=<production-api-url>
 ```
 
 For ID safety, production should prefer this API over public mempool.space reads. If the first-party API is unavailable, it is safer for ID registration/routing to fail closed than to create duplicates from incomplete public API state.
+
+Phase 1 production uses same-origin API proxies:
+
+```text
+https://proofofwork.me/api/*
+https://id.proofofwork.me/api/*
+https://computer.proofofwork.me/api/*
+```
+
+Pending registry records are useful for network visibility, but first-confirmed-wins only becomes final after block confirmation. Pending IDs must never be routable in compose.
 
 ## VPS Specs
 

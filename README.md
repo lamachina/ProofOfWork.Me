@@ -17,6 +17,12 @@ id.proofofwork.me
 computer.proofofwork.me
 ```
 
+Production app roles:
+
+- `proofofwork.me` is the landing/router page.
+- `id.proofofwork.me` is the focused Phase 1 ID registry onboarding app.
+- `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
+
 The Phase 1 registry onboarding flow is:
 
 ```text
@@ -78,6 +84,41 @@ Launch invariants for future developers/agents:
 - Re-checks the full registry immediately before broadcasting an ID registration to block stale duplicate claims.
 - Opens a prefilled X post to verify only IDs owned by or routed to the connected wallet.
 - Renders a dedicated Phase 1 ID claim experience on `id.proofofwork.me` using the same registry protocol and address.
+
+## Production OP_RETURN API
+
+Production builds are wired to a first-party ProofOfWork OP_RETURN API.
+
+The API entrypoint is:
+
+```text
+server/proof-api.mjs
+```
+
+Production routes the API through the same app domains:
+
+```text
+https://proofofwork.me/api/*
+https://id.proofofwork.me/api/*
+https://computer.proofofwork.me/api/*
+```
+
+Current production behavior:
+
+- Confirmed mainnet registry, mail, files, and tx status are read through the ProofOfWork node/indexer stack.
+- The node stack does not hold funds, seed phrases, private keys, or wallet authority.
+- Browser wallets still sign locally.
+- Unconfirmed transactions are mempool gossip, not global truth.
+- For pending visibility, the API merges the local node/indexer view with `PENDING_MEMPOOL_BASE`, which currently defaults to public `https://mempool.space`.
+- Confirmed records remain canonical; pending records are visible but not final.
+- A tx status can be `confirmed`, `pending`, or `dropped`.
+- A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
+
+Important launch invariant:
+
+```text
+Confirmed history is canonical. Pending mempool visibility is best-effort.
+```
 
 ## OP_RETURN Protocol
 
@@ -144,19 +185,31 @@ http://localhost:5173/?landing=1
 To build a landing-page-only deployment for `proofofwork.me`:
 
 ```bash
-VITE_LANDING_ONLY=1 npm run build
+VITE_LANDING_ONLY=1 VITE_POW_API_BASE=https://proofofwork.me npm run build
 ```
 
 To build an ID-registration-only deployment that hides the full mail app on every hostname:
 
 ```bash
-VITE_ID_LAUNCH_ONLY=1 npm run build
+VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
 ```
 
-To build against the ProofOfWork-owned OP_RETURN API instead of browser-side public mempool.space reads:
+To build the full computer app for production:
 
 ```bash
-VITE_POW_API_BASE=https://api.proofofwork.me npm run build
+VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
+```
+
+To run localhost against the production API:
+
+```bash
+VITE_POW_API_BASE=https://computer.proofofwork.me npm run dev
+```
+
+To build against a self-hosted ProofOfWork OP_RETURN API:
+
+```bash
+VITE_POW_API_BASE=https://your-api-domain.example npm run build
 ```
 
 To run the OP_RETURN API on the node server or locally:
@@ -164,6 +217,17 @@ To run the OP_RETURN API on the node server or locally:
 ```bash
 npm run proof-api
 ```
+
+Useful API environment variables:
+
+```text
+HOST=127.0.0.1
+PORT=8081
+MEMPOOL_BASE=http://127.0.0.1:8080
+PENDING_MEMPOOL_BASE=https://mempool.space
+```
+
+`MEMPOOL_BASE` should point at the local private mempool/electrs HTTP API. `PENDING_MEMPOOL_BASE` is optional and exists because unconfirmed tx gossip can differ between nodes.
 
 ## Registry Audit
 
@@ -194,3 +258,4 @@ Important implementation points:
 - Full app ID workspace: `IdsWorkspace`.
 - OP_RETURN API: `server/proof-api.mjs`.
 - OP_RETURN infrastructure notes: `OP_RETURN_INFRASTRUCTURE.md`.
+- ID refund log: `ID_REFUNDS.md`.

@@ -4,7 +4,13 @@ Notes for mailbox features that make ProofOfWork.Me feel like a normal mail app 
 
 ## Current Launch Status
 
-The Phase 1 public launch surface is `id.proofofwork.me`, a focused ProofOfWork ID registry onboarding app. The full mail app remains the richer mailbox experience on `proofofwork.me`.
+The Phase 1 public launch surfaces are:
+
+```text
+proofofwork.me              landing page
+id.proofofwork.me           focused ProofOfWork ID registry onboarding app
+computer.proofofwork.me     full mailbox/computer app
+```
 
 Mail organization features that are already implemented in the full app:
 
@@ -15,6 +21,7 @@ Mail organization features that are already implemented in the full app:
 - Files view for confirmed attachments.
 - Export/import for local drafts, archive/favorite preferences, theme, and sent/outbox tracking.
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
+- First-party OP_RETURN API reads for production mainnet mail, files, registry, and tx status when `VITE_POW_API_BASE` is configured.
 
 Future developers should keep `id.proofofwork.me` narrow. Do not pull the full mailbox UI into the Phase 1 registry launch unless the launch scope explicitly changes.
 
@@ -99,6 +106,7 @@ Behavior:
 - Dropped txs remain in Outbox with a restore-to-draft action.
 - Dropped txs should not appear in Sent or Files.
 - Pending txs should not appear in Files by default.
+- Pending visibility is best-effort because mempool transactions are gossip. The API can merge local node/indexer mempool state with a pending fallback, but confirmation is the only durable state.
 - Older local sent records without a known status can appear as Checking until the txid is verified.
 
 This prevents the app from treating dropped mempool transactions as permanent mail.

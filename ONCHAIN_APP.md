@@ -38,6 +38,8 @@ http://localhost:5173/?id-launch=1
 http://localhost:5173/?desktop=1
 ```
 
+`desktop.proofofwork.me` should remain a standalone public search surface, not the full Computer mailbox shell.
+
 Future on-chain app anchoring should verify releases without changing the canonical ID registry address or `pwid1:r2` format.
 
 However, ProofOfWork.Me can still put part of the app on-chain:

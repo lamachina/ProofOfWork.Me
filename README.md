@@ -29,7 +29,15 @@ Production app roles:
 - `proofofwork.me` is the landing/router page.
 - `id.proofofwork.me` is the focused Phase 1 ID registry onboarding app.
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
-- `desktop.proofofwork.me` is the public read-only file desktop for searching addresses or confirmed ProofOfWork IDs.
+- `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
+
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, and Desktop. Public social links should include X, YouTube, GitHub, and Discord.
+
+Official YouTube:
+
+```text
+https://www.youtube.com/@proofofworkme
+```
 
 The Phase 1 registry onboarding flow is:
 
@@ -90,7 +98,7 @@ Launch invariants for future developers/agents:
 - Exports and imports local app data backups for contacts, drafts, archives, favorites, custom folders, theme, and broadcast tracking.
 - Supports one small attachment per message, capped at 60,000 bytes before encoding.
 - Adds a desktop-style Files section for confirmed attachment-only browsing, filtering, sorting, previews, download, and opening the source message.
-- Adds a public Desktop section that searches any Bitcoin address or confirmed ProofOfWork ID and displays confirmed public attachments without a wallet connection.
+- Adds a standalone public Desktop app that searches any Bitcoin address or confirmed ProofOfWork ID and displays confirmed public attachments without a wallet connection.
 - Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
 - Uses the correct mempool.space explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
@@ -288,7 +296,7 @@ Important implementation points:
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
-- Public Desktop UI: `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
+- Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.
 - ID registry history fetcher: `fetchRegistryTransactions()`. It must continue paginating confirmed history with `txs/chain/:last_seen_txid` and merging `txs/mempool`.
 - ID read/compat parser: `parseIdRegistrationPayload()` and `idRecordsFromTransactions()`.

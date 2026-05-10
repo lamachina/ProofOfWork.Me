@@ -220,6 +220,40 @@ code {
   min-width: 0;
 }
 
+.domain-nav {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: center;
+  min-width: 0;
+}
+
+.domain-nav a {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-size: 0.86rem;
+  font-weight: 780;
+  min-height: 34px;
+  padding: 6px 9px;
+  text-decoration: none;
+}
+
+.domain-nav a:hover {
+  background: var(--surface-soft);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.domain-nav.compact a {
+  font-size: 0.8rem;
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
 .button-content,
 .folder-label {
   align-items: center;
@@ -551,6 +585,7 @@ code {
   align-items: center;
   color: var(--text-muted);
   display: flex;
+  flex-wrap: wrap;
   font-size: 0.84rem;
   gap: 14px;
   justify-content: center;
@@ -560,7 +595,8 @@ code {
   padding: 0 18px 28px;
 }
 
-.app-footer nav {
+.app-footer nav,
+.app-footer .domain-nav {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
@@ -599,7 +635,8 @@ code {
   justify-content: start;
 }
 
-.app-footer.compact a {
+.app-footer.compact a,
+.app-footer.compact .domain-nav a {
   background: var(--surface);
   border-color: var(--border);
   min-height: 30px;
@@ -777,6 +814,75 @@ select {
 
 .desktop-workspace {
   grid-template-rows: minmax(0, 1fr);
+}
+
+.desktop-public-app {
+  background: #030508;
+  color: #edf2f7;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  position: relative;
+}
+
+.desktop-public-header {
+  align-items: center;
+  background: rgba(3, 5, 8, 0.76);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(237, 242, 247, 0.16);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 0 18px;
+  position: relative;
+  z-index: 3;
+}
+
+.desktop-public-app .landing-brand,
+.desktop-public-app .landing-brand span,
+.desktop-public-app .domain-nav a,
+.desktop-public-app .app-footer,
+.desktop-public-app .app-footer a {
+  color: #a8b3c1;
+}
+
+.desktop-public-app .landing-brand h1,
+.desktop-public-app .domain-nav a:hover,
+.desktop-public-app .app-footer a:hover {
+  color: #edf2f7;
+}
+
+.desktop-public-app .desktop-workspace {
+  background: #030508;
+  grid-column: auto;
+}
+
+.desktop-public-app .desktop-route-status {
+  background: rgba(3, 5, 8, 0.9);
+  border-bottom-color: rgba(237, 242, 247, 0.16);
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 64px;
+  z-index: 2;
+}
+
+.desktop-public-app .app-footer {
+  background: rgba(3, 5, 8, 0.84);
+  border-top: 1px solid rgba(237, 242, 247, 0.16);
+  max-width: none;
+  padding: 10px 18px;
+  position: relative;
+  z-index: 3;
+}
+
+.desktop-public-app .domain-nav a:hover,
+.desktop-public-app .app-footer a:hover {
+  background: rgba(237, 242, 247, 0.08);
+  border-color: rgba(237, 242, 247, 0.18);
 }
 
 .ids-workspace,
@@ -2139,6 +2245,7 @@ pre {
   }
 
   .topbar,
+  .desktop-public-header,
   .topbar-controls,
   .pane-head,
   .reader-actions,
@@ -2148,7 +2255,8 @@ pre {
     display: grid;
   }
 
-  .topbar {
+  .topbar,
+  .desktop-public-header {
     grid-template-columns: 1fr;
     min-height: 64px;
     padding: 12px;
@@ -2162,6 +2270,10 @@ pre {
   }
 
   .landing-nav {
+    justify-content: start;
+  }
+
+  .domain-nav {
     justify-content: start;
   }
 
@@ -2201,6 +2313,11 @@ pre {
   .topbar-controls {
     display: flex;
     flex-wrap: wrap;
+  }
+
+  .desktop-public-app {
+    min-height: 100vh;
+    overflow: visible;
   }
 
   .id-launch-main {
@@ -2345,8 +2462,14 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .landing-nav a {
+  .landing-nav a,
+  .domain-nav a {
     justify-content: center;
+  }
+
+  .domain-nav {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .landing-hero {

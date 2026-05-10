@@ -98,7 +98,7 @@ This creates a Finder/Gmail/Google Drive style attachment surface while staying 
 
 ## Desktop
 
-Desktop is the public read-only version of Files.
+Desktop is the public read-only version of Files. On `desktop.proofofwork.me`, it is a standalone search engine, not the full Computer mailbox shell.
 
 Behavior:
 
@@ -111,6 +111,7 @@ Behavior:
 - Do not show local-only metadata such as drafts, folders, favorites, archives, or contacts.
 - Do not show pending Incoming or Outbox transactions as public files.
 - Do not expose `Open Message` as a private mailbox action in the public inspector; link to the source transaction instead.
+- Do not show the Computer sidebar, compose tools, wallet controls, inbox/sent folders, or local account state on the public Desktop route.
 
 Production route:
 
@@ -119,6 +120,8 @@ desktop.proofofwork.me
 ```
 
 This route should use the same OP_RETURN parser/API as the full Computer app. It is a presentation surface, not a new protocol.
+
+The Computer app may still keep an internal Desktop folder for signed-in users. That internal view can live inside the Computer shell; the public Desktop domain should stay focused on search and public file browsing.
 
 ## Outbox
 

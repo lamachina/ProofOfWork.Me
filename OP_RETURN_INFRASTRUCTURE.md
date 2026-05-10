@@ -24,6 +24,8 @@ computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 ```
 
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, and Desktop from any production surface. Social links should include X, YouTube, GitHub, and Discord.
+
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
 ```text

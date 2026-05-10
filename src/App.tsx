@@ -333,6 +333,7 @@ const UNISAT_DOWNLOAD_URL = "https://unisat.io/download";
 const DISCORD_URL = "https://discord.com/invite/mRA4zbqB";
 const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
+const YOUTUBE_URL = "https://www.youtube.com/@proofofworkme";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
@@ -357,6 +358,13 @@ const DEFAULT_AMOUNT_SATS = 546;
 const DEFAULT_FEE_RATE = 0.1;
 const DEFAULT_MEMO = "";
 const MAX_RECIPIENTS = 10;
+
+const APP_LINKS = [
+  { href: "https://proofofwork.me", label: "Home" },
+  { href: ID_APP_URL, label: "IDs" },
+  { href: COMPUTER_APP_URL, label: "Computer" },
+  { href: DESKTOP_APP_URL, label: "Desktop" },
+];
 
 function isIdLaunchRoute() {
   if (import.meta.env.VITE_ID_LAUNCH_ONLY === "1") {
@@ -3325,7 +3333,7 @@ export default function App() {
   }, [ccRecipient, network, recipient, registryAddress]);
 
   useEffect(() => {
-    if (landingMode) {
+    if (landingMode || desktopRoute) {
       return;
     }
 
@@ -3345,10 +3353,10 @@ export default function App() {
         }
       })
       .catch(() => undefined);
-  }, [hasUnisat, idLaunchMode, landingMode]);
+  }, [desktopRoute, hasUnisat, idLaunchMode, landingMode]);
 
   useEffect(() => {
-    if (landingMode) {
+    if (landingMode || desktopRoute) {
       return;
     }
 
@@ -3412,7 +3420,7 @@ export default function App() {
       window.unisat?.removeListener?.("networkChanged", networkChanged);
       window.unisat?.removeListener?.("chainChanged", chainChanged);
     };
-  }, [hasUnisat, idLaunchMode, landingMode, network]);
+  }, [desktopRoute, hasUnisat, idLaunchMode, landingMode, network]);
 
   function applyDraft(draft: DraftMessage) {
     setRecipient(draft.recipient);
@@ -4431,6 +4439,34 @@ export default function App() {
     );
   }
 
+  if (desktopRoute) {
+    return (
+      <DesktopApp
+        activeNetwork={network}
+        busy={desktopLoading}
+        desktopQuery={desktopQuery}
+        fileFilter={fileFilter}
+        messages={desktopMail}
+        profile={desktopProfile}
+        selectedKey={desktopSelectedKey}
+        setDesktopQuery={setDesktopQuery}
+        setFileFilter={setFileFilter}
+        setSortMode={setSortMode}
+        setTheme={setTheme}
+        sortMode={sortMode}
+        status={status}
+        theme={theme}
+        onClear={clearDesktop}
+        onRefresh={() => void loadDesktopTarget()}
+        onSearch={(event) => {
+          event.preventDefault();
+          void loadDesktopTarget();
+        }}
+        onSelect={(message) => setDesktopSelectedKey(mailKey(message))}
+      />
+    );
+  }
+
   return (
     <main className="mail-app">
       <header className="topbar">
@@ -4443,6 +4479,8 @@ export default function App() {
             <span>{networkLabel(network)}</span>
           </div>
         </div>
+
+        <DomainNav compact />
 
         <div className="topbar-controls">
           <button
@@ -4939,6 +4977,114 @@ export default function App() {
   );
 }
 
+function DomainNav({ compact = false }: { compact?: boolean }) {
+  return (
+    <nav className={compact ? "domain-nav compact" : "domain-nav"} aria-label="ProofOfWork.Me domains">
+      {APP_LINKS.map((link) => (
+        <a href={link.href} key={link.href}>
+          {link.label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+function DesktopApp({
+  activeNetwork,
+  busy,
+  desktopQuery,
+  fileFilter,
+  messages,
+  profile,
+  selectedKey,
+  setDesktopQuery,
+  setFileFilter,
+  setSortMode,
+  setTheme,
+  sortMode,
+  status,
+  theme,
+  onClear,
+  onRefresh,
+  onSearch,
+  onSelect,
+}: {
+  activeNetwork: BitcoinNetwork;
+  busy: boolean;
+  desktopQuery: string;
+  fileFilter: FileFilter;
+  messages: MailMessage[];
+  profile?: DesktopProfile;
+  selectedKey: string;
+  setDesktopQuery: (value: string) => void;
+  setFileFilter: (value: FileFilter) => void;
+  setSortMode: (value: SortMode) => void;
+  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
+  sortMode: SortMode;
+  status: { tone: StatusTone; text: string };
+  theme: ThemeMode;
+  onClear: () => void;
+  onRefresh: () => void;
+  onSearch: (event: FormEvent<HTMLFormElement>) => void;
+  onSelect: (message: MailMessage) => void;
+}) {
+  return (
+    <main className="desktop-public-app">
+      <header className="desktop-public-header">
+        <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
+          <div className="brand-mark" aria-hidden="true">
+            PoW
+          </div>
+          <div>
+            <h1>ProofOfWork Desktop</h1>
+            <span>Public file search</span>
+          </div>
+        </a>
+
+        <div className="landing-nav">
+          <DomainNav />
+          <button
+            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
+            className="icon-button"
+            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            type="button"
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+        </div>
+      </header>
+
+      {status.tone !== "idle" ? (
+        <div className={`status desktop-route-status ${status.tone}`}>
+          <span className="status-dot" aria-hidden="true" />
+          <span>{status.text}</span>
+        </div>
+      ) : null}
+
+      <DesktopWorkspace
+        activeNetwork={activeNetwork}
+        busy={busy}
+        desktopQuery={desktopQuery}
+        fileFilter={fileFilter}
+        messages={messages}
+        profile={profile}
+        selectedKey={selectedKey}
+        setDesktopQuery={setDesktopQuery}
+        setFileFilter={setFileFilter}
+        setSortMode={setSortMode}
+        sortMode={sortMode}
+        onClear={onClear}
+        onRefresh={onRefresh}
+        onSearch={onSearch}
+        onSelect={onSelect}
+      />
+
+      <SocialFooter />
+    </main>
+  );
+}
+
 function LandingApp({
   registryRecords,
   setTheme,
@@ -4967,10 +5113,8 @@ function LandingApp({
           </div>
         </a>
 
-        <nav className="landing-nav" aria-label="ProofOfWork.Me apps">
-          <a href={ID_APP_URL}>IDs</a>
-          <a href={COMPUTER_APP_URL}>Computer</a>
-          <a href={DESKTOP_APP_URL}>Desktop</a>
+        <div className="landing-nav">
+          <DomainNav />
           <button
             aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
             className="icon-button"
@@ -4980,7 +5124,7 @@ function LandingApp({
           >
             {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
           </button>
-        </nav>
+        </div>
       </header>
 
       <section className="landing-hero">
@@ -5213,6 +5357,8 @@ function IdLaunchApp({
             <span>Mainnet registry</span>
           </div>
         </div>
+
+        <DomainNav compact />
 
         <div className="topbar-controls">
           <button
@@ -5449,11 +5595,18 @@ function SocialFooter({ compact = false }: { compact?: boolean }) {
   return (
     <footer className={compact ? "app-footer compact" : "app-footer"}>
       <span>ProofOfWork.Me</span>
-      <nav aria-label="Official ProofOfWork.Me links">
+      <DomainNav compact={compact} />
+      <nav className="social-nav" aria-label="Official ProofOfWork.Me links">
         <a href={X_URL} rel="noreferrer" target="_blank" aria-label="ProofOfWork.Me on X">
           <span className="button-content">
             <X size={14} />
             <span>X</span>
+          </span>
+        </a>
+        <a href={YOUTUBE_URL} rel="noreferrer" target="_blank" aria-label="ProofOfWork.Me on YouTube">
+          <span className="button-content">
+            <span aria-hidden="true">YT</span>
+            <span>YouTube</span>
           </span>
         </a>
         <a href={GITHUB_URL} rel="noreferrer" target="_blank" aria-label="ProofOfWork.Me on GitHub">

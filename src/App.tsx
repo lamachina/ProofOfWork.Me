@@ -18,6 +18,7 @@ import {
   Moon,
   Paperclip,
   PenLine,
+  FolderPlus,
   RefreshCw,
   Reply,
   Send,
@@ -44,7 +45,7 @@ type LegacyBitcoinNetwork = "livenet" | "testnet";
 type UniSatChain = "BITCOIN_MAINNET" | "BITCOIN_TESTNET" | "BITCOIN_TESTNET4";
 type UniSatEvent = "accountsChanged" | "networkChanged" | "chainChanged";
 type StatusTone = "idle" | "good" | "bad";
-type Folder = "inbox" | "incoming" | "sent" | "outbox" | "drafts" | "favorites" | "archive" | "files" | "ids" | "contacts";
+type Folder = "inbox" | "incoming" | "sent" | "outbox" | "drafts" | "favorites" | "archive" | "files" | "ids" | "contacts" | "custom";
 type SortMode = "value" | "newest" | "oldest" | "thread" | "largest" | "filetype" | "sender";
 type FileFilter = "all" | "image" | "pdf" | "document" | "other";
 type ThemeMode = "light" | "dark";
@@ -69,8 +70,10 @@ type DraftMessage = {
   network: BitcoinNetwork;
   from: string;
   recipient: string;
+  ccRecipient?: string;
   amountSats: number;
   feeRate: number;
+  subject?: string;
   memo: string;
   attachment?: MailAttachment;
   parentTxid?: string;
@@ -80,9 +83,16 @@ type DraftMessage = {
 type MailPreference = {
   archived?: boolean;
   favorite?: boolean;
+  folders?: string[];
 };
 
 type MailPreferences = Record<string, MailPreference>;
+
+type CustomFolderRecord = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
 
 type ContactRecord = {
   network: BitcoinNetwork;
@@ -144,8 +154,11 @@ type SentMessage = {
   from: string;
   to: string;
   recipients?: MailRecipient[];
+  toRecipients?: MailRecipient[];
+  ccRecipients?: MailRecipient[];
   amountSats: number;
   feeRate: number;
+  subject?: string;
   memo: string;
   attachment?: MailAttachment;
   status?: BroadcastStatus;
@@ -180,6 +193,7 @@ type InboxMessage = {
   to: string;
   recipients?: MailRecipient[];
   amountSats: number;
+  subject?: string;
   memo: string;
   attachment?: MailAttachment;
   replyTo: string;
@@ -229,6 +243,7 @@ type MailMessage =
 
 type ProtocolMessage = {
   memo: string;
+  subject?: string;
   attachment?: MailAttachment;
   parentTxid?: string;
   replyTo?: string;
@@ -286,6 +301,7 @@ const SENT_KEY = "proofofwork.sent.v5";
 const DRAFT_KEY_PREFIX = "proofofwork.draft.v1";
 const MAIL_PREFS_KEY = "proofofwork.mailPrefs.v1";
 const CONTACTS_KEY = "proofofwork.contacts.v1";
+const CUSTOM_FOLDERS_KEY = "proofofwork.customFolders.v1";
 const THEME_KEY = "proofofwork.theme";
 const BACKUP_APP = "ProofOfWork.Me";
 const BACKUP_VERSION = 1;
@@ -352,7 +368,14 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isBackupStorageKey(key: string) {
-  return key === SENT_KEY || key === MAIL_PREFS_KEY || key === CONTACTS_KEY || key === THEME_KEY || key.startsWith(`${DRAFT_KEY_PREFIX}:`);
+  return (
+    key === SENT_KEY ||
+    key === MAIL_PREFS_KEY ||
+    key === CONTACTS_KEY ||
+    key === CUSTOM_FOLDERS_KEY ||
+    key === THEME_KEY ||
+    key.startsWith(`${DRAFT_KEY_PREFIX}:`)
+  );
 }
 
 function validateBackupValue(key: string, value: string) {
@@ -367,6 +390,10 @@ function validateBackupValue(key: string, value: string) {
     }
 
     if (key === CONTACTS_KEY) {
+      return Array.isArray(parsed);
+    }
+
+    if (key === CUSTOM_FOLDERS_KEY) {
       return Array.isArray(parsed);
     }
 
@@ -455,6 +482,17 @@ function backupDataSummary(data: Record<string, string>) {
       const contacts = JSON.parse(data[CONTACTS_KEY]) as unknown;
       if (Array.isArray(contacts)) {
         details.push(`${contacts.length} contact${contacts.length === 1 ? "" : "s"}`);
+      }
+    } catch {
+      // Already validated before this helper is used.
+    }
+  }
+
+  if (data[CUSTOM_FOLDERS_KEY]) {
+    try {
+      const folders = JSON.parse(data[CUSTOM_FOLDERS_KEY]) as unknown;
+      if (Array.isArray(folders)) {
+        details.push(`${folders.length} custom folder${folders.length === 1 ? "" : "s"}`);
       }
     } catch {
       // Already validated before this helper is used.
@@ -743,6 +781,10 @@ function mergeSentRecord(preferred: SentMessage, fallback: SentMessage): SentMes
     feeRate: preferred.feeRate || fallback.feeRate,
     lastCheckedAt: preferred.lastCheckedAt ?? fallback.lastCheckedAt,
     parentTxid: preferred.parentTxid ?? fallback.parentTxid,
+    recipients: preferred.recipients ?? fallback.recipients,
+    subject: preferred.subject ?? fallback.subject,
+    toRecipients: preferred.toRecipients ?? fallback.toRecipients,
+    ccRecipients: preferred.ccRecipients ?? fallback.ccRecipients,
   };
 }
 
@@ -1122,8 +1164,12 @@ function mailSubject(memo: string) {
   return firstLine ? firstLine.slice(0, 90) : "OP_RETURN message";
 }
 
-function messageSubject(message: { attachment?: MailAttachment; memo: string }) {
-  const subject = mailSubject(message.memo);
+function normalizeSubject(value: string) {
+  return value.trim().replace(/\s+/gu, " ").slice(0, 180);
+}
+
+function messageSubject(message: { attachment?: MailAttachment; memo: string; subject?: string }) {
+  const subject = normalizeSubject(message.subject ?? "") || mailSubject(message.memo);
   if (subject !== "OP_RETURN message") {
     return subject;
   }
@@ -1234,10 +1280,15 @@ function buildAttachmentPayloads(attachment: MailAttachment) {
   return chunks.map((chunk, index) => `${metadataPrefix}${index}/${chunks.length}:${chunk}`);
 }
 
-function buildProtocolPayloads(message: string, parentTxid?: string, attachment?: MailAttachment) {
+function buildProtocolPayloads(subject: string, message: string, parentTxid?: string, attachment?: MailAttachment) {
   const bodyPrefix = `${PROTOCOL_PREFIX}m:`;
   const bodyChunkBytes = maxPayloadDataBytes(bodyPrefix);
   const payloads: string[] = [];
+  const trimmedSubject = normalizeSubject(subject);
+
+  if (trimmedSubject) {
+    payloads.push(`${PROTOCOL_PREFIX}s:${encodeTextBase64Url(trimmedSubject)}`);
+  }
 
   if (parentTxid) {
     payloads.push(`${PROTOCOL_PREFIX}r:${parentTxid}`);
@@ -1474,6 +1525,8 @@ function loadSentMessages(): SentMessage[] {
       const network: BitcoinNetwork =
         sent.network === "livenet" || sent.network === "testnet" || sent.network === "testnet4" ? sent.network : "livenet";
       const recipients = storedMailRecipients(sent.recipients, network);
+      const toRecipients = storedMailRecipients(sent.toRecipients, network);
+      const ccRecipients = storedMailRecipients(sent.ccRecipients, network);
 
       return [
         {
@@ -1489,6 +1542,9 @@ function loadSentMessages(): SentMessage[] {
           network,
           parentTxid: typeof sent.parentTxid === "string" ? sent.parentTxid : undefined,
           recipients: recipients.length > 0 ? recipients : undefined,
+          subject: typeof sent.subject === "string" ? sent.subject.slice(0, 180) : undefined,
+          toRecipients: toRecipients.length > 0 ? toRecipients : undefined,
+          ccRecipients: ccRecipients.length > 0 ? ccRecipients : undefined,
           replyTo: typeof sent.replyTo === "string" ? sent.replyTo : sent.from,
           status: normalizeBroadcastStatus(sent.status),
           to: sent.to,
@@ -1529,6 +1585,13 @@ function loadMailPreferences(): MailPreferences {
           normalized.favorite = true;
         }
 
+        if (Array.isArray(preference.folders)) {
+          const folders = [...new Set(preference.folders.filter((folder) => typeof folder === "string" && folder.trim()).map((folder) => folder.trim()))];
+          if (folders.length > 0) {
+            normalized.folders = folders;
+          }
+        }
+
         return Object.keys(normalized).length > 0 ? [[key, normalized]] : [];
       }),
     );
@@ -1539,6 +1602,64 @@ function loadMailPreferences(): MailPreferences {
 
 function saveMailPreferences(preferences: MailPreferences) {
   localStorage.setItem(MAIL_PREFS_KEY, JSON.stringify(preferences));
+}
+
+function normalizeFolderName(name: string) {
+  return name.trim().replace(/\s+/gu, " ").slice(0, 40);
+}
+
+function customFolderId(name: string) {
+  const slug = normalizeFolderName(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "")
+    .slice(0, 32);
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `${slug || "folder"}-${suffix}`;
+}
+
+function sortCustomFolders(folders: CustomFolderRecord[]) {
+  return [...folders].sort((left, right) => left.name.localeCompare(right.name) || left.createdAt.localeCompare(right.createdAt));
+}
+
+function storedCustomFolder(value: unknown): CustomFolderRecord | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const folder = value as Partial<CustomFolderRecord>;
+  const id = typeof folder.id === "string" ? folder.id.trim().slice(0, 80) : "";
+  const name = typeof folder.name === "string" ? normalizeFolderName(folder.name) : "";
+  if (!id || !name) {
+    return undefined;
+  }
+
+  return {
+    createdAt: typeof folder.createdAt === "string" && !Number.isNaN(Date.parse(folder.createdAt)) ? folder.createdAt : new Date().toISOString(),
+    id,
+    name,
+  };
+}
+
+function loadCustomFolders(): CustomFolderRecord[] {
+  try {
+    const stored = localStorage.getItem(CUSTOM_FOLDERS_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return sortCustomFolders(parsed.flatMap((folder): CustomFolderRecord[] => {
+      const normalized = storedCustomFolder(folder);
+      return normalized ? [normalized] : [];
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomFolders(folders: CustomFolderRecord[]) {
+  localStorage.setItem(CUSTOM_FOLDERS_KEY, JSON.stringify(sortCustomFolders(folders)));
 }
 
 function normalizeContactName(name: string, fallback: string) {
@@ -1733,12 +1854,14 @@ function loadDraft(address: string, network: BitcoinNetwork): DraftMessage | und
     return {
       amountSats,
       attachment: storedAttachment(draft.attachment),
+      ccRecipient: typeof draft.ccRecipient === "string" ? draft.ccRecipient : "",
       feeRate,
       from: address,
       memo: typeof draft.memo === "string" ? draft.memo : DEFAULT_MEMO,
       network,
       parentTxid,
       recipient: typeof draft.recipient === "string" ? draft.recipient : "",
+      subject: typeof draft.subject === "string" ? draft.subject.slice(0, 180) : "",
       updatedAt,
     };
   } catch {
@@ -1757,6 +1880,8 @@ function clearDraft(address: string, network: BitcoinNetwork) {
 function isDraftContentful(draft: DraftMessage) {
   return Boolean(
     draft.recipient.trim() ||
+      draft.ccRecipient?.trim() ||
+      draft.subject?.trim() ||
       draft.memo.trim() ||
       draft.attachment ||
       draft.parentTxid ||
@@ -1890,6 +2015,7 @@ function extractProtocolMemo(vout: Array<Record<string, unknown>>) {
   const decodedMessages = decodedOpReturnMessages(vout);
   let replyTo = "";
   let parentTxid: string | undefined;
+  let subject = "";
   let attachmentAccumulator: AttachmentAccumulator | undefined;
   const chunks: string[] = [];
 
@@ -1902,6 +2028,15 @@ function extractProtocolMemo(vout: Array<Record<string, unknown>>) {
     const payload = decodedMessage.slice(PROTOCOL_PREFIX.length);
     if (payload.startsWith("f:")) {
       replyTo = payload.slice(2);
+      continue;
+    }
+
+    if (payload.startsWith("s:")) {
+      try {
+        subject = normalizeSubject(decodeTextBase64Url(payload.slice(2)));
+      } catch {
+        // Ignore malformed optional headers while keeping the message readable.
+      }
       continue;
     }
 
@@ -1921,13 +2056,17 @@ function extractProtocolMemo(vout: Array<Record<string, unknown>>) {
     }
   }
 
-  if (chunks.length === 0) {
+  if (chunks.length === 0 && !subject && !attachmentAccumulator) {
     return null;
   }
 
   const protocolMessage: ProtocolMessage = {
     memo: chunks.join(""),
   };
+
+  if (subject) {
+    protocolMessage.subject = subject;
+  }
 
   if (replyTo) {
     protocolMessage.replyTo = replyTo;
@@ -2204,6 +2343,7 @@ function inboxMessagesFromTransactions(
         to: targetAddress,
         amountSats: amount,
         memo: protocolMessage.memo,
+        subject: protocolMessage.subject,
         attachment: protocolMessage.attachment,
         replyTo: sender === "Unknown" ? protocolMessage.replyTo ?? "Unknown" : sender,
         recipients: recipients.length > 0 ? recipients : undefined,
@@ -2260,6 +2400,7 @@ function sentMessagesFromTransactions(
         network: targetNetwork,
         parentTxid: protocolMessage.parentTxid,
         recipients,
+        subject: protocolMessage.subject,
         replyTo: targetAddress,
         status: confirmed ? "confirmed" : "pending",
         to: recipientSummary(recipients, payment.address),
@@ -2749,8 +2890,10 @@ export default function App() {
   const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
   const [address, setAddress] = useState("");
   const [recipient, setRecipient] = useState("");
+  const [ccRecipient, setCcRecipient] = useState("");
   const [amountSats, setAmountSats] = useState(DEFAULT_AMOUNT_SATS);
   const [feeRate, setFeeRate] = useState(DEFAULT_FEE_RATE);
+  const [subject, setSubject] = useState("");
   const [memo, setMemo] = useState(DEFAULT_MEMO);
   const [attachment, setAttachment] = useState<MailAttachment | undefined>();
   const [allSent, setAllSent] = useState<SentMessage[]>(() => loadSentMessages());
@@ -2762,9 +2905,12 @@ export default function App() {
   const [idPgpKey, setIdPgpKey] = useState("");
   const [mailPreferences, setMailPreferences] = useState<MailPreferences>(() => loadMailPreferences());
   const [contacts, setContacts] = useState<ContactRecord[]>(() => loadContacts());
+  const [customFolders, setCustomFolders] = useState<CustomFolderRecord[]>(() => loadCustomFolders());
+  const [newFolderName, setNewFolderName] = useState("");
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
   const [activeFolder, setActiveFolder] = useState<Folder>("inbox");
+  const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("value");
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
   const [selectedKey, setSelectedKey] = useState("");
@@ -2782,8 +2928,8 @@ export default function App() {
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   const protocolPayloads = useMemo(
-    () => buildProtocolPayloads(memo, replyParentTxid, attachment),
-    [attachment, memo, replyParentTxid],
+    () => buildProtocolPayloads(subject, memo, replyParentTxid, attachment),
+    [attachment, memo, replyParentTxid, subject],
   );
   const dataCarrierBytes = useMemo(
     () => dataCarrierBytesForPayloads(protocolPayloads),
@@ -2839,6 +2985,27 @@ export default function App() {
   const outboxMail = useMemo(() => outboxMailAll.filter((message) => !archivedKeys.has(mailKey(message))), [archivedKeys, outboxMailAll]);
   const favoritesMail = useMemo(() => allMail.filter((message) => favoriteKeys.has(mailKey(message))), [allMail, favoriteKeys]);
   const archiveMail = useMemo(() => allMail.filter((message) => archivedKeys.has(mailKey(message))), [allMail, archivedKeys]);
+  const activeCustomFolder = useMemo(
+    () => customFolders.find((folder) => folder.id === activeCustomFolderId),
+    [activeCustomFolderId, customFolders],
+  );
+  const customFolderMail = useMemo(
+    () =>
+      activeCustomFolderId
+        ? allMail.filter((message) => mailPreferences[mailKey(message)]?.folders?.includes(activeCustomFolderId))
+        : [],
+    [activeCustomFolderId, allMail, mailPreferences],
+  );
+  const customFolderCounts = useMemo(
+    () =>
+      new Map(
+        customFolders.map((folder) => [
+          folder.id,
+          allMail.filter((message) => mailPreferences[mailKey(message)]?.folders?.includes(folder.id)).length,
+        ]),
+      ),
+    [allMail, customFolders, mailPreferences],
+  );
   const allFileMessages = useMemo(
     () => allMail.filter((message) => message.attachment && (message.folder !== "inbox" || message.confirmed)),
     [allMail],
@@ -2864,10 +3031,12 @@ export default function App() {
                     ? archiveMail
                     : activeFolder === "files"
                       ? fileMessages
+                      : activeFolder === "custom"
+                        ? customFolderMail
                       : [],
         sortMode,
       ),
-    [activeFolder, archiveMail, favoritesMail, fileMessages, inboxMail, incomingMail, outboxMail, sentMail, sortMode],
+    [activeFolder, archiveMail, customFolderMail, favoritesMail, fileMessages, inboxMail, incomingMail, outboxMail, sentMail, sortMode],
   );
   const selectedMessage = activeMessages.find((message) => mailKey(message) === selectedKey) ?? activeMessages[0];
   const threadMessages = selectedMessage
@@ -2881,11 +3050,19 @@ export default function App() {
     () => resolveRecipientInputs(recipient, network, idRegistry, registryAddress),
     [idRegistry, network, recipient, registryAddress],
   );
+  const ccRecipientResolution = useMemo(
+    () => resolveRecipientInputs(ccRecipient, network, idRegistry, registryAddress),
+    [ccRecipient, idRegistry, network, registryAddress],
+  );
   const recipientNote = recipient.trim() ? recipientResolutionNote(recipientResolution) : "";
+  const ccRecipientNote = ccRecipient.trim() ? recipientResolutionNote(ccRecipientResolution) : "";
+  const totalResolvedRecipients = recipientResolution.recipients.length + ccRecipientResolution.recipients.length;
   const canSend =
-    Boolean(address && recipient.trim() && amountSats > 0 && Number.isFinite(feeRate) && feeRate >= 0 && (memo.trim() || attachment)) &&
+    Boolean(address && recipient.trim() && amountSats > 0 && Number.isFinite(feeRate) && feeRate >= 0 && (subject.trim() || memo.trim() || attachment)) &&
     recipientResolution.recipients.length > 0 &&
+    totalResolvedRecipients <= MAX_RECIPIENTS &&
     !recipientResolution.error &&
+    !ccRecipientResolution.error &&
     dataCarrierBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
   const normalizedIdName = normalizePowId(idName);
@@ -2988,6 +3165,10 @@ export default function App() {
   }, [mailPreferences]);
 
   useEffect(() => {
+    saveCustomFolders(customFolders);
+  }, [customFolders]);
+
+  useEffect(() => {
     setSavedDraft(address ? loadDraft(address, network) : undefined);
   }, [address, network]);
 
@@ -3003,12 +3184,14 @@ export default function App() {
     const draft: DraftMessage = {
       amountSats,
       attachment,
+      ccRecipient,
       feeRate,
       from: address,
       memo,
       network,
       parentTxid: replyParentTxid,
       recipient,
+      subject,
       updatedAt: new Date().toISOString(),
     };
 
@@ -3018,7 +3201,7 @@ export default function App() {
 
     saveDraft(draft);
     setSavedDraft(draft);
-  }, [address, amountSats, attachment, composeOpen, feeRate, memo, network, recipient, replyParentTxid]);
+  }, [address, amountSats, attachment, ccRecipient, composeOpen, feeRate, memo, network, recipient, replyParentTxid, subject]);
 
   useEffect(() => {
     if (activeFolder === "ids") {
@@ -3046,7 +3229,7 @@ export default function App() {
   }, [landingMode]);
 
   useEffect(() => {
-    if (!needsRegistryResolution(recipient, network) || !registryAddress) {
+    if ((!needsRegistryResolution(recipient, network) && !needsRegistryResolution(ccRecipient, network)) || !registryAddress) {
       return undefined;
     }
 
@@ -3065,7 +3248,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [network, recipient, registryAddress]);
+  }, [ccRecipient, network, recipient, registryAddress]);
 
   useEffect(() => {
     if (landingMode) {
@@ -3159,8 +3342,10 @@ export default function App() {
 
   function applyDraft(draft: DraftMessage) {
     setRecipient(draft.recipient);
+    setCcRecipient(draft.ccRecipient ?? "");
     setAmountSats(draft.amountSats);
     setFeeRate(draft.feeRate);
+    setSubject(draft.subject ?? "");
     setMemo(draft.memo);
     setAttachment(draft.attachment);
     setReplyParentTxid(draft.parentTxid);
@@ -3183,6 +3368,109 @@ export default function App() {
 
   function canFavorite(message: MailMessage) {
     return message.folder === "inbox" || (message.folder === "sent" && sentDeliveryStatus(message) === "confirmed");
+  }
+
+  function canUseCustomFolders(message: MailMessage) {
+    return canFavorite(message);
+  }
+
+  function messageFolderIds(message: MailMessage) {
+    return mailPreferences[mailKey(message)]?.folders ?? [];
+  }
+
+  function setMessageCustomFolder(message: MailMessage, folderId: string, enabled: boolean) {
+    if (!canUseCustomFolders(message)) {
+      setStatus({ tone: "bad", text: "Only confirmed mail can be filed." });
+      return;
+    }
+
+    const folder = customFolders.find((item) => item.id === folderId);
+    if (!folder) {
+      return;
+    }
+
+    const key = mailKey(message);
+    setMailPreferences((current) => {
+      const next = { ...current };
+      const currentFolders = new Set(next[key]?.folders ?? []);
+      if (enabled) {
+        currentFolders.add(folderId);
+      } else {
+        currentFolders.delete(folderId);
+      }
+
+      const folders = [...currentFolders];
+      const existing = next[key] ?? {};
+      if (folders.length > 0) {
+        next[key] = { ...existing, folders };
+      } else {
+        const { folders: _folders, ...rest } = existing;
+        if (Object.keys(rest).length > 0) {
+          next[key] = rest;
+        } else {
+          delete next[key];
+        }
+      }
+
+      return next;
+    });
+
+    setStatus({ tone: "good", text: enabled ? `Added to ${folder.name}.` : `Removed from ${folder.name}.` });
+  }
+
+  function createCustomFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = normalizeFolderName(newFolderName);
+    if (!name) {
+      return;
+    }
+
+    if (customFolders.some((folder) => folder.name.toLowerCase() === name.toLowerCase())) {
+      setStatus({ tone: "bad", text: `${name} already exists.` });
+      return;
+    }
+
+    const folder: CustomFolderRecord = {
+      createdAt: new Date().toISOString(),
+      id: customFolderId(name),
+      name,
+    };
+    setCustomFolders((current) => sortCustomFolders([...current, folder]));
+    setNewFolderName("");
+    setActiveFolder("custom");
+    setActiveCustomFolderId(folder.id);
+    setStatus({ tone: "good", text: `${name} folder created.` });
+  }
+
+  function removeCustomFolder(folderId: string) {
+    const folder = customFolders.find((item) => item.id === folderId);
+    if (!folder) {
+      return;
+    }
+
+    setCustomFolders((current) => current.filter((item) => item.id !== folderId));
+    setMailPreferences((current) => {
+      const next: MailPreferences = {};
+      for (const [key, preference] of Object.entries(current)) {
+        const folders = (preference.folders ?? []).filter((item) => item !== folderId);
+        const normalized = { ...preference, folders: folders.length > 0 ? folders : undefined };
+        if (!normalized.archived && !normalized.favorite && !normalized.folders) {
+          continue;
+        }
+
+        next[key] = normalized;
+      }
+
+      return next;
+    });
+
+    if (activeCustomFolderId === folderId) {
+      setActiveFolder("inbox");
+      setActiveCustomFolderId("");
+      setSelectedKey("");
+    }
+
+    setStatus({ tone: "good", text: `${folder.name} folder removed.` });
   }
 
   function setMessageFavorite(message: MailMessage, favorite: boolean) {
@@ -3247,12 +3535,14 @@ export default function App() {
     const draft: DraftMessage = {
       amountSats: message.amountSats,
       attachment: message.attachment,
+      ccRecipient: recipientListText(message.ccRecipients, ""),
       feeRate: message.feeRate,
       from: message.from,
       memo: message.memo,
       network: message.network,
       parentTxid: message.parentTxid,
-      recipient: recipientListText(message.recipients, message.to),
+      recipient: recipientListText(message.toRecipients ?? message.recipients, message.to),
+      subject: message.subject,
       updatedAt: new Date().toISOString(),
     };
 
@@ -3277,12 +3567,17 @@ export default function App() {
         setComposeOpen(false);
         setReplyParentTxid(undefined);
         setAttachment(undefined);
+        setCcRecipient("");
+        setSubject("");
       }
 
       return;
     }
 
     setActiveFolder(folder);
+    if (folder !== "custom") {
+      setActiveCustomFolderId("");
+    }
     setSortMode((current) => (folder !== "files" && ["largest", "filetype", "sender"].includes(current) ? "value" : current));
     setComposeOpen(false);
     setReplyParentTxid(undefined);
@@ -3301,8 +3596,10 @@ export default function App() {
 
   function composeNew() {
     setRecipient("");
+    setCcRecipient("");
     setAmountSats(DEFAULT_AMOUNT_SATS);
     setFeeRate(DEFAULT_FEE_RATE);
+    setSubject("");
     setMemo(DEFAULT_MEMO);
     setAttachment(undefined);
     setReplyParentTxid(undefined);
@@ -3317,8 +3614,10 @@ export default function App() {
 
     setSavedDraft(undefined);
     setRecipient("");
+    setCcRecipient("");
     setAmountSats(DEFAULT_AMOUNT_SATS);
     setFeeRate(DEFAULT_FEE_RATE);
+    setSubject("");
     setMemo(DEFAULT_MEMO);
     setAttachment(undefined);
     setReplyParentTxid(undefined);
@@ -3362,8 +3661,10 @@ export default function App() {
 
   function composeToContact(contact: ContactRecord) {
     setRecipient(contactTarget(contact));
+    setCcRecipient("");
     setAmountSats(DEFAULT_AMOUNT_SATS);
     setFeeRate(DEFAULT_FEE_RATE);
+    setSubject("");
     setMemo(DEFAULT_MEMO);
     setAttachment(undefined);
     setReplyParentTxid(undefined);
@@ -3424,6 +3725,7 @@ export default function App() {
       setAllSent(loadSentMessages());
       setMailPreferences(loadMailPreferences());
       setContacts(loadContacts());
+      setCustomFolders(loadCustomFolders());
       setSavedDraft(address ? loadDraft(address, network) : undefined);
 
       const keyCount = Object.keys(data).length;
@@ -3443,8 +3745,10 @@ export default function App() {
       : message.recipients?.[0]?.display ?? message.to;
     const subject = messageSubject(message);
     setRecipient(recipientAddress === "Unknown" ? "" : recipientAddress);
+    setCcRecipient("");
     setAmountSats(messageReplyAmount(message));
-    setMemo(`Re: ${subject}\n\n`);
+    setSubject(`Re: ${subject}`);
+    setMemo("");
     setAttachment(undefined);
     setReplyParentTxid(rootTxid(message));
     setComposeOpen(true);
@@ -3475,8 +3779,10 @@ export default function App() {
 
     const subject = messageSubject(message);
     setRecipient([...targets.values()].join(", "));
+    setCcRecipient("");
     setAmountSats(messageReplyAmount(message));
-    setMemo(`Re: ${subject}\n\n`);
+    setSubject(`Re: ${subject}`);
+    setMemo("");
     setAttachment(undefined);
     setReplyParentTxid(rootTxid(message));
     setComposeOpen(true);
@@ -3490,6 +3796,10 @@ export default function App() {
     setSelectedKey("");
     setActiveFolder("inbox");
     setComposeOpen(true);
+    setRecipient("");
+    setCcRecipient("");
+    setSubject("");
+    setMemo(DEFAULT_MEMO);
     setAttachment(undefined);
     setReplyParentTxid(undefined);
   }
@@ -3773,8 +4083,10 @@ export default function App() {
     }
 
     let resolvedRecipients = recipientResolution;
+    let resolvedCcRecipients = ccRecipientResolution;
     const recipientInput = recipient.trim();
-    const shouldResolveId = needsRegistryResolution(recipientInput, network);
+    const ccRecipientInput = ccRecipient.trim();
+    const shouldResolveId = needsRegistryResolution(recipientInput, network) || needsRegistryResolution(ccRecipientInput, network);
 
     setBusy(true);
     setStatus({ tone: "idle", text: shouldResolveId ? "Checking ProofOfWork ID registry..." : "Building PSBT..." });
@@ -3789,10 +4101,21 @@ export default function App() {
         const records = await fetchIdRegistry(network);
         setIdRegistry(records);
         resolvedRecipients = resolveRecipientInputs(recipientInput, network, records, registryAddress);
+        resolvedCcRecipients = resolveRecipientInputs(ccRecipientInput, network, records, registryAddress);
       }
 
       if (resolvedRecipients.error || resolvedRecipients.recipients.length === 0) {
         setStatus({ tone: "bad", text: resolvedRecipients.error || "Enter a valid Bitcoin address or confirmed ProofOfWork ID." });
+        return;
+      }
+
+      if (resolvedCcRecipients.error) {
+        setStatus({ tone: "bad", text: resolvedCcRecipients.error });
+        return;
+      }
+
+      if (resolvedRecipients.recipients.length + resolvedCcRecipients.recipients.length > MAX_RECIPIENTS) {
+        setStatus({ tone: "bad", text: `Send to ${MAX_RECIPIENTS} recipients or fewer for now.` });
         return;
       }
 
@@ -3803,12 +4126,29 @@ export default function App() {
       }
 
       const satoshis = Math.floor(amountSats);
-      const mailRecipients: MailRecipient[] = resolvedRecipients.recipients.map((resolved) => ({
+      const toRecipients: MailRecipient[] = resolvedRecipients.recipients.map((resolved) => ({
         address: resolved.paymentAddress,
         amountSats: satoshis,
         display: resolved.isId ? resolved.displayRecipient : resolved.paymentAddress,
         id: resolved.id,
       }));
+      const seenAddresses = new Set(toRecipients.map((mailRecipient) => mailRecipient.address));
+      const ccRecipients: MailRecipient[] = resolvedCcRecipients.recipients.flatMap((resolved): MailRecipient[] => {
+        if (seenAddresses.has(resolved.paymentAddress)) {
+          return [];
+        }
+
+        seenAddresses.add(resolved.paymentAddress);
+        return [
+          {
+            address: resolved.paymentAddress,
+            amountSats: satoshis,
+            display: resolved.isId ? resolved.displayRecipient : resolved.paymentAddress,
+            id: resolved.id,
+          },
+        ];
+      });
+      const mailRecipients = [...toRecipients, ...ccRecipients];
       const paymentPsbt = await buildPaymentPsbt({
         feeRate,
         fromAddress: address,
@@ -3836,10 +4176,13 @@ export default function App() {
         txid,
         network,
         from: address,
-        to: recipientSummary(mailRecipients, recipientInput),
+        to: recipientSummary(toRecipients, recipientInput),
         recipients: mailRecipients,
+        toRecipients,
+        ccRecipients: ccRecipients.length > 0 ? ccRecipients : undefined,
         amountSats: totalRecipientSats(mailRecipients),
         feeRate,
+        subject: normalizeSubject(subject) || undefined,
         memo,
         attachment,
         status: "pending",
@@ -3855,6 +4198,8 @@ export default function App() {
       setActiveFolder("outbox");
       setComposeOpen(false);
       setAttachment(undefined);
+      setCcRecipient("");
+      setSubject("");
       setReplyParentTxid(undefined);
       setSelectedKey(`sent-${network}-${txid}`);
       setStatus({
@@ -4105,6 +4450,40 @@ export default function App() {
               </span>
               <strong>{archiveMail.length}</strong>
             </button>
+            {customFolders.map((folder) => (
+              <div className="custom-folder-row" key={folder.id}>
+                <button
+                  aria-current={activeFolder === "custom" && activeCustomFolderId === folder.id}
+                  onClick={() => {
+                    setActiveFolder("custom");
+                    setActiveCustomFolderId(folder.id);
+                    setComposeOpen(false);
+                    setSelectedKey("");
+                  }}
+                  type="button"
+                >
+                  <span className="folder-label">
+                    <FolderPlus size={17} />
+                    <span>{folder.name}</span>
+                  </span>
+                  <strong>{customFolderCounts.get(folder.id) ?? 0}</strong>
+                </button>
+                <button aria-label={`Remove ${folder.name}`} className="custom-folder-remove" onClick={() => removeCustomFolder(folder.id)} type="button">
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+            <form className="custom-folder-form" onSubmit={createCustomFolder}>
+              <input
+                aria-label="New folder name"
+                onChange={(event) => setNewFolderName(event.target.value)}
+                placeholder="New folder"
+                value={newFolderName}
+              />
+              <button aria-label="Create folder" className="icon-button" type="submit">
+                <FolderPlus size={15} />
+              </button>
+            </form>
             <button aria-current={activeFolder === "files"} onClick={() => openFolder("files")} type="button">
               <span className="folder-label">
                 <Paperclip size={17} />
@@ -4222,8 +4601,8 @@ export default function App() {
             <section className="message-column">
               <div className="list-toolbar">
                 <div>
-                  <h2>{folderLabel(activeFolder)}</h2>
-                  <span>{folderSubtitle(activeFolder)}</span>
+                  <h2>{activeFolder === "custom" ? activeCustomFolder?.name ?? "Folder" : folderLabel(activeFolder)}</h2>
+                  <span>{activeFolder === "custom" ? "Local folder" : folderSubtitle(activeFolder)}</span>
                 </div>
                 {activeFolder === "drafts" ? null : (
                   <label className="sort-control">
@@ -4288,6 +4667,9 @@ export default function App() {
                   feeRate={feeRate}
                   memo={memo}
                   network={network}
+                  ccRecipient={ccRecipient}
+                  ccRecipientError={Boolean(ccRecipientResolution.error)}
+                  ccRecipientNote={ccRecipientNote}
                   onDiscardDraft={discardDraft}
                   parentTxid={replyParentTxid}
                   recipient={recipient}
@@ -4298,9 +4680,12 @@ export default function App() {
                   setAttachmentFile={(file) => void attachFile(file)}
                   setParentTxid={setReplyParentTxid}
                   setAmountSats={setAmountSats}
+                  setCcRecipient={setCcRecipient}
                   setFeeRate={setFeeRate}
                   setMemo={setMemo}
                   setRecipient={setRecipient}
+                  setSubject={setSubject}
+                  subject={subject}
                   submit={sendOpReturn}
                 />
               ) : activeFolder === "drafts" ? (
@@ -4327,6 +4712,9 @@ export default function App() {
                   memo={memo}
                   dataCarrierBytes={dataCarrierBytes}
                   network={network}
+                  ccRecipient={ccRecipient}
+                  ccRecipientError={Boolean(ccRecipientResolution.error)}
+                  ccRecipientNote={ccRecipientNote}
                   parentTxid={replyParentTxid}
                   recipient={recipient}
                   recipientError={Boolean(recipientResolution.error)}
@@ -4336,9 +4724,12 @@ export default function App() {
                   setAttachmentFile={(file) => void attachFile(file)}
                   setParentTxid={setReplyParentTxid}
                   setAmountSats={setAmountSats}
+                  setCcRecipient={setCcRecipient}
                   setFeeRate={setFeeRate}
                   setMemo={setMemo}
                   setRecipient={setRecipient}
+                  setSubject={setSubject}
+                  subject={subject}
                   submit={sendOpReturn}
                 />
               ) : selectedMessage ? (
@@ -4350,10 +4741,15 @@ export default function App() {
                   deliveryStatus={selectedMessage.folder === "sent" ? sentDeliveryStatus(selectedMessage) : undefined}
                   favoriteable={canFavorite(selectedMessage)}
                   favorited={isFavorite(selectedMessage)}
+                  folderIds={messageFolderIds(selectedMessage)}
+                  folderable={canUseCustomFolders(selectedMessage)}
+                  activeCustomFolderId={activeFolder === "custom" ? activeCustomFolderId : ""}
+                  customFolders={customFolders}
                   message={selectedMessage}
                   onArchiveToggle={setMessageArchived}
                   onCheckBroadcasts={() => void checkBroadcastStatuses(false)}
                   onFavoriteToggle={setMessageFavorite}
+                  onFolderToggle={setMessageCustomFolder}
                   onReply={replyTo}
                   onReplyAll={replyAllTo}
                   onRestoreDraft={restoreSentAsDraft}
@@ -5312,6 +5708,8 @@ function MessageList({
               ? <Star size={26} />
             : activeFolder === "archive"
               ? <Archive size={26} />
+              : activeFolder === "custom"
+                ? <FolderPlus size={26} />
               : <Send size={26} />;
     const emptyTitle =
       activeFolder === "inbox"
@@ -5324,6 +5722,8 @@ function MessageList({
               ? "No favorites"
               : activeFolder === "archive"
                 ? "No archived messages"
+                : activeFolder === "custom"
+                  ? "No messages here yet"
                 : "No Sent messages";
     const emptyCopy =
       activeFolder === "inbox"
@@ -5336,6 +5736,8 @@ function MessageList({
               ? "Star confirmed mail to keep it close."
               : activeFolder === "archive"
                 ? "Archived mail will appear here."
+                : activeFolder === "custom"
+                  ? "Open confirmed mail and add it to this local folder."
                 : "Confirmed sent mail appears here after a scan.";
 
     return (
@@ -5794,6 +6196,9 @@ function ComposePane({
   attachment,
   busy,
   canSend,
+  ccRecipient,
+  ccRecipientError,
+  ccRecipientNote,
   contacts,
   dataCarrierBytes,
   draftMode = false,
@@ -5809,16 +6214,22 @@ function ComposePane({
   setAttachment,
   setAttachmentFile,
   setAmountSats,
+  setCcRecipient,
   setFeeRate,
   setMemo,
   setParentTxid,
   setRecipient,
+  setSubject,
+  subject,
   submit,
 }: {
   amountSats: number;
   attachment?: MailAttachment;
   busy: boolean;
   canSend: boolean;
+  ccRecipient: string;
+  ccRecipientError: boolean;
+  ccRecipientNote: string;
   contacts: ContactRecord[];
   dataCarrierBytes: number;
   draftMode?: boolean;
@@ -5834,15 +6245,22 @@ function ComposePane({
   setAttachment: (value: MailAttachment | undefined) => void;
   setAttachmentFile: (file: File) => void;
   setAmountSats: (value: number) => void;
+  setCcRecipient: (value: string) => void;
   setFeeRate: (value: number) => void;
   setMemo: (value: string) => void;
   setParentTxid: (value: string | undefined) => void;
   setRecipient: (value: string) => void;
+  setSubject: (value: string) => void;
+  subject: string;
   submit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const recipientTokens = splitRecipientInputs(recipient);
+  const ccRecipientTokens = splitRecipientInputs(ccRecipient);
   const removeRecipient = (target: string) => {
     setRecipient(recipientTokens.filter((item) => item !== target).join(", "));
+  };
+  const removeCcRecipient = (target: string) => {
+    setCcRecipient(ccRecipientTokens.filter((item) => item !== target).join(", "));
   };
 
   return (
@@ -5914,6 +6332,40 @@ function ComposePane({
         </div>
       ) : null}
       {recipientNote ? <p className={recipientError ? "field-note bad" : "field-note"}>{recipientNote}</p> : null}
+
+      <label>
+        CC
+        <input
+          autoComplete="off"
+          list="proof-contact-options"
+          onChange={(event) => setCcRecipient(event.target.value)}
+          placeholder="Optional visible copies"
+          spellCheck={false}
+          value={ccRecipient}
+        />
+      </label>
+      {ccRecipientTokens.length > 0 ? (
+        <div className="recipient-chip-list" aria-label="CC recipients">
+          {ccRecipientTokens.map((token, index) => (
+            <button className="recipient-chip" key={`${token}-${index}`} onClick={() => removeCcRecipient(token)} title="Remove CC recipient" type="button">
+              <span>{shortAddress(token)}</span>
+              <X size={13} />
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {ccRecipientNote ? <p className={ccRecipientError ? "field-note bad" : "field-note"}>{ccRecipientNote}</p> : null}
+
+      <label>
+        Subject
+        <input
+          autoComplete="off"
+          maxLength={180}
+          onChange={(event) => setSubject(event.target.value)}
+          placeholder="Optional subject"
+          value={subject}
+        />
+      </label>
 
       <div className="compose-grid">
         <label>
@@ -6021,42 +6473,55 @@ function AttachmentCard({
 }
 
 function Reader({
+  activeCustomFolderId,
   activeNetwork,
   archivable,
   archived,
   checkingBroadcasts,
+  customFolders,
   deliveryStatus,
   favoriteable,
   favorited,
+  folderable,
+  folderIds,
   message,
   onArchiveToggle,
   onCheckBroadcasts,
   onFavoriteToggle,
+  onFolderToggle,
   onReply,
   onReplyAll,
   onRestoreDraft,
   threadMessages,
 }: {
+  activeCustomFolderId: string;
   activeNetwork: BitcoinNetwork;
   archivable: boolean;
   archived: boolean;
   checkingBroadcasts: boolean;
+  customFolders: CustomFolderRecord[];
   deliveryStatus?: BroadcastStatus;
   favoriteable: boolean;
   favorited: boolean;
+  folderable: boolean;
+  folderIds: string[];
   message: MailMessage;
   onArchiveToggle: (message: MailMessage, archived: boolean) => void;
   onCheckBroadcasts: () => void;
   onFavoriteToggle: (message: MailMessage, favorite: boolean) => void;
+  onFolderToggle: (message: MailMessage, folderId: string, enabled: boolean) => void;
   onReply: (message: MailMessage) => void;
   onReplyAll: (message: MailMessage) => void;
   onRestoreDraft: (message: MailMessage) => void;
   threadMessages: MailMessage[];
 }) {
-  const peerLabel = isInboundFolder(message.folder) ? "From" : "To";
-  const peer = isInboundFolder(message.folder) ? message.from : recipientListText(message.recipients, message.to);
+  const peerLabel = message.folder === "sent" ? "To" : "From";
+  const peer = message.folder === "sent" ? recipientListText(message.toRecipients ?? message.recipients, message.to) : message.from;
+  const ccRecipients = message.folder === "sent" ? message.ccRecipients ?? [] : [];
   const explorerNetwork = explorerNetworkFor(message.network, activeNetwork);
   const hasReplyAllTargets = (message.recipients?.length ?? 0) > 1 || (isInboundFolder(message.folder) && Boolean(message.recipients?.length));
+  const availableFolders = customFolders.filter((folder) => !folderIds.includes(folder.id));
+  const activeCustomFolder = customFolders.find((folder) => folder.id === activeCustomFolderId);
 
   return (
     <article className="reader">
@@ -6098,6 +6563,37 @@ function Reader({
               </span>
             </button>
           ) : null}
+          {folderable && availableFolders.length > 0 ? (
+            <label className="folder-action-select">
+              <span>Folder</span>
+              <select
+                aria-label="Add to folder"
+                onChange={(event) => {
+                  const folderId = event.target.value;
+                  event.target.value = "";
+                  if (folderId) {
+                    onFolderToggle(message, folderId, true);
+                  }
+                }}
+                value=""
+              >
+                <option value="">Add to folder</option>
+                {availableFolders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {folderable && activeCustomFolder && folderIds.includes(activeCustomFolder.id) ? (
+            <button className="secondary small" onClick={() => onFolderToggle(message, activeCustomFolder.id, false)} type="button">
+              <span className="button-content">
+                <FolderPlus size={15} />
+                <span>Remove</span>
+              </span>
+            </button>
+          ) : null}
           <button className="secondary small" onClick={() => onReply(message)} type="button">
             <span className="button-content">
               <Reply size={15} />
@@ -6130,6 +6626,12 @@ function Reader({
           <div>
             <dt>To</dt>
             <dd>{recipientListText(message.recipients, message.to)}</dd>
+          </div>
+        ) : null}
+        {ccRecipients.length > 0 ? (
+          <div>
+            <dt>CC</dt>
+            <dd>{recipientListText(ccRecipients, "")}</dd>
           </div>
         ) : null}
         <div>

@@ -65,18 +65,21 @@ Launch invariants for future developers/agents:
 - Lets dropped broadcasts be rebuilt from their local draft data; users must sign a fresh transaction to resend.
 - Recovers confirmed sent mail from chain data, so Sent and Files do not depend only on browser history.
 - Sorts Incoming, Inbox, and Sent by highest sats, newest, oldest, or thread.
+- Supports an optional Subject field written into the ProofOfWork.Me OP_RETURN protocol.
 - Replies to a message by embedding the parent txid so messages can form threads.
 - Supports Reply All for multi-recipient messages.
+- Supports CC in compose as visible additional payment-output recipients. The sender's local app preserves To/CC roles for sent mail; the chain itself only exposes recipients as payment outputs.
 - Infers the sender from transaction inputs instead of storing an address in OP_RETURN.
 - Shows self-sends in Incoming/Inbox and Outbox/Sent based on confirmation state.
 - Auto-saves one local draft per wallet and network until the message is broadcast or discarded.
 - Favorites confirmed mail locally so important messages stay easy to find.
 - Archives messages locally so they leave Inbox/Sent without deleting the on-chain record.
+- Lets users create local custom folders and file confirmed mail into any folder name.
 - Saves local Contacts for addresses or confirmed ProofOfWork IDs.
 - Adds confirmed registry IDs to Contacts from the Computer app's ID registry rows.
 - Uses saved Contacts as compose suggestions.
 - Accepts multiple compose recipients separated by commas, semicolons, or new lines, with removable recipient chips.
-- Exports and imports local app data backups for contacts, drafts, archives, favorites, theme, and broadcast tracking.
+- Exports and imports local app data backups for contacts, drafts, archives, favorites, custom folders, theme, and broadcast tracking.
 - Supports one small attachment per message, capped at 60,000 bytes before encoding.
 - Adds a desktop-style Files section for confirmed attachment-only browsing, filtering, sorting, previews, download, and opening the source message.
 - Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
@@ -136,14 +139,17 @@ pwm1:
 The app writes OP_RETURN as:
 
 ```text
+pwm1:s:<subject-base64url>
 pwm1:m:<message-chunk>
 ```
 
 Recipients are not stored in OP_RETURN. They are represented by normal Bitcoin payment outputs before the first ProofOfWork.Me OP_RETURN output. Multi-recipient mail uses one shared OP_RETURN payload and one BTC output per recipient.
+CC recipients are also normal payment outputs. To/CC labels are local sender-side organization metadata, not a chain-enforced privacy or delivery primitive.
 
 Replies are written as:
 
 ```text
+pwm1:s:<subject-base64url>
 pwm1:r:<parent-txid>
 pwm1:m:<message-chunk>
 ```

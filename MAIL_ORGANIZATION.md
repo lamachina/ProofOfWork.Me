@@ -19,6 +19,9 @@ Mail organization features that are already implemented in the full app:
 - Drafts in local storage.
 - Archive and Favorites in local storage.
 - Contacts in local storage.
+- User-created custom folders in local storage.
+- Optional Subjects written into the OP_RETURN mail protocol.
+- CC compose support for visible additional recipients.
 - Multi-recipient compose with removable recipient chips.
 - Reply All for multi-recipient mail.
 - Files view for confirmed attachments.
@@ -36,6 +39,7 @@ Instead, ProofOfWork.Me can provide local mailbox organization:
 
 - Archive messages to remove them from Inbox.
 - Favorite important messages.
+- File confirmed messages into user-created local folders.
 - Keep All Mail available so archived messages are still reachable.
 - Keep Sent as local sent history.
 - Send one message to multiple recipients without duplicating the OP_RETURN payload.
@@ -53,6 +57,7 @@ Drafts
 Files
 Favorites
 Archive
+Custom folders
 All Mail
 ```
 
@@ -66,6 +71,7 @@ Folder behavior:
 - Files shows confirmed messages from Inbox and Sent that contain attachments.
 - Favorites shows starred confirmed Inbox and Sent messages, including archived favorites.
 - Archive shows archived messages.
+- Custom folders show confirmed mail the user filed locally under that folder name.
 - All Mail shows everything the app knows about, including archived messages.
 
 ## Files
@@ -147,14 +153,14 @@ Drafts, archive, and favorite state can stay serverless at first.
 Drafts:
 
 - Store one draft per wallet address and network at first.
-- Save recipient, sats, fee rate, message body, attachment, reply parent txid, and update time.
+- Save recipient, CC recipient, subject, sats, fee rate, message body, attachment, reply parent txid, and update time.
 - Keep drafts in `localStorage`; they are not written on-chain.
 - Clear the draft after successful broadcast or explicit discard.
 - Key drafts by `network + address`.
 
 Archive and favorite preferences:
 
-Store local message preferences in `localStorage`, keyed by:
+Store local message preferences and custom folder assignments in `localStorage`, keyed by:
 
 ```text
 folder-network-txid
@@ -166,12 +172,20 @@ Example shape:
 {
   "inbox-testnet4-e3760f38...": {
     "archived": true,
-    "favorite": false
+    "favorite": false,
+    "folders": ["projects"]
   }
 }
 ```
 
 When the app scans inbox or loads sent mail, it should merge blockchain/local messages with these local flags.
+
+Custom folders:
+
+- Store the folder list locally in `localStorage`.
+- Folder membership is local metadata keyed to known message txids.
+- Only confirmed Inbox/Sent mail should be fileable so folders do not imply dropped or temporary mempool data is durable.
+- Custom folder names should remain user-controlled; the app only normalizes whitespace and keeps the local UX tidy.
 
 Contacts:
 
@@ -185,11 +199,19 @@ Contacts:
 Multi-recipient mail:
 
 - Compose accepts addresses, confirmed ProofOfWork IDs, and saved Contacts separated by commas, semicolons, or new lines.
+- The To field and CC field both resolve through the same confirmed-ID/address logic.
 - Each resolved recipient gets a normal BTC payment output before the first `pwm1:` OP_RETURN output.
 - The OP_RETURN payload is written once per transaction, so all recipients share the same txid and thread root.
 - The reader derives recipients from payment outputs, not OP_RETURN data.
+- To/CC labels are local sender-side organization metadata. Recipients can see payment outputs on-chain, but the protocol does not currently make role labels authoritative for every recipient.
 - Reply targets the sender; Reply All targets the sender plus other payment-output recipients, excluding the connected wallet address.
 - Keep the current cap at 10 recipients until wallet signing UX and fee estimates have more production mileage.
+
+Subject:
+
+- Write optional subjects as `pwm1:s:<subject-base64url>`.
+- Keep subjects short in the UI, but let the aggregate OP_RETURN transaction cap remain the hard protocol limit.
+- Fall back to the first message line or attachment name for older mail without a subject field.
 
 ## Product Language
 
@@ -222,6 +244,7 @@ Backup should export a versioned JSON file containing only supported app-local d
 
 - Drafts keyed by wallet address and network.
 - Archive and favorite preferences.
+- Custom folder definitions and folder membership.
 - Local contacts.
 - Local sent/outbox broadcast tracking.
 - Theme preference.

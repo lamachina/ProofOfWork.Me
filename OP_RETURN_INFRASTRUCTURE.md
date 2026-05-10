@@ -101,6 +101,7 @@ The mail endpoint:
 - Scans address history.
 - Reads only OP_RETURN outputs that follow ProofOfWork protocol prefixes.
 - Derives recipients from normal BTC payment outputs before the first `pwm1:` OP_RETURN output.
+- Reconstructs optional `pwm1:s` subject fields.
 - Reconstructs `pwm1:m` message chunks.
 - Reconstructs `pwm1:a` attachments after size and SHA-256 checks.
 - Separates confirmed inbox/sent records from pending records.
@@ -139,10 +140,17 @@ The last case can happen if a tx reappears in a mempool view after being tempora
 Mail/files:
 
 ```text
+pwm1:s:<subject-base64url>
 pwm1:m:<message-chunk>
 pwm1:r:<parent-txid>
 pwm1:a:<mime-base64url>:<name-base64url>:<size>:<sha256>:<index>/<total>:<data-base64url-chunk>
 ```
+
+Recipient roles:
+
+- Delivery recipients are normal BTC payment outputs before the first `pwm1:` output.
+- Multi-recipient and CC mail share one OP_RETURN payload and one txid.
+- To/CC labels are local sender-side metadata in the browser app; the API reconstructs payment-output recipients but does not infer authoritative CC roles from chain data.
 
 IDs:
 

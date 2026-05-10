@@ -455,6 +455,43 @@ code {
   font-size: 0.82rem;
 }
 
+.custom-folder-row {
+  align-items: center;
+  display: grid;
+  gap: 5px;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  min-width: 0;
+}
+
+.custom-folder-row > button:first-child {
+  min-width: 0;
+}
+
+.custom-folder-remove {
+  justify-content: center;
+  min-height: 34px;
+  padding: 0;
+}
+
+.custom-folder-form {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  padding: 4px 0 8px;
+}
+
+.custom-folder-form input {
+  min-height: 36px;
+  padding: 8px 10px;
+}
+
+.custom-folder-form .icon-button {
+  justify-content: center;
+  min-height: 36px;
+  padding: 0;
+  width: 36px;
+}
+
 .registry-network-stat {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1191,6 +1228,22 @@ select {
   align-items: center;
   display: flex;
   gap: 8px;
+}
+
+.folder-action-select {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 7px;
+}
+
+.folder-action-select > span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.folder-action-select select {
+  min-height: 32px;
 }
 
 label {

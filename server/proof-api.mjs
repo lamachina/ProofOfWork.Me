@@ -435,6 +435,10 @@ function decodeTextBase64Url(value) {
   return base64UrlDecodeBytes(value).toString("utf8");
 }
 
+function normalizeSubject(value) {
+  return String(value).trim().replace(/\s+/gu, " ").slice(0, 180);
+}
+
 function sha256Hex(bytes) {
   return Buffer.from(bitcoin.crypto.sha256(Buffer.from(bytes))).toString("hex");
 }
@@ -521,6 +525,7 @@ function extractProtocolMemo(vout) {
   let replyTo = "";
   let parentTxid;
   let attachmentAccumulator;
+  let subject = "";
   const chunks = [];
 
   for (const decodedMessage of decodedMessages) {
@@ -531,6 +536,15 @@ function extractProtocolMemo(vout) {
     const payload = decodedMessage.slice(PROTOCOL_PREFIX.length);
     if (payload.startsWith("f:")) {
       replyTo = payload.slice(2);
+      continue;
+    }
+
+    if (payload.startsWith("s:")) {
+      try {
+        subject = normalizeSubject(decodeTextBase64Url(payload.slice(2)));
+      } catch {
+        // Ignore malformed optional subjects while still allowing body/attachments through.
+      }
       continue;
     }
 
@@ -550,7 +564,7 @@ function extractProtocolMemo(vout) {
     }
   }
 
-  if (chunks.length === 0) {
+  if (chunks.length === 0 && !subject && !attachmentAccumulator) {
     return null;
   }
 
@@ -564,6 +578,10 @@ function extractProtocolMemo(vout) {
 
   if (parentTxid) {
     protocolMessage.parentTxid = parentTxid;
+  }
+
+  if (subject) {
+    protocolMessage.subject = subject;
   }
 
   const attachment = attachmentFromAccumulator(attachmentAccumulator);
@@ -801,6 +819,7 @@ function inboxMessagesFromTransactions(txs, address, network) {
       network,
       recipients: recipients.length > 0 ? recipients : undefined,
       replyTo: sender === "Unknown" ? protocolMessage.replyTo ?? "Unknown" : sender,
+      subject: protocolMessage.subject,
       to: address,
       txid: transactionTxid(tx),
     };
@@ -851,6 +870,7 @@ function sentMessagesFromTransactions(txs, address, network) {
         parentTxid: protocolMessage.parentTxid,
         recipients,
         replyTo: address,
+        subject: protocolMessage.subject,
         status: confirmed ? "confirmed" : "pending",
         to: recipients.length === 1 ? payment.display : `${payment.display} +${recipients.length - 1}`,
         txid,

@@ -71,7 +71,10 @@ Launch invariants for future developers/agents:
 - Auto-saves one local draft per wallet and network until the message is broadcast or discarded.
 - Favorites confirmed mail locally so important messages stay easy to find.
 - Archives messages locally so they leave Inbox/Sent without deleting the on-chain record.
-- Exports and imports local app data backups for drafts, archives, favorites, theme, and broadcast tracking.
+- Saves local Contacts for addresses or confirmed ProofOfWork IDs.
+- Adds confirmed registry IDs to Contacts from the Computer app's ID registry rows.
+- Uses saved Contacts as compose suggestions.
+- Exports and imports local app data backups for contacts, drafts, archives, favorites, theme, and broadcast tracking.
 - Supports one small attachment per message, capped at 60,000 bytes before encoding.
 - Adds a desktop-style Files section for confirmed attachment-only browsing, filtering, sorting, previews, download, and opening the source message.
 - Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
@@ -250,6 +253,7 @@ Important implementation points:
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
+- Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.
 - ID registry history fetcher: `fetchRegistryTransactions()`. It must continue paginating confirmed history with `txs/chain/:last_seen_txid` and merging `txs/mempool`.
 - ID read/compat parser: `parseIdRegistrationPayload()` and `idRecordsFromTransactions()`.

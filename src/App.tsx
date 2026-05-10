@@ -23,7 +23,10 @@ import {
   Send,
   Star,
   Sun,
+  Trash2,
   Upload,
+  UserPlus,
+  Users,
   Wallet,
   X,
 } from "lucide-react";
@@ -41,7 +44,7 @@ type LegacyBitcoinNetwork = "livenet" | "testnet";
 type UniSatChain = "BITCOIN_MAINNET" | "BITCOIN_TESTNET" | "BITCOIN_TESTNET4";
 type UniSatEvent = "accountsChanged" | "networkChanged" | "chainChanged";
 type StatusTone = "idle" | "good" | "bad";
-type Folder = "inbox" | "incoming" | "sent" | "outbox" | "drafts" | "favorites" | "archive" | "files" | "ids";
+type Folder = "inbox" | "incoming" | "sent" | "outbox" | "drafts" | "favorites" | "archive" | "files" | "ids" | "contacts";
 type SortMode = "value" | "newest" | "oldest" | "thread" | "largest" | "filetype" | "sender";
 type FileFilter = "all" | "image" | "pdf" | "document" | "other";
 type ThemeMode = "light" | "dark";
@@ -73,6 +76,16 @@ type MailPreference = {
 };
 
 type MailPreferences = Record<string, MailPreference>;
+
+type ContactRecord = {
+  network: BitcoinNetwork;
+  name: string;
+  address: string;
+  powId?: string;
+  source: "manual" | "registry";
+  createdAt: string;
+  updatedAt: string;
+};
 
 type LocalBackupPayload = {
   app: "ProofOfWork.Me";
@@ -251,6 +264,7 @@ declare global {
 const SENT_KEY = "proofofwork.sent.v5";
 const DRAFT_KEY_PREFIX = "proofofwork.draft.v1";
 const MAIL_PREFS_KEY = "proofofwork.mailPrefs.v1";
+const CONTACTS_KEY = "proofofwork.contacts.v1";
 const THEME_KEY = "proofofwork.theme";
 const BACKUP_APP = "ProofOfWork.Me";
 const BACKUP_VERSION = 1;
@@ -316,7 +330,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isBackupStorageKey(key: string) {
-  return key === SENT_KEY || key === MAIL_PREFS_KEY || key === THEME_KEY || key.startsWith(`${DRAFT_KEY_PREFIX}:`);
+  return key === SENT_KEY || key === MAIL_PREFS_KEY || key === CONTACTS_KEY || key === THEME_KEY || key.startsWith(`${DRAFT_KEY_PREFIX}:`);
 }
 
 function validateBackupValue(key: string, value: string) {
@@ -327,6 +341,10 @@ function validateBackupValue(key: string, value: string) {
   try {
     const parsed = JSON.parse(value) as unknown;
     if (key === SENT_KEY) {
+      return Array.isArray(parsed);
+    }
+
+    if (key === CONTACTS_KEY) {
       return Array.isArray(parsed);
     }
 
@@ -404,6 +422,17 @@ function backupDataSummary(data: Record<string, string>) {
       if (isPlainRecord(preferences)) {
         const count = Object.keys(preferences).length;
         details.push(`${count} mail preference${count === 1 ? "" : "s"}`);
+      }
+    } catch {
+      // Already validated before this helper is used.
+    }
+  }
+
+  if (data[CONTACTS_KEY]) {
+    try {
+      const contacts = JSON.parse(data[CONTACTS_KEY]) as unknown;
+      if (Array.isArray(contacts)) {
+        details.push(`${contacts.length} contact${contacts.length === 1 ? "" : "s"}`);
       }
     } catch {
       // Already validated before this helper is used.
@@ -882,6 +911,10 @@ function folderLabel(folder: Folder) {
     return "IDs";
   }
 
+  if (folder === "contacts") {
+    return "Contacts";
+  }
+
   return folder === "archive" ? "Archive" : "Files";
 }
 
@@ -912,6 +945,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "ids") {
     return "ProofOfWork ID registry";
+  }
+
+  if (folder === "contacts") {
+    return "Local address book";
   }
 
   return folder === "archive" ? "Local archived mail" : "Attachments across mail";
@@ -1324,6 +1361,150 @@ function loadMailPreferences(): MailPreferences {
 
 function saveMailPreferences(preferences: MailPreferences) {
   localStorage.setItem(MAIL_PREFS_KEY, JSON.stringify(preferences));
+}
+
+function normalizeContactName(name: string, fallback: string) {
+  return name.trim().replace(/\s+/gu, " ").slice(0, 80) || fallback;
+}
+
+function contactTarget(contact: Pick<ContactRecord, "address" | "powId">) {
+  return contact.powId ? `${contact.powId}@proofofwork.me` : contact.address;
+}
+
+function contactKey(contact: Pick<ContactRecord, "address" | "network" | "powId">) {
+  return `${contact.network}:${contact.powId ? `id:${contact.powId}` : `addr:${contact.address}`}`;
+}
+
+function registryContactKey(record: Pick<PowIdRecord, "id" | "network">) {
+  return `${record.network}:id:${record.id}`;
+}
+
+function sortContacts(contacts: ContactRecord[]) {
+  return [...contacts].sort((left, right) => {
+    const byNetwork = left.network.localeCompare(right.network);
+    if (byNetwork) {
+      return byNetwork;
+    }
+
+    return left.name.localeCompare(right.name) || contactTarget(left).localeCompare(contactTarget(right));
+  });
+}
+
+function storedContact(value: unknown): ContactRecord | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const contact = value as Partial<ContactRecord>;
+  const network: BitcoinNetwork | undefined =
+    contact.network === "livenet" || contact.network === "testnet" || contact.network === "testnet4" ? contact.network : undefined;
+
+  if (!network || typeof contact.address !== "string" || !isValidBitcoinAddress(contact.address, network)) {
+    return undefined;
+  }
+
+  const powId = typeof contact.powId === "string" ? normalizePowId(contact.powId) : "";
+  const target = powId ? `${powId}@proofofwork.me` : shortAddress(contact.address);
+  const createdAt = typeof contact.createdAt === "string" && !Number.isNaN(Date.parse(contact.createdAt)) ? contact.createdAt : new Date().toISOString();
+  const updatedAt = typeof contact.updatedAt === "string" && !Number.isNaN(Date.parse(contact.updatedAt)) ? contact.updatedAt : createdAt;
+
+  return {
+    address: contact.address,
+    createdAt,
+    name: normalizeContactName(typeof contact.name === "string" ? contact.name : "", target),
+    network,
+    powId: powId || undefined,
+    source: contact.source === "registry" ? "registry" : "manual",
+    updatedAt,
+  };
+}
+
+function loadContacts(): ContactRecord[] {
+  try {
+    const stored = localStorage.getItem(CONTACTS_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return sortContacts(parsed.flatMap((contact): ContactRecord[] => {
+      const normalized = storedContact(contact);
+      return normalized ? [normalized] : [];
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function saveContacts(contacts: ContactRecord[]) {
+  localStorage.setItem(CONTACTS_KEY, JSON.stringify(sortContacts(contacts)));
+}
+
+function upsertContact(contacts: ContactRecord[], contact: ContactRecord) {
+  const key = contactKey(contact);
+  const next = new Map(contacts.map((current) => [contactKey(current), current]));
+  const existing = next.get(key);
+  next.set(key, {
+    ...existing,
+    ...contact,
+    createdAt: existing?.createdAt ?? contact.createdAt,
+    updatedAt: new Date().toISOString(),
+  });
+  return sortContacts([...next.values()]);
+}
+
+function contactFromRegistryRecord(record: PowIdRecord): ContactRecord {
+  const target = `${record.id}@proofofwork.me`;
+  return {
+    address: record.receiveAddress,
+    createdAt: new Date().toISOString(),
+    name: target,
+    network: record.network,
+    powId: record.id,
+    source: "registry",
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function contactFromInput(
+  name: string,
+  target: string,
+  network: BitcoinNetwork,
+  registryRecords: PowIdRecord[],
+  registryAddress: string,
+): ContactRecord {
+  const trimmedTarget = target.trim();
+  if (!trimmedTarget) {
+    throw new Error("Enter an address or confirmed ProofOfWork ID.");
+  }
+
+  if (isValidBitcoinAddress(trimmedTarget, network)) {
+    const fallback = shortAddress(trimmedTarget);
+    return {
+      address: trimmedTarget,
+      createdAt: new Date().toISOString(),
+      name: normalizeContactName(name, fallback),
+      network,
+      source: "manual",
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  const resolved = resolveRecipientInput(trimmedTarget, network, registryRecords, registryAddress);
+  if (resolved.error || !resolved.paymentAddress || !resolved.id) {
+    throw new Error(resolved.error || "Enter a valid address or confirmed ProofOfWork ID.");
+  }
+
+  const fallback = `${resolved.id}@proofofwork.me`;
+  return {
+    address: resolved.paymentAddress,
+    createdAt: new Date().toISOString(),
+    name: normalizeContactName(name, fallback),
+    network,
+    powId: resolved.id,
+    source: "registry",
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function draftKey(address: string, network: BitcoinNetwork) {
@@ -2375,6 +2556,7 @@ export default function App() {
   const [idReceiveAddress, setIdReceiveAddress] = useState("");
   const [idPgpKey, setIdPgpKey] = useState("");
   const [mailPreferences, setMailPreferences] = useState<MailPreferences>(() => loadMailPreferences());
+  const [contacts, setContacts] = useState<ContactRecord[]>(() => loadContacts());
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
   const [activeFolder, setActiveFolder] = useState<Folder>("inbox");
@@ -2409,6 +2591,10 @@ export default function App() {
   const favoriteKeys = useMemo(
     () => new Set(Object.entries(mailPreferences).filter(([, preference]) => preference.favorite).map(([key]) => key)),
     [mailPreferences],
+  );
+  const contactsForNetwork = useMemo(
+    () => contacts.filter((contact) => contact.network === network),
+    [contacts, network],
   );
   const inboxMailAll = useMemo<MailMessage[]>(
     () => inbox.filter((message) => message.confirmed).map((message) => ({ ...message, folder: "inbox" })),
@@ -2521,7 +2707,8 @@ export default function App() {
     !existingIdRegistration &&
     !busy;
   const refreshInProgress = refreshing || checkingBroadcasts;
-  const refreshDisabled = activeFolder === "ids" ? busy || refreshInProgress || !registryAddress : !address || busy || refreshInProgress;
+  const refreshDisabled =
+    activeFolder === "contacts" ? true : activeFolder === "ids" ? busy || refreshInProgress || !registryAddress : !address || busy || refreshInProgress;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -2938,6 +3125,50 @@ export default function App() {
     setStatus({ tone: "good", text: "Draft discarded." });
   }
 
+  function saveContact(contact: ContactRecord) {
+    const nextContacts = upsertContact(contacts, contact);
+    setContacts(nextContacts);
+    saveContacts(nextContacts);
+    setStatus({ tone: "good", text: `${contact.name} saved to Contacts.` });
+  }
+
+  function addManualContact(name: string, target: string) {
+    try {
+      saveContact(contactFromInput(name, target, network, idRegistry, registryAddress));
+      return true;
+    } catch (error) {
+      setStatus({ tone: "bad", text: errorMessage(error, "Contact could not be saved.") });
+      return false;
+    }
+  }
+
+  function addRegistryContact(record: PowIdRecord) {
+    if (!record.confirmed) {
+      setStatus({ tone: "bad", text: "Only confirmed IDs can be saved as contacts." });
+      return;
+    }
+
+    saveContact(contactFromRegistryRecord(record));
+  }
+
+  function removeContact(contact: ContactRecord) {
+    const nextContacts = contacts.filter((current) => contactKey(current) !== contactKey(contact));
+    setContacts(nextContacts);
+    saveContacts(nextContacts);
+    setStatus({ tone: "good", text: `${contact.name} removed from Contacts.` });
+  }
+
+  function composeToContact(contact: ContactRecord) {
+    setRecipient(contactTarget(contact));
+    setAmountSats(DEFAULT_AMOUNT_SATS);
+    setFeeRate(DEFAULT_FEE_RATE);
+    setMemo(DEFAULT_MEMO);
+    setAttachment(undefined);
+    setReplyParentTxid(undefined);
+    setActiveFolder("inbox");
+    setComposeOpen(true);
+  }
+
   function exportBackup() {
     const data = collectBackupData();
     const keyCount = Object.keys(data).length;
@@ -2990,6 +3221,7 @@ export default function App() {
       setTheme(loadTheme());
       setAllSent(loadSentMessages());
       setMailPreferences(loadMailPreferences());
+      setContacts(loadContacts());
       setSavedDraft(address ? loadDraft(address, network) : undefined);
 
       const keyCount = Object.keys(data).length;
@@ -3642,6 +3874,13 @@ export default function App() {
               </span>
               <strong>{ownedIdCount}</strong>
             </button>
+            <button aria-current={activeFolder === "contacts"} onClick={() => openFolder("contacts")} type="button">
+              <span className="folder-label">
+                <Users size={17} />
+                <span>Contacts</span>
+              </span>
+              <strong>{contactsForNetwork.length}</strong>
+            </button>
             {registryAddress ? (
               <div className="registry-network-stat" aria-label="ProofOfWork ID registry network total">
                 <span>Registry Network</span>
@@ -3686,6 +3925,7 @@ export default function App() {
             address={address}
             busy={busy}
             canRegister={canRegisterId}
+            contacts={contactsForNetwork}
             feeRate={feeRate}
             idName={idName}
             idPgpKey={idPgpKey}
@@ -3699,8 +3939,17 @@ export default function App() {
             setIdName={setIdName}
             setIdPgpKey={setIdPgpKey}
             setIdReceiveAddress={setIdReceiveAddress}
+            onAddContact={addRegistryContact}
             onRefresh={() => void refreshIds()}
             submit={registerId}
+          />
+        ) : activeFolder === "contacts" ? (
+          <ContactsWorkspace
+            contacts={contactsForNetwork}
+            network={network}
+            onAdd={addManualContact}
+            onCompose={composeToContact}
+            onRemove={removeContact}
           />
         ) : activeFolder === "files" ? (
           <FilesWorkspace
@@ -3788,6 +4037,7 @@ export default function App() {
                   attachment={attachment}
                   busy={busy}
                   canSend={canSend}
+                  contacts={contactsForNetwork}
                   dataCarrierBytes={dataCarrierBytes}
                   draftMode
                   feeRate={feeRate}
@@ -3827,6 +4077,7 @@ export default function App() {
                   attachment={attachment}
                   busy={busy}
                   canSend={canSend}
+                  contacts={contactsForNetwork}
                   feeRate={feeRate}
                   memo={memo}
                   dataCarrierBytes={dataCarrierBytes}
@@ -4395,10 +4646,139 @@ function SocialFooter({ compact = false }: { compact?: boolean }) {
   );
 }
 
+function ContactsWorkspace({
+  contacts,
+  network,
+  onAdd,
+  onCompose,
+  onRemove,
+}: {
+  contacts: ContactRecord[];
+  network: BitcoinNetwork;
+  onAdd: (name: string, target: string) => boolean;
+  onCompose: (contact: ContactRecord) => void;
+  onRemove: (contact: ContactRecord) => void;
+}) {
+  const [name, setName] = useState("");
+  const [target, setTarget] = useState("");
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (onAdd(name, target)) {
+      setName("");
+      setTarget("");
+    }
+  }
+
+  return (
+    <section className="contacts-workspace">
+      <div className="files-toolbar">
+        <div>
+          <h2>Contacts</h2>
+          <span>{contacts.length.toLocaleString()} local contact{contacts.length === 1 ? "" : "s"} on {networkLabel(network)}</span>
+        </div>
+      </div>
+
+      <div className="ids-content contacts-content">
+        <form className="id-card contact-form" onSubmit={submit}>
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <UserPlus size={24} />
+            </div>
+            <div>
+              <h3>Add Contact</h3>
+              <p>Save a Bitcoin address or confirmed ProofOfWork ID locally for compose.</p>
+            </div>
+          </div>
+
+          <label>
+            Name optional
+            <input autoComplete="off" onChange={(event) => setName(event.target.value)} placeholder="Satoshi" value={name} />
+          </label>
+
+          <label>
+            Address or ID
+            <input
+              autoComplete="off"
+              onChange={(event) => setTarget(event.target.value)}
+              placeholder={network === "livenet" ? "bitcoin@proofofwork.me or bc1..." : "tb1..."}
+              spellCheck={false}
+              value={target}
+            />
+          </label>
+
+          <button className="primary" type="submit">
+            <span className="button-content">
+              <UserPlus size={16} />
+              <span>Save Contact</span>
+            </span>
+          </button>
+        </form>
+
+        <section className="id-card contacts-list-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Users size={24} />
+            </div>
+            <div>
+              <h3>Address Book</h3>
+              <p>Contacts stay in this browser and are included in backup export/import.</p>
+            </div>
+          </div>
+
+          {contacts.length === 0 ? (
+            <p className="field-note">No contacts saved for {networkLabel(network)} yet.</p>
+          ) : (
+            <div className="id-record-list">
+              {contacts.map((contact) => (
+                <article className="id-record contact-record" key={contactKey(contact)}>
+                  <div>
+                    <strong>{contact.name}</strong>
+                    <span>{contact.source === "registry" ? "Registry" : "Manual"} · {networkLabel(contact.network)}</span>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Target</dt>
+                      <dd>{contactTarget(contact)}</dd>
+                    </div>
+                    <div>
+                      <dt>Address</dt>
+                      <dd>{shortAddress(contact.address)}</dd>
+                    </div>
+                    <div>
+                      <dt>Saved</dt>
+                      <dd>{formatDate(contact.updatedAt)}</dd>
+                    </div>
+                  </dl>
+                  <div className="id-record-actions">
+                    <button className="primary small" onClick={() => onCompose(contact)} type="button">
+                      <span className="button-content">
+                        <PenLine size={15} />
+                        <span>Write</span>
+                      </span>
+                    </button>
+                    <button className="secondary small" onClick={() => onRemove(contact)} type="button">
+                      <span className="button-content">
+                        <Trash2 size={15} />
+                        <span>Remove</span>
+                      </span>
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function IdsWorkspace({
   address,
   busy,
   canRegister,
+  contacts,
   feeRate,
   idName,
   idPgpKey,
@@ -4412,12 +4792,14 @@ function IdsWorkspace({
   setIdName,
   setIdPgpKey,
   setIdReceiveAddress,
+  onAddContact,
   onRefresh,
   submit,
 }: {
   address: string;
   busy: boolean;
   canRegister: boolean;
+  contacts: ContactRecord[];
   feeRate: number;
   idName: string;
   idPgpKey: string;
@@ -4431,6 +4813,7 @@ function IdsWorkspace({
   setIdName: (value: string) => void;
   setIdPgpKey: (value: string) => void;
   setIdReceiveAddress: (value: string) => void;
+  onAddContact: (record: PowIdRecord) => void;
   onRefresh: () => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -4550,7 +4933,7 @@ function IdsWorkspace({
               <p>IDs owned by or routed to the connected address.</p>
             </div>
           </div>
-          <IdRecordList records={ownedIds} allowVerification empty="No IDs for this wallet yet." />
+          <IdRecordList records={ownedIds} allowVerification contacts={contacts} empty="No IDs for this wallet yet." onAddContact={onAddContact} />
         </section>
 
         <section className="id-card ids-registry-card">
@@ -4563,62 +4946,91 @@ function IdsWorkspace({
               <p>Confirmed records are final. Pending records can still change before confirmation.</p>
             </div>
           </div>
-          <IdRecordList records={registryRecords} empty={registryAddress ? "No registry records found yet." : "Registry address is not configured for this network."} />
+          <IdRecordList
+            records={registryRecords}
+            contacts={contacts}
+            empty={registryAddress ? "No registry records found yet." : "Registry address is not configured for this network."}
+            onAddContact={onAddContact}
+          />
         </section>
       </div>
     </section>
   );
 }
 
-function IdRecordList({ records, allowVerification = false, empty }: { records: PowIdRecord[]; allowVerification?: boolean; empty: string }) {
+function IdRecordList({
+  records,
+  allowVerification = false,
+  contacts = [],
+  empty,
+  onAddContact,
+}: {
+  records: PowIdRecord[];
+  allowVerification?: boolean;
+  contacts?: ContactRecord[];
+  empty: string;
+  onAddContact?: (record: PowIdRecord) => void;
+}) {
   if (records.length === 0) {
     return <p className="field-note">{empty}</p>;
   }
 
   return (
     <div className="id-record-list">
-      {records.map((record) => (
-        <article className="id-record" key={`${record.network}-${record.txid}-${record.id}`}>
-          <div>
-            <strong>{record.id}@proofofwork.me</strong>
-            <span>{record.confirmed ? "Confirmed" : "Pending"} · {record.amountSats.toLocaleString()} sats</span>
-          </div>
-          <dl>
+      {records.map((record) => {
+        const saved = contacts.some((contact) => contactKey(contact) === registryContactKey(record));
+
+        return (
+          <article className="id-record" key={`${record.network}-${record.txid}-${record.id}`}>
             <div>
-              <dt>Owner</dt>
-              <dd>{shortAddress(record.ownerAddress)}</dd>
+              <strong>{record.id}@proofofwork.me</strong>
+              <span>{record.confirmed ? "Confirmed" : "Pending"} · {record.amountSats.toLocaleString()} sats</span>
             </div>
-            <div>
-              <dt>Receives</dt>
-              <dd>{shortAddress(record.receiveAddress)}</dd>
-            </div>
-            <div>
-              <dt>PGP</dt>
-              <dd>{record.pgpKey ? "Registered" : "None"}</dd>
-            </div>
-            <div>
-              <dt>TX</dt>
-              <dd>{shortAddress(record.txid)}</dd>
-            </div>
-          </dl>
-          <div className="id-record-actions">
-            {allowVerification ? (
-              <a className="secondary small link-button" href={xVerificationUrl(record)} rel="noreferrer" target="_blank">
+            <dl>
+              <div>
+                <dt>Owner</dt>
+                <dd>{shortAddress(record.ownerAddress)}</dd>
+              </div>
+              <div>
+                <dt>Receives</dt>
+                <dd>{shortAddress(record.receiveAddress)}</dd>
+              </div>
+              <div>
+                <dt>PGP</dt>
+                <dd>{record.pgpKey ? "Registered" : "None"}</dd>
+              </div>
+              <div>
+                <dt>TX</dt>
+                <dd>{shortAddress(record.txid)}</dd>
+              </div>
+            </dl>
+            <div className="id-record-actions">
+              {allowVerification ? (
+                <a className="secondary small link-button" href={xVerificationUrl(record)} rel="noreferrer" target="_blank">
+                  <span className="button-content">
+                    <ArrowUpRight size={15} />
+                    <span>Verify on X</span>
+                  </span>
+                </a>
+              ) : null}
+              {onAddContact && record.confirmed ? (
+                <button className="secondary small" disabled={saved} onClick={() => onAddContact(record)} type="button">
+                  <span className="button-content">
+                    <UserPlus size={15} />
+                    <span>{saved ? "Saved" : "Add Contact"}</span>
+                  </span>
+                </button>
+              ) : null}
+              <a className="secondary small link-button" href={mempoolTxUrl(record.txid, record.network)} rel="noreferrer" target="_blank">
                 <span className="button-content">
                   <ArrowUpRight size={15} />
-                  <span>Verify on X</span>
+                  <span>View TX</span>
                 </span>
               </a>
-            ) : null}
-            <a className="secondary small link-button" href={mempoolTxUrl(record.txid, record.network)} rel="noreferrer" target="_blank">
-              <span className="button-content">
-                <ArrowUpRight size={15} />
-                <span>View TX</span>
-              </span>
-            </a>
-          </div>
-        </article>
-      ))}
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -5136,6 +5548,7 @@ function ComposePane({
   attachment,
   busy,
   canSend,
+  contacts,
   dataCarrierBytes,
   draftMode = false,
   feeRate,
@@ -5160,6 +5573,7 @@ function ComposePane({
   attachment?: MailAttachment;
   busy: boolean;
   canSend: boolean;
+  contacts: ContactRecord[];
   dataCarrierBytes: number;
   draftMode?: boolean;
   feeRate: number;
@@ -5226,11 +5640,17 @@ function ComposePane({
         To
         <input
           autoComplete="off"
+          list="proof-contact-options"
           onChange={(event) => setRecipient(event.target.value)}
           placeholder={network === "livenet" ? "bc1... or user@proofofwork.me" : "tb1..."}
           spellCheck={false}
           value={recipient}
         />
+        <datalist id="proof-contact-options">
+          {contacts.map((contact) => (
+            <option key={contactKey(contact)} label={contact.name} value={contactTarget(contact)} />
+          ))}
+        </datalist>
       </label>
       {recipientNote ? <p className={recipientError ? "field-note bad" : "field-note"}>{recipientNote}</p> : null}
 

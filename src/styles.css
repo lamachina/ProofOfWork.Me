@@ -737,7 +737,8 @@ select {
   overflow: hidden;
 }
 
-.ids-workspace {
+.ids-workspace,
+.contacts-workspace {
   background: var(--surface);
   display: grid;
   grid-column: 2 / -1;
@@ -792,6 +793,18 @@ select {
   overflow: auto;
   padding: 18px 18px max(18px, env(safe-area-inset-bottom));
   scrollbar-gutter: stable;
+}
+
+.contacts-content {
+  grid-template-columns: minmax(280px, 380px) minmax(320px, 1fr);
+}
+
+.contacts-list-card {
+  min-height: 0;
+}
+
+.contact-record dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .id-card {
@@ -2000,7 +2013,8 @@ pre {
   .sidebar,
   .message-column,
   .files-workspace,
-  .ids-workspace {
+  .ids-workspace,
+  .contacts-workspace {
     border-right: 0;
   }
 
@@ -2023,7 +2037,8 @@ pre {
   }
 
   .files-workspace,
-  .ids-workspace {
+  .ids-workspace,
+  .contacts-workspace {
     grid-column: auto;
   }
 

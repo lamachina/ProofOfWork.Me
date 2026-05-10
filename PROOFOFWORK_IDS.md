@@ -128,6 +128,7 @@ Rules:
 - PGP public key data is optional and base64url encoded in the registration payload.
 - After broadcast, the app can open a prefilled X post that includes the ID and registry tx link as optional social proof.
 - Verification actions should appear only for IDs owned by or routed to the connected wallet, never for unrelated public registry records.
+- Confirmed registry rows in the Computer app can be saved as local Contacts. Pending IDs must not be saved as routable contacts.
 
 ## Social Verification
 

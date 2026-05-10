@@ -18,6 +18,7 @@ Mail organization features that are already implemented in the full app:
 - Outbox vs Sent split for pending/dropped/confirmed sent mail.
 - Drafts in local storage.
 - Archive and Favorites in local storage.
+- Contacts in local storage.
 - Files view for confirmed attachments.
 - Export/import for local drafts, archive/favorite preferences, theme, and sent/outbox tracking.
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
@@ -169,6 +170,15 @@ Example shape:
 
 When the app scans inbox or loads sent mail, it should merge blockchain/local messages with these local flags.
 
+Contacts:
+
+- Store contacts locally in `localStorage`.
+- A contact can be a Bitcoin address or a confirmed `user@proofofwork.me` ID resolved to its receive address.
+- Pending IDs should not be saved as routable contacts.
+- Confirmed registry rows can expose an `Add Contact` action next to `View TX`.
+- Compose should offer saved contacts as suggestions.
+- Contacts are convenience metadata only; they do not change on-chain mail routing.
+
 ## Product Language
 
 Use:
@@ -200,6 +210,7 @@ Backup should export a versioned JSON file containing only supported app-local d
 
 - Drafts keyed by wallet address and network.
 - Archive and favorite preferences.
+- Local contacts.
 - Local sent/outbox broadcast tracking.
 - Theme preference.
 

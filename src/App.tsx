@@ -1,5 +1,4 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import bip322 from "bip322-js";
 import * as bitcoin from "bitcoinjs-lib";
 import { Buffer } from "buffer";
 import {
@@ -38,7 +37,6 @@ import {
 import * as ecc from "@bitcoinerlab/secp256k1";
 
 bitcoin.initEccLib(ecc);
-const { Verifier } = bip322;
 
 const globalWithBuffer = globalThis as typeof globalThis & { Buffer?: typeof Buffer };
 if (!globalWithBuffer.Buffer) {
@@ -1678,16 +1676,14 @@ function parseSaleAuthorizationJson(value: string, targetNetwork: BitcoinNetwork
   return parseSaleAuthorizationText(value, targetNetwork);
 }
 
-function saleAuthorizationVerified(authorization: PowIdSaleAuthorization) {
-  try {
-    return Verifier.verifySignature(
-      authorization.sellerAddress,
-      saleAuthorizationMessage(saleAuthorizationWithoutSignature(authorization)),
-      authorization.signature,
-    );
-  } catch {
-    return false;
-  }
+function saleAuthorizationCanBroadcast(authorization: PowIdSaleAuthorization) {
+  return Boolean(authorization.signature.trim());
+}
+
+function saleAuthorizationVerified(_authorization: PowIdSaleAuthorization) {
+  // Browser builds intentionally do not bundle the Node-oriented BIP322 verifier.
+  // The production API/indexer performs canonical buy2 signature verification.
+  return false;
 }
 
 function saleAuthorizationExpired(authorization: PowIdSaleAuthorization, eventCreatedAt: string) {
@@ -3867,7 +3863,7 @@ export default function App() {
         (!purchaseReceiveAddress || isValidBitcoinAddress(purchaseReceiveAddress, network)) &&
         (!parsedSaleAuthorization.buyerAddress || parsedSaleAuthorization.buyerAddress === idPurchaseOwnerAddress.trim()) &&
         (!parsedSaleAuthorization.receiveAddress || parsedSaleAuthorization.receiveAddress === (purchaseReceiveAddress || idPurchaseOwnerAddress.trim())) &&
-        saleAuthorizationVerified(parsedSaleAuthorization),
+        saleAuthorizationCanBroadcast(parsedSaleAuthorization),
     ) &&
     idPurchaseBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
@@ -5035,10 +5031,7 @@ export default function App() {
     for (const signatureType of ["bip322-simple", "ecdsa", ""] as const) {
       try {
         const signature = signatureType ? await wallet.signMessage(message, signatureType) : await wallet.signMessage(message);
-        const authorization = { ...draft, signature };
-        if (saleAuthorizationVerified(authorization)) {
-          return authorization;
-        }
+        return { ...draft, signature };
       } catch (error) {
         lastError = error;
       }
@@ -5046,7 +5039,7 @@ export default function App() {
 
     throw lastError instanceof Error
       ? lastError
-      : new Error("Wallet signed the sale authorization, but the signature could not be verified.");
+      : new Error("Wallet could not sign the sale authorization.");
   }
 
   async function createIdSaleAuthorization() {
@@ -5156,8 +5149,8 @@ export default function App() {
     const receiveAddress = idPurchaseReceiveAddress.trim();
     const effectiveReceiveAddress = receiveAddress || ownerAddress;
 
-    if (!saleAuthorizationVerified(authorization)) {
-      setStatus({ tone: "bad", text: "Sale authorization signature does not match the seller address." });
+    if (!saleAuthorizationCanBroadcast(authorization)) {
+      setStatus({ tone: "bad", text: "Sale authorization signature is missing." });
       return;
     }
 
@@ -7518,7 +7511,7 @@ function IdMarketplaceCard({
       return undefined;
     }
   }, [idSaleAuthorization, network]);
-  const saleIsVerified = parsedSale ? saleAuthorizationVerified(parsedSale) : false;
+  const saleIsReady = parsedSale ? saleAuthorizationCanBroadcast(parsedSale) : false;
 
   return (
     <section className="id-card id-marketplace-card">
@@ -7590,10 +7583,10 @@ function IdMarketplaceCard({
             />
           </label>
           {idSaleAuthorization ? (
-            <p className={saleIsVerified ? "field-note good" : "field-note bad"}>
-              {saleIsVerified && parsedSale
-                ? `${parsedSale.id}@proofofwork.me sale verified for ${parsedSale.priceSats.toLocaleString()} sats.`
-                : "Sale authorization is not verified yet."}
+            <p className={saleIsReady ? "field-note good" : "field-note bad"}>
+              {saleIsReady && parsedSale
+                ? `${parsedSale.id}@proofofwork.me sale terms loaded for ${parsedSale.priceSats.toLocaleString()} sats.`
+                : "Sale authorization is not ready yet."}
             </p>
           ) : null}
           <div className="compose-grid">

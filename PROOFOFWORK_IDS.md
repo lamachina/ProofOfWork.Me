@@ -12,6 +12,8 @@ Do not change these without an explicit migration plan:
 - Registration price: `1000` sats
 - Protocol prefix: `pwid1:`
 - Registration event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
+- Receiver update event: `pwid1:u:<id-base64url>:<receive-address>`
+- Transfer event: `pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>`
 - Resolver rule: first confirmed valid registration wins
 - Casing rule: IDs are case-insensitive forever
 - Pending rule: pending IDs are visible but not final, and mail must not route to them
@@ -22,6 +24,9 @@ Implementation anchors in `src/App.tsx`:
 - `ID_REGISTRY_ADDRESSES`
 - `fetchRegistryTransactions`
 - `buildIdRegistrationPayload`
+- `buildIdReceiverUpdatePayload`
+- `buildIdTransferPayload`
+- `parseIdEventPayload`
 - `parseIdRegistrationPayload`
 - `idRecordsFromTransactions`
 - `resolveRecipientInput`
@@ -43,6 +48,7 @@ They are not traditional DNS records. They are on-chain mail IDs resolved by the
 - Transfers update the current owner/receiver.
 - Future messages resolve to the current receiver.
 - The app resolves IDs by scanning registry history and applying valid events in chain order.
+- All registry mutations use the same canonical registry address and pay the registry fee.
 
 ## ID Model
 
@@ -106,11 +112,22 @@ Current registration payload:
 pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>
 ```
 
+Current mutation payloads:
+
+```text
+pwid1:u:<id-base64url>:<receive-address>
+pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>
+```
+
 Rules:
 
 - The transaction must pay at least `1000` sats to the registry address.
 - The registry payment output must appear before the ID OP_RETURN output in the transaction.
 - The OP_RETURN must start with `pwid1:`.
+- Registrations, receiver updates, and transfers all use the same canonical registry address.
+- Receiver updates and transfers must be paid from the current owner address, because the resolver verifies the current owner appears in the transaction inputs.
+- `pwid1:u` changes only the receive address. The owner remains unchanged.
+- `pwid1:t` changes ownership. If the new receive address is omitted, the new owner address also becomes the receive address.
 - IDs are case-insensitive forever. `User`, `user`, and `USER` all resolve to `user`.
 - The app normalizes IDs to lowercase for writing, display, lookup, and first-claim comparisons.
 - There is no arbitrary app-level ID length or character whitelist.
@@ -121,6 +138,7 @@ Rules:
 - New clients must write `r2`, not legacy `r`.
 - First confirmed valid registration wins.
 - Pending registrations can be displayed, but are not final.
+- Pending transfers/receiver updates are not applied to canonical routing until confirmed.
 - The compose flow must not route mail to a pending ID. IDs are sendable only after a confirmed registry record resolves to a receive address.
 - Public Desktop search follows the same confirmed-only ID resolver rule.
 - Duplicate confirmed registrations are ignored by the resolver.
@@ -170,6 +188,7 @@ Rules to preserve:
 - All event ID fields should be base64url encoded and normalized case-insensitively by resolvers.
 - `r2` is valid only if the ID is unclaimed.
 - `u`, `t`, `k`, `list`, `unlist`, and `accept` are valid only from the current owner.
+- `u` and `t` are live registry events. Marketplace events are future-planned.
 - `buy` is valid only against an active listing.
 - Marketplace events should be verifiable from chain history.
 - The resolver should expose both current owner and current receiver.

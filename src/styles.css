@@ -1253,6 +1253,40 @@ select {
   overflow-wrap: anywhere;
 }
 
+.id-manage-state {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 10px;
+}
+
+.id-manage-state div,
+.id-action-form {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.id-manage-state dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.id-manage-state dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.id-action-form {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
 .files-desktop {
   align-content: start;
   display: grid;
@@ -2549,6 +2583,7 @@ pre {
   .desktop-search,
   .files-browser,
   .ids-content,
+  .id-manage-state,
   .id-record dl {
     grid-template-columns: 1fr;
   }

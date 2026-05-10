@@ -734,8 +734,97 @@ function parseIdRegistrationPayload(payload, network) {
   };
 }
 
+function parseIdReceiverUpdatePayload(payload, network) {
+  if (!payload.startsWith("u:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length !== 3) {
+    return null;
+  }
+
+  const [, idEncoded, receiver] = parts;
+  let rawId = "";
+  try {
+    rawId = decodeTextBase64Url(idEncoded);
+  } catch {
+    return null;
+  }
+
+  const id = normalizePowId(rawId);
+  if (!id || !isValidBitcoinAddress(receiver, network)) {
+    return null;
+  }
+
+  return {
+    id,
+    receiveAddress: receiver,
+  };
+}
+
+function parseIdTransferPayload(payload, network) {
+  if (!payload.startsWith("t:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length < 3 || parts.length > 4) {
+    return null;
+  }
+
+  const [, idEncoded, owner, receiver] = parts;
+  let rawId = "";
+  try {
+    rawId = decodeTextBase64Url(idEncoded);
+  } catch {
+    return null;
+  }
+
+  const receiveAddress = receiver?.trim() || owner;
+  const id = normalizePowId(rawId);
+  if (!id || !isValidBitcoinAddress(owner, network) || !isValidBitcoinAddress(receiveAddress, network)) {
+    return null;
+  }
+
+  return {
+    id,
+    ownerAddress: owner,
+    receiveAddress,
+  };
+}
+
+function parseIdEventPayload(payload, network) {
+  const registration = parseIdRegistrationPayload(payload, network);
+  if (registration) {
+    return {
+      kind: "register",
+      ...registration,
+    };
+  }
+
+  const update = parseIdReceiverUpdatePayload(payload, network);
+  if (update) {
+    return {
+      kind: "update",
+      ...update,
+    };
+  }
+
+  const transfer = parseIdTransferPayload(payload, network);
+  if (transfer) {
+    return {
+      kind: "transfer",
+      ...transfer,
+    };
+  }
+
+  return null;
+}
+
 function idRecordsFromTransactions(txs, registryAddress, network) {
-  const rawRecords = txs.flatMap((tx) => {
+  const events = txs.flatMap((tx) => {
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
     const vout = Array.isArray(tx.vout) ? tx.vout : [];
     const amount = registryPaymentAmount(vout, registryAddress);
     const txid = transactionTxid(tx);
@@ -744,51 +833,129 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
       return [];
     }
 
-    const registerMessage = decodedProtocolMessages(vout, ID_PROTOCOL_PREFIX)
+    const eventMessage = decodedProtocolMessages(vout, ID_PROTOCOL_PREFIX)
       .map((message) => message.slice(ID_PROTOCOL_PREFIX.length))
-      .find((payload) => payload.startsWith("r2:") || payload.startsWith("r:"));
-    const registration = registerMessage ? parseIdRegistrationPayload(registerMessage, network) : null;
-    if (!registration) {
+      .map((payload) => parseIdEventPayload(payload, network))
+      .find(Boolean);
+    if (!eventMessage) {
       return [];
     }
 
     const blockTime = typeof tx.status?.block_time === "number" ? tx.status.block_time * 1000 : Date.now();
+    const baseEvent = {
+      amountSats: amount,
+      confirmed: transactionConfirmed(tx),
+      createdAt: new Date(blockTime).toISOString(),
+      inputAddresses: inputAddresses(vin),
+      network,
+      txid,
+    };
+
+    if (eventMessage.kind === "register") {
+      return [
+        {
+          ...baseEvent,
+          id: eventMessage.id,
+          kind: "register",
+          ownerAddress: eventMessage.ownerAddress,
+          pgpKey: eventMessage.pgpKey || undefined,
+          receiveAddress: eventMessage.receiveAddress,
+        },
+      ];
+    }
+
+    if (eventMessage.kind === "update") {
+      return [
+        {
+          ...baseEvent,
+          id: eventMessage.id,
+          kind: "update",
+          receiveAddress: eventMessage.receiveAddress,
+        },
+      ];
+    }
+
     return [
       {
-        amountSats: amount,
-        confirmed: transactionConfirmed(tx),
-        createdAt: new Date(blockTime).toISOString(),
-        id: registration.id,
-        network,
-        ownerAddress: registration.ownerAddress,
-        pgpKey: registration.pgpKey || undefined,
-        receiveAddress: registration.receiveAddress,
-        txid,
+        ...baseEvent,
+        id: eventMessage.id,
+        kind: "transfer",
+        ownerAddress: eventMessage.ownerAddress,
+        receiveAddress: eventMessage.receiveAddress,
       },
     ];
   });
 
-  const confirmedRecords = rawRecords
-    .filter((record) => record.confirmed)
+  const confirmedEvents = events
+    .filter((event) => event.confirmed)
     .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid));
-  const pendingRecords = rawRecords
-    .filter((record) => !record.confirmed)
+  const pendingRegistrations = events
+    .filter((event) => !event.confirmed && event.kind === "register")
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
-  const claimed = new Set();
-  const accepted = [];
+  const records = new Map();
 
-  for (const record of confirmedRecords) {
-    if (claimed.has(record.id)) {
+  for (const event of confirmedEvents) {
+    const current = records.get(event.id);
+
+    if (event.kind === "register") {
+      if (current) {
+        continue;
+      }
+
+      records.set(event.id, {
+        amountSats: event.amountSats,
+        confirmed: true,
+        createdAt: event.createdAt,
+        id: event.id,
+        network: event.network,
+        ownerAddress: event.ownerAddress,
+        pgpKey: event.pgpKey,
+        receiveAddress: event.receiveAddress,
+        txid: event.txid,
+      });
       continue;
     }
 
-    claimed.add(record.id);
-    accepted.push(record);
+    if (!current || !event.inputAddresses.includes(current.ownerAddress)) {
+      continue;
+    }
+
+    if (event.kind === "update") {
+      records.set(event.id, {
+        ...current,
+        amountSats: event.amountSats,
+        createdAt: event.createdAt,
+        receiveAddress: event.receiveAddress,
+        txid: event.txid,
+      });
+      continue;
+    }
+
+    records.set(event.id, {
+      ...current,
+      amountSats: event.amountSats,
+      createdAt: event.createdAt,
+      ownerAddress: event.ownerAddress,
+      receiveAddress: event.receiveAddress,
+      txid: event.txid,
+    });
   }
 
-  for (const record of pendingRecords) {
-    if (!claimed.has(record.id)) {
-      accepted.push(record);
+  const accepted = [...records.values()];
+
+  for (const event of pendingRegistrations) {
+    if (!records.has(event.id)) {
+      accepted.push({
+        amountSats: event.amountSats,
+        confirmed: false,
+        createdAt: event.createdAt,
+        id: event.id,
+        network: event.network,
+        ownerAddress: event.ownerAddress,
+        pgpKey: event.pgpKey,
+        receiveAddress: event.receiveAddress,
+        txid: event.txid,
+      });
     }
   }
 

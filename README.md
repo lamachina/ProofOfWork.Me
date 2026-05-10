@@ -103,6 +103,7 @@ Launch invariants for future developers/agents:
 - Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
 - Uses the correct mempool.space explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
+- Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Can read registry, mail, files, and transaction status from a first-party ProofOfWork OP_RETURN API when `VITE_POW_API_BASE` is configured.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
@@ -194,6 +195,15 @@ pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64
 ```
 
 ID lookup normalizes casing, so `User`, `user`, and `USER` resolve to the same record. New registrations encode the ID field as base64url, which keeps punctuation and Unicode parseable while the aggregate OP_RETURN limit keeps total size bounded.
+
+ID owners can mutate confirmed IDs with the same canonical registry address and fee:
+
+```text
+pwid1:u:<id-base64url>:<receive-address>
+pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>
+```
+
+Both events require a 1,000 sat registry payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
 
 ## Run
 
@@ -300,8 +310,9 @@ Important implementation points:
 - Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
 - In-app file preview UI: `AttachmentViewer`, `FileInspector`, `attachmentPreviewKind()`, and `attachmentText()` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.
+- ID mutation formats: `buildIdReceiverUpdatePayload()` and `buildIdTransferPayload()`.
 - ID registry history fetcher: `fetchRegistryTransactions()`. It must continue paginating confirmed history with `txs/chain/:last_seen_txid` and merging `txs/mempool`.
-- ID read/compat parser: `parseIdRegistrationPayload()` and `idRecordsFromTransactions()`.
+- ID read/compat parser: `parseIdEventPayload()`, `parseIdRegistrationPayload()`, and `idRecordsFromTransactions()`.
 - Confirmed-only ID compose routing: `resolveRecipientInput()`.
 - Multi-recipient compose routing: `resolveRecipientInputs()` and `buildPaymentPsbt()` payment outputs.
 - Dedicated launch UI: `IdLaunchApp`.

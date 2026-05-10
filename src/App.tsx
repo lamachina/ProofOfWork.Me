@@ -240,6 +240,44 @@ type PowIdRecord = {
   createdAt: string;
 };
 
+type PowIdEvent =
+  | {
+      amountSats: number;
+      confirmed: boolean;
+      createdAt: string;
+      id: string;
+      inputAddresses: string[];
+      kind: "register";
+      network: BitcoinNetwork;
+      ownerAddress: string;
+      pgpKey?: string;
+      receiveAddress: string;
+      txid: string;
+    }
+  | {
+      amountSats: number;
+      confirmed: boolean;
+      createdAt: string;
+      id: string;
+      inputAddresses: string[];
+      kind: "update";
+      network: BitcoinNetwork;
+      receiveAddress: string;
+      txid: string;
+    }
+  | {
+      amountSats: number;
+      confirmed: boolean;
+      createdAt: string;
+      id: string;
+      inputAddresses: string[];
+      kind: "transfer";
+      network: BitcoinNetwork;
+      ownerAddress: string;
+      receiveAddress: string;
+      txid: string;
+    };
+
 type RecipientResolution = {
   displayRecipient: string;
   error?: string;
@@ -1479,6 +1517,15 @@ function buildIdRegistrationPayload(id: string, ownerAddress: string, receiveAdd
   return `${ID_PROTOCOL_PREFIX}r2:${encodeTextBase64Url(id)}:${ownerAddress}:${receiveAddress}${pgp ? `:${encodeTextBase64Url(pgp)}` : ""}`;
 }
 
+function buildIdReceiverUpdatePayload(id: string, receiveAddress: string) {
+  return `${ID_PROTOCOL_PREFIX}u:${encodeTextBase64Url(id)}:${receiveAddress}`;
+}
+
+function buildIdTransferPayload(id: string, ownerAddress: string, receiveAddress: string) {
+  const receiver = receiveAddress.trim();
+  return `${ID_PROTOCOL_PREFIX}t:${encodeTextBase64Url(id)}:${ownerAddress}${receiver ? `:${receiver}` : ""}`;
+}
+
 function protocolOutputScripts(payloads: string[]) {
   const scripts = payloads.map((payload) => {
     const script = opReturnScriptForPayload(payload);
@@ -2384,6 +2431,98 @@ function parseIdRegistrationPayload(payload: string, targetNetwork: BitcoinNetwo
   };
 }
 
+function parseIdReceiverUpdatePayload(payload: string, targetNetwork: BitcoinNetwork) {
+  if (!payload.startsWith("u:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length !== 3) {
+    return null;
+  }
+
+  const [, idEncoded, receiver] = parts;
+  let rawId = "";
+  try {
+    rawId = decodeTextBase64Url(idEncoded);
+  } catch {
+    return null;
+  }
+
+  const id = normalizePowId(rawId);
+  if (powIdError(id) || !isValidBitcoinAddress(receiver, targetNetwork)) {
+    return null;
+  }
+
+  return {
+    id,
+    receiveAddress: receiver,
+  };
+}
+
+function parseIdTransferPayload(payload: string, targetNetwork: BitcoinNetwork) {
+  if (!payload.startsWith("t:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length < 3 || parts.length > 4) {
+    return null;
+  }
+
+  const [, idEncoded, owner, receiver] = parts;
+  let rawId = "";
+  try {
+    rawId = decodeTextBase64Url(idEncoded);
+  } catch {
+    return null;
+  }
+
+  const receiveAddress = receiver?.trim() || owner;
+  const id = normalizePowId(rawId);
+  if (
+    powIdError(id) ||
+    !isValidBitcoinAddress(owner, targetNetwork) ||
+    !isValidBitcoinAddress(receiveAddress, targetNetwork)
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    ownerAddress: owner,
+    receiveAddress,
+  };
+}
+
+function parseIdEventPayload(payload: string, targetNetwork: BitcoinNetwork) {
+  const registration = parseIdRegistrationPayload(payload, targetNetwork);
+  if (registration) {
+    return {
+      kind: "register" as const,
+      ...registration,
+    };
+  }
+
+  const update = parseIdReceiverUpdatePayload(payload, targetNetwork);
+  if (update) {
+    return {
+      kind: "update" as const,
+      ...update,
+    };
+  }
+
+  const transfer = parseIdTransferPayload(payload, targetNetwork);
+  if (transfer) {
+    return {
+      kind: "transfer" as const,
+      ...transfer,
+    };
+  }
+
+  return null;
+}
+
 async function fetchAddressTransactionsPage(targetAddress: string, targetNetwork: BitcoinNetwork, path: string) {
   const response = await fetch(`${mempoolBase(targetNetwork)}/api/address/${targetAddress}/${path}`);
   if (!response.ok) {
@@ -2594,7 +2733,8 @@ function idRecordsFromTransactions(
   registryAddress: string,
   targetNetwork: BitcoinNetwork,
 ): PowIdRecord[] {
-  const rawRecords = txs.flatMap((tx): PowIdRecord[] => {
+  const events = txs.flatMap((tx): PowIdEvent[] => {
+    const vin = Array.isArray(tx.vin) ? (tx.vin as Array<Record<string, unknown>>) : [];
     const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
     const amount = registryPaymentAmount(vout, registryAddress);
     const txid = typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid) ? tx.txid.toLowerCase() : "";
@@ -2603,54 +2743,131 @@ function idRecordsFromTransactions(
       return [];
     }
 
-    const registerMessage = decodedProtocolMessages(vout, ID_PROTOCOL_PREFIX)
+    const eventMessage = decodedProtocolMessages(vout, ID_PROTOCOL_PREFIX)
       .map((message) => message.slice(ID_PROTOCOL_PREFIX.length))
-      .find((payload) => payload.startsWith("r2:") || payload.startsWith("r:"));
-    const registration = registerMessage ? parseIdRegistrationPayload(registerMessage, targetNetwork) : null;
-    if (!registration) {
+      .map((payload) => parseIdEventPayload(payload, targetNetwork))
+      .find(Boolean);
+    if (!eventMessage) {
       return [];
     }
 
     const status = tx.status as Record<string, unknown> | undefined;
     const confirmed = Boolean(status?.confirmed);
     const blockTime = typeof status?.block_time === "number" ? status.block_time * 1000 : Date.now();
+    const baseEvent = {
+      amountSats: amount,
+      confirmed,
+      createdAt: new Date(blockTime).toISOString(),
+      inputAddresses: transactionInputAddresses(vin),
+      network: targetNetwork,
+      txid,
+    };
+
+    if (eventMessage.kind === "register") {
+      return [
+        {
+          ...baseEvent,
+          id: eventMessage.id,
+          kind: "register",
+          ownerAddress: eventMessage.ownerAddress,
+          pgpKey: eventMessage.pgpKey || undefined,
+          receiveAddress: eventMessage.receiveAddress,
+        },
+      ];
+    }
+
+    if (eventMessage.kind === "update") {
+      return [
+        {
+          ...baseEvent,
+          id: eventMessage.id,
+          kind: "update",
+          receiveAddress: eventMessage.receiveAddress,
+        },
+      ];
+    }
 
     return [
       {
-        amountSats: amount,
-        confirmed,
-        createdAt: new Date(blockTime).toISOString(),
-        id: registration.id,
-        network: targetNetwork,
-        ownerAddress: registration.ownerAddress,
-        pgpKey: registration.pgpKey || undefined,
-        receiveAddress: registration.receiveAddress,
-        txid,
+        ...baseEvent,
+        id: eventMessage.id,
+        kind: "transfer",
+        ownerAddress: eventMessage.ownerAddress,
+        receiveAddress: eventMessage.receiveAddress,
       },
     ];
   });
 
-  const confirmedRecords = rawRecords
-    .filter((record) => record.confirmed)
+  const confirmedEvents = events
+    .filter((event) => event.confirmed)
     .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid));
-  const pendingRecords = rawRecords
-    .filter((record) => !record.confirmed)
+  const pendingRegistrations = events
+    .filter((event): event is Extract<PowIdEvent, { kind: "register" }> => !event.confirmed && event.kind === "register")
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
-  const claimed = new Set<string>();
-  const accepted: PowIdRecord[] = [];
+  const records = new Map<string, PowIdRecord>();
 
-  for (const record of confirmedRecords) {
-    if (claimed.has(record.id)) {
+  for (const event of confirmedEvents) {
+    const current = records.get(event.id);
+
+    if (event.kind === "register") {
+      if (current) {
+        continue;
+      }
+
+      records.set(event.id, {
+        amountSats: event.amountSats,
+        confirmed: true,
+        createdAt: event.createdAt,
+        id: event.id,
+        network: event.network,
+        ownerAddress: event.ownerAddress,
+        pgpKey: event.pgpKey,
+        receiveAddress: event.receiveAddress,
+        txid: event.txid,
+      });
       continue;
     }
 
-    claimed.add(record.id);
-    accepted.push(record);
+    if (!current || !event.inputAddresses.includes(current.ownerAddress)) {
+      continue;
+    }
+
+    if (event.kind === "update") {
+      records.set(event.id, {
+        ...current,
+        amountSats: event.amountSats,
+        createdAt: event.createdAt,
+        receiveAddress: event.receiveAddress,
+        txid: event.txid,
+      });
+      continue;
+    }
+
+    records.set(event.id, {
+      ...current,
+      amountSats: event.amountSats,
+      createdAt: event.createdAt,
+      ownerAddress: event.ownerAddress,
+      receiveAddress: event.receiveAddress,
+      txid: event.txid,
+    });
   }
 
-  for (const record of pendingRecords) {
-    if (!claimed.has(record.id)) {
-      accepted.push(record);
+  const accepted = [...records.values()];
+
+  for (const event of pendingRegistrations) {
+    if (!records.has(event.id)) {
+      accepted.push({
+        amountSats: event.amountSats,
+        confirmed: false,
+        createdAt: event.createdAt,
+        id: event.id,
+        network: event.network,
+        ownerAddress: event.ownerAddress,
+        pgpKey: event.pgpKey,
+        receiveAddress: event.receiveAddress,
+        txid: event.txid,
+      });
     }
   }
 
@@ -3067,6 +3284,10 @@ export default function App() {
   const [idName, setIdName] = useState("");
   const [idReceiveAddress, setIdReceiveAddress] = useState("");
   const [idPgpKey, setIdPgpKey] = useState("");
+  const [managedIdName, setManagedIdName] = useState("");
+  const [idUpdateReceiveAddress, setIdUpdateReceiveAddress] = useState("");
+  const [idTransferOwnerAddress, setIdTransferOwnerAddress] = useState("");
+  const [idTransferReceiveAddress, setIdTransferReceiveAddress] = useState("");
   const [mailPreferences, setMailPreferences] = useState<MailPreferences>(() => loadMailPreferences());
   const [contacts, setContacts] = useState<ContactRecord[]>(() => loadContacts());
   const [customFolders, setCustomFolders] = useState<CustomFolderRecord[]>(() => loadCustomFolders());
@@ -3256,6 +3477,55 @@ export default function App() {
     idRegistrationBytes <= MAX_DATA_CARRIER_BYTES &&
     !existingIdRegistration &&
     !busy;
+  const ownerControlledIds = useMemo(
+    () => idRegistry.filter((record) => record.network === network && record.confirmed && record.ownerAddress === address),
+    [address, idRegistry, network],
+  );
+  const managedIdRecord = useMemo(
+    () => ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0],
+    [managedIdName, ownerControlledIds],
+  );
+  const idReceiverUpdatePayload = useMemo(
+    () => (managedIdRecord && idUpdateReceiveAddress.trim() ? buildIdReceiverUpdatePayload(managedIdRecord.id, idUpdateReceiveAddress.trim()) : ""),
+    [idUpdateReceiveAddress, managedIdRecord],
+  );
+  const idTransferPayload = useMemo(
+    () => (managedIdRecord && idTransferOwnerAddress.trim() ? buildIdTransferPayload(managedIdRecord.id, idTransferOwnerAddress.trim(), idTransferReceiveAddress.trim()) : ""),
+    [idTransferOwnerAddress, idTransferReceiveAddress, managedIdRecord],
+  );
+  const idReceiverUpdateBytes = useMemo(
+    () => (idReceiverUpdatePayload ? dataCarrierBytesForPayload(idReceiverUpdatePayload) : 0),
+    [idReceiverUpdatePayload],
+  );
+  const idTransferBytes = useMemo(
+    () => (idTransferPayload ? dataCarrierBytesForPayload(idTransferPayload) : 0),
+    [idTransferPayload],
+  );
+  const transferReceiveAddress = idTransferReceiveAddress.trim();
+  const effectiveTransferReceiveAddress = transferReceiveAddress || idTransferOwnerAddress.trim();
+  const canUpdateId =
+    Boolean(
+      address &&
+        registryAddress &&
+        managedIdRecord &&
+        idReceiverUpdatePayload &&
+        isValidBitcoinAddress(idUpdateReceiveAddress.trim(), network) &&
+        idUpdateReceiveAddress.trim() !== managedIdRecord.receiveAddress,
+    ) &&
+    idReceiverUpdateBytes <= MAX_DATA_CARRIER_BYTES &&
+    !busy;
+  const canTransferId =
+    Boolean(
+      address &&
+        registryAddress &&
+        managedIdRecord &&
+        idTransferPayload &&
+        isValidBitcoinAddress(idTransferOwnerAddress.trim(), network) &&
+        (!transferReceiveAddress || isValidBitcoinAddress(transferReceiveAddress, network)) &&
+        (idTransferOwnerAddress.trim() !== managedIdRecord.ownerAddress || effectiveTransferReceiveAddress !== managedIdRecord.receiveAddress),
+    ) &&
+    idTransferBytes <= MAX_DATA_CARRIER_BYTES &&
+    !busy;
   const refreshInProgress = refreshing || checkingBroadcasts;
   const refreshDisabled =
     activeFolder === "contacts"
@@ -3351,6 +3621,21 @@ export default function App() {
   useEffect(() => {
     setIdReceiveAddress(address);
   }, [address, network]);
+
+  useEffect(() => {
+    if (ownerControlledIds.length === 0) {
+      setManagedIdName("");
+      setIdUpdateReceiveAddress("");
+      return;
+    }
+
+    const selectedRecord = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
+    if (selectedRecord.id !== managedIdName) {
+      setManagedIdName(selectedRecord.id);
+    }
+
+    setIdUpdateReceiveAddress((current) => current || selectedRecord.receiveAddress);
+  }, [managedIdName, ownerControlledIds]);
 
   useEffect(() => {
     if (desktopProfile && desktopProfile.network !== network) {
@@ -4308,6 +4593,156 @@ export default function App() {
     }
   }
 
+  async function broadcastIdMutation({
+    expectedOwner,
+    id,
+    payload,
+    successText,
+  }: {
+    expectedOwner: string;
+    id: string;
+    payload: string;
+    successText: string;
+  }) {
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({ tone: "bad", text: "UniSat signPsbt is not available. Update UniSat and try again." });
+      return;
+    }
+
+    if (!registryAddress) {
+      setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+      return;
+    }
+
+    if (expectedOwner !== address) {
+      setStatus({ tone: "bad", text: "Only the current owner address can update or transfer this ID." });
+      return;
+    }
+
+    if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
+      setStatus({ tone: "bad", text: "ID registry event OP_RETURN is over 100 KB." });
+      return;
+    }
+
+    setBusy(true);
+    setStatus({ tone: "idle", text: `Checking current owner for ${id}@proofofwork.me...` });
+
+    try {
+      const latestRegistry = await fetchIdRegistry(network);
+      setIdRegistry(latestRegistry);
+      const latestRecord = latestRegistry.find((record) => record.network === network && record.id === id && record.confirmed);
+
+      if (!latestRecord) {
+        setStatus({ tone: "bad", text: `${id}@proofofwork.me is not confirmed yet.` });
+        return;
+      }
+
+      if (latestRecord.ownerAddress !== address) {
+        setStatus({ tone: "bad", text: `${id}@proofofwork.me is owned by ${shortAddress(latestRecord.ownerAddress)}.` });
+        return;
+      }
+
+      const currentNetwork = await getWalletNetwork(window.unisat);
+      if (currentNetwork !== network) {
+        await switchWalletNetwork(window.unisat, network);
+      }
+
+      setStatus({ tone: "idle", text: `${successText}...` });
+      const paymentPsbt = await buildPaymentPsbt({
+        amountSats: ID_REGISTRATION_PRICE_SATS,
+        feeRate,
+        fromAddress: address,
+        network,
+        protocolPayloads: [payload],
+        toAddress: registryAddress,
+      });
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network,
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+
+      setStatus({ tone: "good", text: `${successText} broadcast: ${shortAddress(txid)}.` });
+      await refreshIds(true);
+    } catch (error) {
+      setStatus({ tone: "bad", text: errorMessage(error, "ID registry update failed.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateIdReceiver(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!managedIdRecord) {
+      setStatus({ tone: "bad", text: "Choose one of your confirmed IDs first." });
+      return;
+    }
+
+    const receiveAddress = idUpdateReceiveAddress.trim();
+    if (!isValidBitcoinAddress(receiveAddress, network)) {
+      setStatus({ tone: "bad", text: "New receive address is not valid for the selected network." });
+      return;
+    }
+
+    if (receiveAddress === managedIdRecord.receiveAddress) {
+      setStatus({ tone: "bad", text: `${managedIdRecord.id}@proofofwork.me already receives at that address.` });
+      return;
+    }
+
+    await broadcastIdMutation({
+      expectedOwner: managedIdRecord.ownerAddress,
+      id: managedIdRecord.id,
+      payload: buildIdReceiverUpdatePayload(managedIdRecord.id, receiveAddress),
+      successText: `Receiver update for ${managedIdRecord.id}@proofofwork.me`,
+    });
+  }
+
+  async function transferId(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!managedIdRecord) {
+      setStatus({ tone: "bad", text: "Choose one of your confirmed IDs first." });
+      return;
+    }
+
+    const ownerAddress = idTransferOwnerAddress.trim();
+    const receiveAddress = idTransferReceiveAddress.trim();
+    const effectiveReceiveAddress = receiveAddress || ownerAddress;
+
+    if (!isValidBitcoinAddress(ownerAddress, network)) {
+      setStatus({ tone: "bad", text: "New owner address is not valid for the selected network." });
+      return;
+    }
+
+    if (receiveAddress && !isValidBitcoinAddress(receiveAddress, network)) {
+      setStatus({ tone: "bad", text: "New receive address is not valid for the selected network." });
+      return;
+    }
+
+    if (ownerAddress === managedIdRecord.ownerAddress && effectiveReceiveAddress === managedIdRecord.receiveAddress) {
+      setStatus({ tone: "bad", text: "Transfer destination matches the current ID state." });
+      return;
+    }
+
+    await broadcastIdMutation({
+      expectedOwner: managedIdRecord.ownerAddress,
+      id: managedIdRecord.id,
+      payload: buildIdTransferPayload(managedIdRecord.id, ownerAddress, receiveAddress),
+      successText: `Transfer for ${managedIdRecord.id}@proofofwork.me`,
+    });
+
+    setIdTransferOwnerAddress("");
+    setIdTransferReceiveAddress("");
+  }
+
   async function sendOpReturn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -4524,16 +4959,36 @@ export default function App() {
         idName={idName}
         idPgpKey={idPgpKey}
         idReceiveAddress={idReceiveAddress}
+        idReceiverUpdateBytes={idReceiverUpdateBytes}
+        idTransferBytes={idTransferBytes}
+        idTransferOwnerAddress={idTransferOwnerAddress}
+        idTransferReceiveAddress={idTransferReceiveAddress}
+        idUpdateReceiveAddress={idUpdateReceiveAddress}
         lastRegisteredId={lastRegisteredId?.network === "livenet" ? lastRegisteredId : undefined}
+        managedIdName={managedIdRecord?.id ?? ""}
         registryAddress={registryAddressForNetwork("livenet")}
         registryRecords={idRegistry.filter((record) => record.network === "livenet")}
         registrationBytes={idRegistrationBytes}
+        canTransfer={canTransferId}
+        canUpdate={canUpdateId}
         setFeeRate={setFeeRate}
         setIdName={setIdName}
         setIdPgpKey={setIdPgpKey}
         setIdReceiveAddress={setIdReceiveAddress}
+        setIdTransferOwnerAddress={setIdTransferOwnerAddress}
+        setIdTransferReceiveAddress={setIdTransferReceiveAddress}
+        setIdUpdateReceiveAddress={setIdUpdateReceiveAddress}
+        setManagedIdName={(id) => {
+          const record = ownerControlledIds.find((ownedId) => ownedId.id === id);
+          setManagedIdName(id);
+          setIdUpdateReceiveAddress(record?.receiveAddress ?? "");
+          setIdTransferOwnerAddress("");
+          setIdTransferReceiveAddress("");
+        }}
         setTheme={setTheme}
         status={status}
+        submitTransfer={transferId}
+        submitUpdate={updateIdReceiver}
         submit={registerId}
         theme={theme}
         onRefresh={() => void refreshIds()}
@@ -4835,17 +5290,37 @@ export default function App() {
             idName={idName}
             idPgpKey={idPgpKey}
             idReceiveAddress={idReceiveAddress}
+            idTransferBytes={idTransferBytes}
+            idTransferOwnerAddress={idTransferOwnerAddress}
+            idTransferReceiveAddress={idTransferReceiveAddress}
+            idUpdateReceiveAddress={idUpdateReceiveAddress}
+            idReceiverUpdateBytes={idReceiverUpdateBytes}
+            managedIdName={managedIdRecord?.id ?? ""}
             network={network}
             registryAddress={registryAddress}
             registryRecords={idRegistry}
             registrationBytes={idRegistrationBytes}
             lastRegisteredId={lastRegisteredId?.network === network ? lastRegisteredId : undefined}
+            canTransfer={canTransferId}
+            canUpdate={canUpdateId}
             setFeeRate={setFeeRate}
+            setManagedIdName={(id) => {
+              const record = ownerControlledIds.find((ownedId) => ownedId.id === id);
+              setManagedIdName(id);
+              setIdUpdateReceiveAddress(record?.receiveAddress ?? "");
+              setIdTransferOwnerAddress("");
+              setIdTransferReceiveAddress("");
+            }}
             setIdName={setIdName}
             setIdPgpKey={setIdPgpKey}
             setIdReceiveAddress={setIdReceiveAddress}
+            setIdTransferOwnerAddress={setIdTransferOwnerAddress}
+            setIdTransferReceiveAddress={setIdTransferReceiveAddress}
+            setIdUpdateReceiveAddress={setIdUpdateReceiveAddress}
             onAddContact={addRegistryContact}
             onRefresh={() => void refreshIds()}
+            submitTransfer={transferId}
+            submitUpdate={updateIdReceiver}
             submit={registerId}
           />
         ) : activeFolder === "contacts" ? (
@@ -5384,16 +5859,30 @@ function IdLaunchApp({
   idName,
   idPgpKey,
   idReceiveAddress,
+  idReceiverUpdateBytes,
+  idTransferBytes,
+  idTransferOwnerAddress,
+  idTransferReceiveAddress,
+  idUpdateReceiveAddress,
   lastRegisteredId,
+  managedIdName,
   registryAddress,
   registryRecords,
   registrationBytes,
+  canTransfer,
+  canUpdate,
   setFeeRate,
   setIdName,
   setIdPgpKey,
   setIdReceiveAddress,
+  setIdTransferOwnerAddress,
+  setIdTransferReceiveAddress,
+  setIdUpdateReceiveAddress,
+  setManagedIdName,
   setTheme,
   status,
+  submitTransfer,
+  submitUpdate,
   submit,
   theme,
   onRefresh,
@@ -5408,16 +5897,30 @@ function IdLaunchApp({
   idName: string;
   idPgpKey: string;
   idReceiveAddress: string;
+  idReceiverUpdateBytes: number;
+  idTransferBytes: number;
+  idTransferOwnerAddress: string;
+  idTransferReceiveAddress: string;
+  idUpdateReceiveAddress: string;
   lastRegisteredId?: PowIdRecord;
+  managedIdName: string;
   registryAddress: string;
   registryRecords: PowIdRecord[];
   registrationBytes: number;
+  canTransfer: boolean;
+  canUpdate: boolean;
   setFeeRate: (value: number) => void;
   setIdName: (value: string) => void;
   setIdPgpKey: (value: string) => void;
   setIdReceiveAddress: (value: string) => void;
+  setIdTransferOwnerAddress: (value: string) => void;
+  setIdTransferReceiveAddress: (value: string) => void;
+  setIdUpdateReceiveAddress: (value: string) => void;
+  setManagedIdName: (value: string) => void;
   setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
+  submitTransfer: (event: FormEvent<HTMLFormElement>) => void;
+  submitUpdate: (event: FormEvent<HTMLFormElement>) => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
   theme: ThemeMode;
   onRefresh: () => void;
@@ -5425,6 +5928,8 @@ function IdLaunchApp({
   const [showAllRegistryRecords, setShowAllRegistryRecords] = useState(false);
   const normalizedId = normalizePowId(idName);
   const ownedIds = ownedPowIds(registryRecords, address);
+  const ownerControlledIds = registryRecords.filter((record) => record.confirmed && record.ownerAddress === address);
+  const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const visibleRegistryRecords = showAllRegistryRecords ? registryRecords : registryRecords.slice(0, 12);
@@ -5657,6 +6162,83 @@ function IdLaunchApp({
               <h3>Your IDs</h3>
               <IdRecordList records={ownedIds} allowVerification empty={address ? "No IDs for this wallet yet." : "Connect UniSat to see your IDs."} />
             </section>
+
+            <section className="id-launch-card">
+              <h3>Manage ID</h3>
+              <p className="field-note">Owners can update routing or transfer an ID for {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats.</p>
+              {ownerControlledIds.length === 0 ? (
+                <p className="field-note">Connect the current owner wallet to manage confirmed IDs.</p>
+              ) : (
+                <>
+                  <label>
+                    ID
+                    <select value={managedId?.id ?? ""} onChange={(event) => setManagedIdName(event.target.value)}>
+                      {ownerControlledIds.map((record) => (
+                        <option key={`${record.network}-${record.id}`} value={record.id}>
+                          {record.id}@proofofwork.me
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {managedId ? (
+                    <dl className="id-manage-state">
+                      <div>
+                        <dt>Owner</dt>
+                        <dd>{shortAddress(managedId.ownerAddress)}</dd>
+                      </div>
+                      <div>
+                        <dt>Receives</dt>
+                        <dd>{shortAddress(managedId.receiveAddress)}</dd>
+                      </div>
+                      <div>
+                        <dt>Last Event</dt>
+                        <dd>{shortAddress(managedId.txid)}</dd>
+                      </div>
+                    </dl>
+                  ) : null}
+                  <form className="id-action-form" onSubmit={submitUpdate}>
+                    <label>
+                      New receive address
+                      <input autoComplete="off" onChange={(event) => setIdUpdateReceiveAddress(event.target.value)} spellCheck={false} value={idUpdateReceiveAddress} />
+                    </label>
+                    <div className={idReceiverUpdateBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
+                      {idReceiverUpdateBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
+                    </div>
+                    <button className="secondary" disabled={!canUpdate} type="submit">
+                      <span className="button-content">
+                        <RefreshCw size={15} />
+                        <span>Update Receiver</span>
+                      </span>
+                    </button>
+                  </form>
+                  <form className="id-action-form" onSubmit={submitTransfer}>
+                    <label>
+                      New owner address
+                      <input autoComplete="off" onChange={(event) => setIdTransferOwnerAddress(event.target.value)} spellCheck={false} value={idTransferOwnerAddress} />
+                    </label>
+                    <label>
+                      New receive address optional
+                      <input
+                        autoComplete="off"
+                        onChange={(event) => setIdTransferReceiveAddress(event.target.value)}
+                        placeholder="Defaults to new owner"
+                        spellCheck={false}
+                        value={idTransferReceiveAddress}
+                      />
+                    </label>
+                    <div className={idTransferBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
+                      {idTransferBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
+                    </div>
+                    <button className="primary" disabled={!canTransfer} type="submit">
+                      <span className="button-content">
+                        <Send size={15} />
+                        <span>Transfer ID</span>
+                      </span>
+                    </button>
+                  </form>
+                </>
+              )}
+            </section>
           </aside>
         </div>
 
@@ -5865,17 +6447,31 @@ function IdsWorkspace({
   idName,
   idPgpKey,
   idReceiveAddress,
+  idReceiverUpdateBytes,
+  idTransferBytes,
+  idTransferOwnerAddress,
+  idTransferReceiveAddress,
+  idUpdateReceiveAddress,
+  managedIdName,
   network,
   registryAddress,
   registryRecords,
   registrationBytes,
   lastRegisteredId,
+  canTransfer,
+  canUpdate,
   setFeeRate,
   setIdName,
   setIdPgpKey,
   setIdReceiveAddress,
+  setIdTransferOwnerAddress,
+  setIdTransferReceiveAddress,
+  setIdUpdateReceiveAddress,
+  setManagedIdName,
   onAddContact,
   onRefresh,
+  submitTransfer,
+  submitUpdate,
   submit,
 }: {
   address: string;
@@ -5886,22 +6482,38 @@ function IdsWorkspace({
   idName: string;
   idPgpKey: string;
   idReceiveAddress: string;
+  idReceiverUpdateBytes: number;
+  idTransferBytes: number;
+  idTransferOwnerAddress: string;
+  idTransferReceiveAddress: string;
+  idUpdateReceiveAddress: string;
+  managedIdName: string;
   network: BitcoinNetwork;
   registryAddress: string;
   registryRecords: PowIdRecord[];
   registrationBytes: number;
   lastRegisteredId?: PowIdRecord;
+  canTransfer: boolean;
+  canUpdate: boolean;
   setFeeRate: (value: number) => void;
   setIdName: (value: string) => void;
   setIdPgpKey: (value: string) => void;
   setIdReceiveAddress: (value: string) => void;
+  setIdTransferOwnerAddress: (value: string) => void;
+  setIdTransferReceiveAddress: (value: string) => void;
+  setIdUpdateReceiveAddress: (value: string) => void;
+  setManagedIdName: (value: string) => void;
   onAddContact: (record: PowIdRecord) => void;
   onRefresh: () => void;
+  submitTransfer: (event: FormEvent<HTMLFormElement>) => void;
+  submitUpdate: (event: FormEvent<HTMLFormElement>) => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const normalizedId = normalizePowId(idName);
   const idError = powIdError(normalizedId);
   const ownedIds = ownedPowIds(registryRecords, address);
+  const ownerControlledIds = registryRecords.filter((record) => record.network === network && record.confirmed && record.ownerAddress === address);
+  const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
 
   return (
     <section className="ids-workspace">
@@ -5976,6 +6588,94 @@ function IdsWorkspace({
             </span>
           </button>
         </form>
+
+        <section className="id-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Wallet size={24} />
+            </div>
+            <div>
+              <h3>Manage ID</h3>
+              <p>Current owners can update routing or transfer the asset. Each registry mutation pays {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats.</p>
+            </div>
+          </div>
+
+          {ownerControlledIds.length === 0 ? (
+            <p className="field-note">Connect the current owner wallet to manage confirmed IDs.</p>
+          ) : (
+            <>
+              <label>
+                ID
+                <select value={managedId?.id ?? ""} onChange={(event) => setManagedIdName(event.target.value)}>
+                  {ownerControlledIds.map((record) => (
+                    <option key={`${record.network}-${record.id}`} value={record.id}>
+                      {record.id}@proofofwork.me
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {managedId ? (
+                <dl className="id-manage-state">
+                  <div>
+                    <dt>Owner</dt>
+                    <dd>{shortAddress(managedId.ownerAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>Receives</dt>
+                    <dd>{shortAddress(managedId.receiveAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>Last Event</dt>
+                    <dd>{shortAddress(managedId.txid)}</dd>
+                  </div>
+                </dl>
+              ) : null}
+
+              <form className="id-action-form" onSubmit={submitUpdate}>
+                <label>
+                  New receive address
+                  <input autoComplete="off" onChange={(event) => setIdUpdateReceiveAddress(event.target.value)} spellCheck={false} value={idUpdateReceiveAddress} />
+                </label>
+                <div className={idReceiverUpdateBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
+                  {idReceiverUpdateBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
+                </div>
+                <button className="secondary" disabled={!canUpdate} type="submit">
+                  <span className="button-content">
+                    <RefreshCw size={15} />
+                    <span>Update Receiver</span>
+                  </span>
+                </button>
+              </form>
+
+              <form className="id-action-form" onSubmit={submitTransfer}>
+                <label>
+                  New owner address
+                  <input autoComplete="off" onChange={(event) => setIdTransferOwnerAddress(event.target.value)} spellCheck={false} value={idTransferOwnerAddress} />
+                </label>
+                <label>
+                  New receive address optional
+                  <input
+                    autoComplete="off"
+                    onChange={(event) => setIdTransferReceiveAddress(event.target.value)}
+                    placeholder="Defaults to new owner"
+                    spellCheck={false}
+                    value={idTransferReceiveAddress}
+                  />
+                </label>
+                <div className={idTransferBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
+                  {idTransferBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
+                </div>
+                <button className="primary" disabled={!canTransfer} type="submit">
+                  <span className="button-content">
+                    <Send size={15} />
+                    <span>Transfer ID</span>
+                  </span>
+                </button>
+              </form>
+            </>
+          )}
+        </section>
 
         {lastRegisteredId ? (
           <section className="id-card id-verify-card">

@@ -10,6 +10,7 @@ The Phase 1 public launch surfaces are:
 proofofwork.me              landing page
 id.proofofwork.me           focused ProofOfWork ID registry onboarding app
 computer.proofofwork.me     full mailbox/computer app
+desktop.proofofwork.me      public read-only file desktop
 ```
 
 Mail organization features that are already implemented in the full app:
@@ -25,6 +26,7 @@ Mail organization features that are already implemented in the full app:
 - Multi-recipient compose with removable recipient chips.
 - Reply All for multi-recipient mail.
 - Files view for confirmed attachments.
+- Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Export/import for local drafts, archive/favorite preferences, theme, and sent/outbox tracking.
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
 - First-party OP_RETURN API reads for production mainnet mail, files, registry, and tx status when `VITE_POW_API_BASE` is configured.
@@ -93,6 +95,30 @@ The default Files experience should feel more like a desktop/file manager than a
 - Keep `Open Message` as an explicit option for viewing the source mail/thread.
 
 This creates a Finder/Gmail/Google Drive style attachment surface while staying serverless. The file bytes still come from valid ProofOfWork.Me OP_RETURN payloads, and the source message remains available without dominating the Files view.
+
+## Desktop
+
+Desktop is the public read-only version of Files.
+
+Behavior:
+
+- Search a Bitcoin address or confirmed `user@proofofwork.me`.
+- Resolve ProofOfWork IDs only when confirmed.
+- Load confirmed mail for the resolved address.
+- Show confirmed attachments as a desktop-style public file space.
+- Support the same file filters and file-oriented sorts as Files.
+- Do not require wallet connection for browsing.
+- Do not show local-only metadata such as drafts, folders, favorites, archives, or contacts.
+- Do not show pending Incoming or Outbox transactions as public files.
+- Do not expose `Open Message` as a private mailbox action in the public inspector; link to the source transaction instead.
+
+Production route:
+
+```text
+desktop.proofofwork.me
+```
+
+This route should use the same OP_RETURN parser/API as the full Computer app. It is a presentation surface, not a new protocol.
 
 ## Outbox
 

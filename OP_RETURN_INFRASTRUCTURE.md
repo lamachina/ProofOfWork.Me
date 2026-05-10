@@ -21,6 +21,7 @@ Production domains:
 proofofwork.me              -> landing page
 id.proofofwork.me           -> ID registry app
 computer.proofofwork.me     -> full mail/computer app
+desktop.proofofwork.me      -> public read-only file desktop
 ```
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
@@ -75,6 +76,7 @@ Production builds:
 VITE_LANDING_ONLY=1 VITE_POW_API_BASE=https://proofofwork.me npm run build
 VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
 VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
+VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 ```
 
 ## Endpoints
@@ -119,6 +121,7 @@ Confirmed Bitcoin history is canonical. Pending mempool state is not.
 Production rules:
 
 - Confirmed registry/mail/file history should come from the ProofOfWork node/indexer stack.
+- Public Desktop reads should use the same confirmed mail/file API path as Computer.
 - Pending registry/mail/outbox visibility should merge all configured mempool views.
 - Pending IDs must never be routable.
 - Pending mail can be shown in Incoming/Outbox, but it must not be treated as durable mail.
@@ -179,6 +182,7 @@ After changing the API or production build, verify:
 - `bitcoin@proofofwork.me` resolves only if confirmed.
 - Duplicate/pending IDs cannot be routed.
 - Sent, inbox, incoming, files, outbox, and dropped status all work through the API.
+- Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
 - Known attachment transactions reconstruct with valid size and SHA-256.
 - Known pending txs return `pending`.
 - Known dropped txs return `dropped`.

@@ -2,6 +2,12 @@
 
 Bitcoin-native mail and ProofOfWork ID registry, written to BTC OP_RETURN outputs and signed locally with UniSat.
 
+## For Agents
+
+Before modifying ProofOfWork.Me, read `SOUL.md`.
+
+This repository is built for agent collaboration. `SOUL.md` explains the project's voice, thesis, and long-term direction. Protocol behavior lives in `README.md`, `PROOFOFWORK_IDS.md`, and the source code.
+
 ## Phase 1 Launch
 
 The public front door is:
@@ -10,11 +16,12 @@ The public front door is:
 proofofwork.me
 ```
 
-The root domain renders a focused landing page that routes users to the two production apps:
+The root domain renders a focused landing page that routes users to the production apps:
 
 ```text
 id.proofofwork.me
 computer.proofofwork.me
+desktop.proofofwork.me
 ```
 
 Production app roles:
@@ -22,6 +29,7 @@ Production app roles:
 - `proofofwork.me` is the landing/router page.
 - `id.proofofwork.me` is the focused Phase 1 ID registry onboarding app.
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
+- `desktop.proofofwork.me` is the public read-only file desktop for searching addresses or confirmed ProofOfWork IDs.
 
 The Phase 1 registry onboarding flow is:
 
@@ -82,6 +90,7 @@ Launch invariants for future developers/agents:
 - Exports and imports local app data backups for contacts, drafts, archives, favorites, custom folders, theme, and broadcast tracking.
 - Supports one small attachment per message, capped at 60,000 bytes before encoding.
 - Adds a desktop-style Files section for confirmed attachment-only browsing, filtering, sorting, previews, download, and opening the source message.
+- Adds a public Desktop section that searches any Bitcoin address or confirmed ProofOfWork ID and displays confirmed public attachments without a wallet connection.
 - Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
 - Uses the correct mempool.space explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
@@ -109,6 +118,7 @@ Production routes the API through the same app domains:
 https://proofofwork.me/api/*
 https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
+https://desktop.proofofwork.me/api/*
 ```
 
 Current production behavior:
@@ -195,6 +205,12 @@ To preview the root landing page locally:
 http://localhost:5173/?landing=1
 ```
 
+To preview the public Desktop locally:
+
+```text
+http://localhost:5173/?desktop=1
+```
+
 To build a landing-page-only deployment for `proofofwork.me`:
 
 ```bash
@@ -211,6 +227,12 @@ To build the full computer app for production:
 
 ```bash
 VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
+```
+
+To build the public Desktop app for production:
+
+```bash
+VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 ```
 
 To run localhost against the production API:
@@ -258,12 +280,15 @@ Before issuing refunds, check `ID_REFUNDS.md` so old confirmed duplicates that w
 
 Important implementation points:
 
+- Agent bootstrap: `SOUL.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules/proofofwork-soul.mdc`, and `.github/copilot-instructions.md`.
 - ID launch route switch: `isIdLaunchRoute()` in `src/App.tsx`.
 - Root landing route switch: `isLandingRoute()` in `src/App.tsx`.
+- Public Desktop route switch: `isDesktopRoute()` in `src/App.tsx`.
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
+- Public Desktop UI: `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.
 - ID registry history fetcher: `fetchRegistryTransactions()`. It must continue paginating confirmed history with `txs/chain/:last_seen_txid` and merging `txs/mempool`.
 - ID read/compat parser: `parseIdRegistrationPayload()` and `idRecordsFromTransactions()`.

@@ -15,12 +15,14 @@ import {
   LogOut,
   Mail,
   MessageCircle,
+  Monitor,
   Moon,
   Paperclip,
   PenLine,
   FolderPlus,
   RefreshCw,
   Reply,
+  Search,
   Send,
   Star,
   Sun,
@@ -45,7 +47,19 @@ type LegacyBitcoinNetwork = "livenet" | "testnet";
 type UniSatChain = "BITCOIN_MAINNET" | "BITCOIN_TESTNET" | "BITCOIN_TESTNET4";
 type UniSatEvent = "accountsChanged" | "networkChanged" | "chainChanged";
 type StatusTone = "idle" | "good" | "bad";
-type Folder = "inbox" | "incoming" | "sent" | "outbox" | "drafts" | "favorites" | "archive" | "files" | "ids" | "contacts" | "custom";
+type Folder =
+  | "inbox"
+  | "incoming"
+  | "sent"
+  | "outbox"
+  | "drafts"
+  | "favorites"
+  | "archive"
+  | "files"
+  | "desktop"
+  | "ids"
+  | "contacts"
+  | "custom";
 type SortMode = "value" | "newest" | "oldest" | "thread" | "largest" | "filetype" | "sender";
 type FileFilter = "all" | "image" | "pdf" | "document" | "other";
 type ThemeMode = "light" | "dark";
@@ -102,6 +116,15 @@ type ContactRecord = {
   source: "manual" | "registry";
   createdAt: string;
   updatedAt: string;
+};
+
+type DesktopProfile = {
+  address: string;
+  label: string;
+  loadedAt: string;
+  network: BitcoinNetwork;
+  query: string;
+  resolvedId?: string;
 };
 
 type LocalBackupPayload = {
@@ -312,6 +335,7 @@ const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
+const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
 const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "").trim().replace(/\/+$/u, "");
 const MAX_DATA_CARRIER_BYTES = 100_000;
@@ -352,6 +376,12 @@ function isLandingRoute() {
   const hostname = window.location.hostname.toLowerCase();
   // Production front door: proofofwork.me. Local/dev preview: ?landing=1.
   return hostname === "proofofwork.me" || hostname === "www.proofofwork.me" || window.location.search.includes("landing=1");
+}
+
+function isDesktopRoute() {
+  const hostname = window.location.hostname.toLowerCase();
+  // Production public file desktop: desktop.proofofwork.me. Local/dev preview: ?desktop=1.
+  return hostname === "desktop.proofofwork.me" || window.location.search.includes("desktop=1");
 }
 
 function loadTheme(): ThemeMode {
@@ -1094,6 +1124,10 @@ function folderLabel(folder: Folder) {
     return "IDs";
   }
 
+  if (folder === "desktop") {
+    return "Desktop";
+  }
+
   if (folder === "contacts") {
     return "Contacts";
   }
@@ -1128,6 +1162,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "ids") {
     return "ProofOfWork ID registry";
+  }
+
+  if (folder === "desktop") {
+    return "Public file desktop";
   }
 
   if (folder === "contacts") {
@@ -2426,6 +2464,17 @@ async function fetchAddressMail(targetAddress: string, targetNetwork: BitcoinNet
   };
 }
 
+function publicDesktopMail(inboxMessages: InboxMessage[], sentMessages: SentMessage[]): MailMessage[] {
+  return [
+    ...inboxMessages
+      .filter((message) => message.confirmed)
+      .map((message): MailMessage => ({ ...message, folder: "inbox" })),
+    ...sentMessages
+      .filter((message) => sentDeliveryStatus(message) === "confirmed")
+      .map((message): MailMessage => ({ ...message, folder: "sent" })),
+  ];
+}
+
 function idRecordsFromTransactions(
   txs: Array<Record<string, unknown>>,
   registryAddress: string,
@@ -2885,6 +2934,7 @@ async function signAndBroadcastPsbt({
 export default function App() {
   const idLaunchMode = isIdLaunchRoute();
   const landingMode = isLandingRoute();
+  const desktopRoute = isDesktopRoute();
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
   const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
@@ -2907,9 +2957,14 @@ export default function App() {
   const [contacts, setContacts] = useState<ContactRecord[]>(() => loadContacts());
   const [customFolders, setCustomFolders] = useState<CustomFolderRecord[]>(() => loadCustomFolders());
   const [newFolderName, setNewFolderName] = useState("");
+  const [desktopQuery, setDesktopQuery] = useState("");
+  const [desktopProfile, setDesktopProfile] = useState<DesktopProfile | undefined>();
+  const [desktopMail, setDesktopMail] = useState<MailMessage[]>([]);
+  const [desktopSelectedKey, setDesktopSelectedKey] = useState("");
+  const [desktopLoading, setDesktopLoading] = useState(false);
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
-  const [activeFolder, setActiveFolder] = useState<Folder>("inbox");
+  const [activeFolder, setActiveFolder] = useState<Folder>(() => (desktopRoute ? "desktop" : "inbox"));
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("value");
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
@@ -3010,6 +3065,7 @@ export default function App() {
     () => allMail.filter((message) => message.attachment && (message.folder !== "inbox" || message.confirmed)),
     [allMail],
   );
+  const desktopFileMessages = useMemo(() => desktopMail.filter(hasAttachment), [desktopMail]);
   const fileMessages = useMemo(
     () => allFileMessages.filter((message) => message.attachment && (fileFilter === "all" || attachmentKind(message.attachment) === fileFilter)),
     [allFileMessages, fileFilter],
@@ -3088,7 +3144,13 @@ export default function App() {
     !busy;
   const refreshInProgress = refreshing || checkingBroadcasts;
   const refreshDisabled =
-    activeFolder === "contacts" ? true : activeFolder === "ids" ? busy || refreshInProgress || !registryAddress : !address || busy || refreshInProgress;
+    activeFolder === "contacts"
+      ? true
+      : activeFolder === "desktop"
+        ? desktopLoading || !desktopProfile
+        : activeFolder === "ids"
+          ? busy || refreshInProgress || !registryAddress
+          : !address || busy || refreshInProgress;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -3175,6 +3237,14 @@ export default function App() {
   useEffect(() => {
     setIdReceiveAddress(address);
   }, [address, network]);
+
+  useEffect(() => {
+    if (desktopProfile && desktopProfile.network !== network) {
+      setDesktopProfile(undefined);
+      setDesktopMail([]);
+      setDesktopSelectedKey("");
+    }
+  }, [desktopProfile, network]);
 
   useEffect(() => {
     if (!address || !composeOpen) {
@@ -3578,7 +3648,7 @@ export default function App() {
     if (folder !== "custom") {
       setActiveCustomFolderId("");
     }
-    setSortMode((current) => (folder !== "files" && ["largest", "filetype", "sender"].includes(current) ? "value" : current));
+    setSortMode((current) => (!["files", "desktop"].includes(folder) && ["largest", "filetype", "sender"].includes(current) ? "value" : current));
     setComposeOpen(false);
     setReplyParentTxid(undefined);
     setAttachment(undefined);
@@ -3737,6 +3807,66 @@ export default function App() {
     } catch (error) {
       setStatus({ tone: "bad", text: errorMessage(error, "Backup import failed.") });
     }
+  }
+
+  async function loadDesktopTarget(target = desktopQuery) {
+    const query = target.trim();
+    if (!query) {
+      setStatus({ tone: "bad", text: "Enter a Bitcoin address or confirmed ProofOfWork ID." });
+      return;
+    }
+
+    setDesktopLoading(true);
+    setStatus({ tone: "idle", text: "Opening public desktop..." });
+
+    try {
+      let resolved = resolveRecipientInput(query, network, idRegistry, registryAddress);
+      if (resolved.isId || resolved.error) {
+        const records = await fetchIdRegistry(network);
+        setIdRegistry(records);
+        resolved = resolveRecipientInput(query, network, records, registryAddress);
+      }
+
+      if (resolved.error || !resolved.paymentAddress) {
+        setStatus({ tone: "bad", text: resolved.error || "Enter a valid Bitcoin address or confirmed ProofOfWork ID." });
+        return;
+      }
+
+      const { inboxMessages, sentMessages } = await fetchAddressMail(resolved.paymentAddress, network);
+      const publicMail = publicDesktopMail(inboxMessages, sentMessages);
+      const files = publicMail.filter(hasAttachment);
+      const profile: DesktopProfile = {
+        address: resolved.paymentAddress,
+        label: resolved.isId ? resolved.displayRecipient : shortAddress(resolved.paymentAddress),
+        loadedAt: new Date().toISOString(),
+        network,
+        query,
+        resolvedId: resolved.id,
+      };
+
+      setDesktopQuery(query);
+      setDesktopProfile(profile);
+      setDesktopMail(publicMail);
+      setDesktopSelectedKey(files[0] ? mailKey(files[0]) : "");
+      setActiveFolder("desktop");
+      setComposeOpen(false);
+      setSelectedKey("");
+      setStatus({
+        tone: "good",
+        text: `${profile.label} desktop loaded. ${files.length.toLocaleString()} public file${files.length === 1 ? "" : "s"}.`,
+      });
+    } catch (error) {
+      setStatus({ tone: "bad", text: errorMessage(error, "Desktop search failed.") });
+    } finally {
+      setDesktopLoading(false);
+    }
+  }
+
+  function clearDesktop() {
+    setDesktopProfile(undefined);
+    setDesktopMail([]);
+    setDesktopSelectedKey("");
+    setStatus({ tone: "idle", text: "Desktop cleared." });
   }
 
   function replyTo(message: MailMessage) {
@@ -4324,7 +4454,7 @@ export default function App() {
           <button
             className="secondary"
             disabled={refreshDisabled}
-            onClick={() => void (activeFolder === "ids" ? refreshIds() : refreshMail(activeFolder))}
+            onClick={() => void (activeFolder === "ids" ? refreshIds() : activeFolder === "desktop" ? loadDesktopTarget() : refreshMail(activeFolder))}
             title="Refresh mail and transaction statuses"
             type="button"
           >
@@ -4491,6 +4621,13 @@ export default function App() {
               </span>
               <strong>{allFileMessages.length}</strong>
             </button>
+            <button aria-current={activeFolder === "desktop"} onClick={() => openFolder("desktop")} type="button">
+              <span className="folder-label">
+                <Monitor size={17} />
+                <span>Desktop</span>
+              </span>
+              <strong>{desktopFileMessages.length}</strong>
+            </button>
             <button aria-current={activeFolder === "ids"} onClick={() => openFolder("ids")} type="button">
               <span className="folder-label">
                 <AtSign size={17} />
@@ -4574,6 +4711,27 @@ export default function App() {
             onAdd={addManualContact}
             onCompose={composeToContact}
             onRemove={removeContact}
+          />
+        ) : activeFolder === "desktop" ? (
+          <DesktopWorkspace
+            activeNetwork={network}
+            busy={desktopLoading}
+            desktopQuery={desktopQuery}
+            fileFilter={fileFilter}
+            messages={desktopMail}
+            profile={desktopProfile}
+            selectedKey={desktopSelectedKey}
+            setDesktopQuery={setDesktopQuery}
+            setFileFilter={setFileFilter}
+            setSortMode={setSortMode}
+            sortMode={sortMode}
+            onClear={clearDesktop}
+            onRefresh={() => void loadDesktopTarget()}
+            onSearch={(event) => {
+              event.preventDefault();
+              void loadDesktopTarget();
+            }}
+            onSelect={(message) => setDesktopSelectedKey(mailKey(message))}
           />
         ) : activeFolder === "files" ? (
           <FilesWorkspace
@@ -4808,6 +4966,7 @@ function LandingApp({
         <nav className="landing-nav" aria-label="ProofOfWork.Me apps">
           <a href={ID_APP_URL}>IDs</a>
           <a href={COMPUTER_APP_URL}>Computer</a>
+          <a href={DESKTOP_APP_URL}>Desktop</a>
           <button
             aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
             className="icon-button"
@@ -4838,6 +4997,12 @@ function LandingApp({
               <span className="button-content">
                 <Mail size={17} />
                 <span>Open Computer</span>
+              </span>
+            </a>
+            <a className="secondary link-button" href={DESKTOP_APP_URL}>
+              <span className="button-content">
+                <Monitor size={17} />
+                <span>Open Desktop</span>
               </span>
             </a>
           </div>
@@ -4915,6 +5080,22 @@ function LandingApp({
               <span className="button-content">
                 <Mail size={16} />
                 <span>Open App</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <Monitor size={24} />
+            </div>
+            <div>
+              <h3>Open Desktop</h3>
+              <p>Search an address or confirmed ProofOfWork ID and browse public confirmed files.</p>
+            </div>
+            <a className="secondary link-button" href={DESKTOP_APP_URL}>
+              <span className="button-content">
+                <Monitor size={16} />
+                <span>Open Desktop</span>
               </span>
             </a>
           </article>
@@ -5847,6 +6028,174 @@ function DraftList({
   );
 }
 
+function DesktopWorkspace({
+  activeNetwork,
+  busy,
+  desktopQuery,
+  fileFilter,
+  messages,
+  profile,
+  selectedKey,
+  setDesktopQuery,
+  setFileFilter,
+  setSortMode,
+  sortMode,
+  onClear,
+  onRefresh,
+  onSearch,
+  onSelect,
+}: {
+  activeNetwork: BitcoinNetwork;
+  busy: boolean;
+  desktopQuery: string;
+  fileFilter: FileFilter;
+  messages: MailMessage[];
+  profile?: DesktopProfile;
+  selectedKey: string;
+  setDesktopQuery: (value: string) => void;
+  setFileFilter: (value: FileFilter) => void;
+  setSortMode: (value: SortMode) => void;
+  sortMode: SortMode;
+  onClear: () => void;
+  onRefresh: () => void;
+  onSearch: (event: FormEvent<HTMLFormElement>) => void;
+  onSelect: (message: MailMessage) => void;
+}) {
+  const fileMessages = sortMessages(
+    messages
+      .filter(hasAttachment)
+      .filter((message) => fileFilter === "all" || attachmentKind(message.attachment) === fileFilter),
+    sortMode,
+  ).filter(hasAttachment);
+  const selectedFile = fileMessages.find((message) => mailKey(message) === selectedKey) ?? fileMessages[0];
+
+  if (!profile) {
+    return (
+      <section className="desktop-workspace">
+        <div className="desktop-screensaver">
+          <div className="desktop-screen-card">
+            <div className="brand-mark" aria-hidden="true">
+              PoW
+            </div>
+            <span>ProofOfWork Desktop</span>
+            <h2>Open a public Bitcoin desktop.</h2>
+            <form className="desktop-search desktop-search-large" onSubmit={onSearch}>
+              <Search size={18} aria-hidden="true" />
+              <input
+                autoComplete="off"
+                onChange={(event) => setDesktopQuery(event.target.value)}
+                placeholder="address or user@proofofwork.me"
+                spellCheck={false}
+                value={desktopQuery}
+              />
+              <button className="primary" disabled={busy || !desktopQuery.trim()} type="submit">
+                <span className="button-content">
+                  <Monitor size={16} />
+                  <span>{busy ? "Opening" : "Open"}</span>
+                </span>
+              </button>
+            </form>
+            <div className="desktop-signal">
+              <span>{networkLabel(activeNetwork)}</span>
+              <span>Confirmed files</span>
+              <span>No wallet required</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="desktop-workspace">
+      <div className="desktop-toolbar">
+        <div>
+          <h2>{profile.label} Desktop</h2>
+          <span>
+            {fileMessages.length.toLocaleString()} public file{fileMessages.length === 1 ? "" : "s"} · {shortAddress(profile.address)}
+          </span>
+        </div>
+        <form className="desktop-search" onSubmit={onSearch}>
+          <Search size={16} aria-hidden="true" />
+          <input
+            autoComplete="off"
+            onChange={(event) => setDesktopQuery(event.target.value)}
+            placeholder="address or user@proofofwork.me"
+            spellCheck={false}
+            value={desktopQuery}
+          />
+          <button className="secondary small" disabled={busy || !desktopQuery.trim()} type="submit">
+            <span className="button-content">
+              <Search size={15} />
+              <span>Search</span>
+            </span>
+          </button>
+        </form>
+        <label className="sort-control">
+          Type
+          <select value={fileFilter} onChange={(event) => setFileFilter(event.target.value as FileFilter)}>
+            <option value="all">All files</option>
+            <option value="image">Images</option>
+            <option value="pdf">PDFs</option>
+            <option value="document">Documents</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label className="sort-control">
+          Sort
+          <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+            <option value="value">Highest sats</option>
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="largest">Largest</option>
+            <option value="filetype">File type</option>
+            <option value="sender">Address</option>
+            <option value="thread">Thread</option>
+          </select>
+        </label>
+        <button className="secondary small" disabled={busy} onClick={onRefresh} type="button">
+          <span className="button-content">
+            <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
+            <span>{busy ? "Refreshing" : "Refresh"}</span>
+          </span>
+        </button>
+        <button className="secondary small" disabled={busy} onClick={onClear} type="button">
+          <span className="button-content">
+            <X size={15} />
+            <span>Clear</span>
+          </span>
+        </button>
+      </div>
+
+      {fileMessages.length === 0 ? (
+        <div className="desktop-empty">
+          <div className="empty-icon" aria-hidden="true">
+            <Monitor size={26} />
+          </div>
+          <h3>No public files</h3>
+          <p>{profile.label} has no confirmed ProofOfWork.Me attachments on this network.</p>
+        </div>
+      ) : (
+        <div className="files-browser desktop-browser">
+          <div className="files-desktop" aria-label={`${profile.label} public files`}>
+            {fileMessages.map((message) => (
+              <FileTile
+                active={selectedFile ? mailKey(selectedFile) === mailKey(message) : false}
+                activeNetwork={activeNetwork}
+                key={mailKey(message)}
+                message={message}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+
+          <FileInspector activeNetwork={activeNetwork} message={selectedFile} />
+        </div>
+      )}
+    </section>
+  );
+}
+
 function FilesWorkspace({
   activeKey,
   activeNetwork,
@@ -6061,7 +6410,7 @@ function FileInspector({
 }: {
   activeNetwork: BitcoinNetwork;
   message?: MailMessage & { attachment: MailAttachment };
-  onOpenMessage: (message: MailMessage) => void;
+  onOpenMessage?: (message: MailMessage) => void;
 }) {
   if (!message) {
     return (
@@ -6092,12 +6441,14 @@ function FileInspector({
             <span>Download</span>
           </span>
         </a>
-        <button className="secondary" onClick={() => onOpenMessage(message)} type="button">
-          <span className="button-content">
-            <Mail size={15} />
-            <span>Open Message</span>
-          </span>
-        </button>
+        {onOpenMessage ? (
+          <button className="secondary" onClick={() => onOpenMessage(message)} type="button">
+            <span className="button-content">
+              <Mail size={15} />
+              <span>Open Message</span>
+            </span>
+          </button>
+        ) : null}
         <a className="secondary link-button" href={mempoolTxUrl(message.txid, explorerNetwork)} rel="noreferrer" target="_blank">
           <span className="button-content">
             <ArrowUpRight size={15} />

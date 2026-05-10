@@ -1113,6 +1113,16 @@ select {
   grid-template-columns: minmax(280px, 380px) minmax(320px, 1fr);
 }
 
+.marketplace-content {
+  grid-template-columns: minmax(280px, 380px) minmax(320px, 1fr);
+  overflow: visible;
+  padding: 0;
+}
+
+.marketplace-content .ids-registry-card {
+  grid-column: 1 / -1;
+}
+
 .contacts-list-card {
   min-height: 0;
 }

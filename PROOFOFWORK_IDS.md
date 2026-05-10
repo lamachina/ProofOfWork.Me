@@ -34,6 +34,7 @@ Implementation anchors in `src/App.tsx`:
 - `idRecordsFromTransactions`
 - `resolveRecipientInput`
 - `IdLaunchApp`
+- `MarketplaceApp`
 
 ## Concept
 
@@ -83,7 +84,7 @@ Phase 1 launch surface:
 id.proofofwork.me
 ```
 
-The ID subdomain renders a focused mainnet claim flow using the same registry address and `pwid1:r2` protocol. It is intentionally narrower than the full mail app: connect UniSat, check availability, register, view registry stats, view owned IDs, view public registry records, and verify owned/routed IDs on X.
+The ID subdomain renders a focused mainnet claim flow using the same registry address and `pwid1:r2` protocol. It is intentionally narrower than the full mail app: connect UniSat, check availability, register, view registry stats, view owned IDs, view public registry records, and verify owned/routed IDs on X. Do not put ID transfer, management, or marketplace tools on `id.proofofwork.me`; those belong in the Computer app and the standalone Marketplace app.
 
 Production domains:
 
@@ -92,10 +93,12 @@ proofofwork.me              landing page
 id.proofofwork.me           focused ID registry app
 computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
+marketplace.proofofwork.me  standalone ID marketplace
 ```
 
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
+The Marketplace subdomain can connect UniSat, create signed listing authorizations for owned confirmed IDs, and execute buyer-funded `pwid1:buy2` transfers.
 
 Local preview:
 
@@ -110,6 +113,12 @@ VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
 ```
 
 Use that environment variable for the Phase 1 server so the full mail app stays hidden even if someone opens the bare IP address or a non-ID hostname.
+
+Marketplace-only build:
+
+```bash
+VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
+```
 
 Current registration payload:
 

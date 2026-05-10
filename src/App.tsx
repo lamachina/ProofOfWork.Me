@@ -420,6 +420,7 @@ const YOUTUBE_URL = "https://www.youtube.com/@proofofworkme";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
+const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
 const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "").trim().replace(/\/+$/u, "");
 const MAX_DATA_CARRIER_BYTES = 100_000;
@@ -449,6 +450,7 @@ const APP_LINKS = [
   { href: ID_APP_URL, label: "IDs" },
   { href: COMPUTER_APP_URL, label: "Computer" },
   { href: DESKTOP_APP_URL, label: "Desktop" },
+  { href: MARKETPLACE_APP_URL, label: "Marketplace" },
 ];
 
 function isIdLaunchRoute() {
@@ -479,6 +481,16 @@ function isDesktopRoute() {
   const hostname = window.location.hostname.toLowerCase();
   // Production public file desktop: desktop.proofofwork.me. Local/dev preview: ?desktop=1.
   return hostname === "desktop.proofofwork.me" || window.location.search.includes("desktop=1");
+}
+
+function isMarketplaceRoute() {
+  if (import.meta.env.VITE_MARKETPLACE_ONLY === "1") {
+    return true;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  // Production ID marketplace: marketplace.proofofwork.me. Local/dev preview: ?marketplace=1.
+  return hostname === "marketplace.proofofwork.me" || window.location.search.includes("marketplace=1");
 }
 
 function loadTheme(): ThemeMode {
@@ -3661,6 +3673,8 @@ export default function App() {
   const idLaunchMode = isIdLaunchRoute();
   const landingMode = isLandingRoute();
   const desktopRoute = isDesktopRoute();
+  const marketplaceMode = isMarketplaceRoute();
+  const mainnetRegistryMode = idLaunchMode || marketplaceMode;
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
   const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
@@ -3700,7 +3714,7 @@ export default function App() {
   const [desktopLoading, setDesktopLoading] = useState(false);
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
-  const [activeFolder, setActiveFolder] = useState<Folder>(() => (desktopRoute ? "desktop" : "inbox"));
+  const [activeFolder, setActiveFolder] = useState<Folder>(() => (desktopRoute ? "desktop" : mainnetRegistryMode ? "ids" : "inbox"));
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("value");
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
@@ -4149,14 +4163,14 @@ export default function App() {
   }, [activeFolder, network]);
 
   useEffect(() => {
-    if (!idLaunchMode) {
+    if (!mainnetRegistryMode) {
       return;
     }
 
     setNetwork("livenet");
     setActiveFolder("ids");
     void refreshIds(true);
-  }, [idLaunchMode]);
+  }, [mainnetRegistryMode]);
 
   useEffect(() => {
     if (!landingMode) {
@@ -4198,7 +4212,7 @@ export default function App() {
       return;
     }
 
-    if (idLaunchMode) {
+    if (mainnetRegistryMode) {
       setNetwork("livenet");
       return;
     }
@@ -4210,7 +4224,7 @@ export default function App() {
         }
       })
       .catch(() => undefined);
-  }, [desktopRoute, hasUnisat, idLaunchMode, landingMode]);
+  }, [desktopRoute, hasUnisat, landingMode, mainnetRegistryMode]);
 
   useEffect(() => {
     if (landingMode || desktopRoute) {
@@ -4224,14 +4238,14 @@ export default function App() {
     const syncWallet = async () => {
       const accounts = await window.unisat?.getAccounts?.().catch(() => []);
       const nextAddress = accounts?.[0] ?? "";
-      const nextNetwork = idLaunchMode ? "livenet" : (await getWalletNetwork(window.unisat as UnisatWallet)) ?? network;
+      const nextNetwork = mainnetRegistryMode ? "livenet" : (await getWalletNetwork(window.unisat as UnisatWallet)) ?? network;
 
       setAddress(nextAddress);
       setNetwork(nextNetwork);
       setInbox([]);
       setChainSent([]);
       setSelectedKey("");
-      setActiveFolder(idLaunchMode ? "ids" : "inbox");
+      setActiveFolder(mainnetRegistryMode ? "ids" : "inbox");
       setComposeOpen(false);
 
       if (!nextAddress) {
@@ -4240,7 +4254,7 @@ export default function App() {
       }
 
       try {
-        if (idLaunchMode) {
+        if (mainnetRegistryMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
           const records = await fetchIdRegistry("livenet");
           setIdRegistry(records);
@@ -4277,7 +4291,7 @@ export default function App() {
       window.unisat?.removeListener?.("networkChanged", networkChanged);
       window.unisat?.removeListener?.("chainChanged", chainChanged);
     };
-  }, [desktopRoute, hasUnisat, idLaunchMode, landingMode, network]);
+  }, [desktopRoute, hasUnisat, landingMode, mainnetRegistryMode, network]);
 
   function applyDraft(draft: DraftMessage) {
     setRecipient(draft.recipient);
@@ -4837,7 +4851,7 @@ export default function App() {
       }
 
       const walletNetwork = await getWalletNetwork(window.unisat);
-      if (idLaunchMode) {
+      if (mainnetRegistryMode) {
         if (walletNetwork !== "livenet") {
           await switchWalletNetwork(window.unisat, "livenet");
         }
@@ -4850,11 +4864,11 @@ export default function App() {
       setInbox([]);
       setChainSent([]);
       setSelectedKey("");
-      setActiveFolder(idLaunchMode ? "ids" : "inbox");
+      setActiveFolder(mainnetRegistryMode ? "ids" : "inbox");
       setComposeOpen(false);
 
       try {
-        if (idLaunchMode) {
+        if (mainnetRegistryMode) {
           const records = await fetchIdRegistry("livenet");
           setIdRegistry(records);
           setStatus({ tone: "good", text: `UniSat connected. ProofOfWork ID registry ready.` });
@@ -5182,7 +5196,7 @@ export default function App() {
     }
 
     if (managedIdRecord.ownerAddress !== address) {
-      setStatus({ tone: "bad", text: "Only the current owner can create a sale authorization." });
+      setStatus({ tone: "bad", text: "Only the current owner can create a listing authorization." });
       return;
     }
 
@@ -5233,15 +5247,15 @@ export default function App() {
         sellerAddress: latestRecord.ownerAddress,
       });
 
-      setStatus({ tone: "idle", text: `Signing sale authorization for ${latestRecord.id}@proofofwork.me...` });
+      setStatus({ tone: "idle", text: `Signing listing authorization for ${latestRecord.id}@proofofwork.me...` });
       const authorization = await signSaleAuthorization(window.unisat, draft);
       setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
       setStatus({
         tone: "good",
-        text: `Sale authorization ready. Buyer pays ${salePriceSats.toLocaleString()} sats to seller plus ${ID_MUTATION_PRICE_SATS.toLocaleString()} sats to registry.`,
+        text: `Listing authorization ready. Buyer pays ${salePriceSats.toLocaleString()} sats to seller plus ${ID_MUTATION_PRICE_SATS.toLocaleString()} sats to registry.`,
       });
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Sale authorization failed.") });
+      setStatus({ tone: "bad", text: errorMessage(error, "Listing authorization failed.") });
     } finally {
       setBusy(false);
     }
@@ -5269,7 +5283,7 @@ export default function App() {
     try {
       authorization = parseSaleAuthorizationText(idSaleAuthorization.trim(), network);
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Sale authorization is invalid.") });
+      setStatus({ tone: "bad", text: errorMessage(error, "Listing authorization is invalid.") });
       return;
     }
 
@@ -5278,7 +5292,7 @@ export default function App() {
     const effectiveReceiveAddress = receiveAddress || ownerAddress;
 
     if (!saleAuthorizationCanBroadcast(authorization)) {
-      setStatus({ tone: "bad", text: "Sale authorization signature is missing." });
+      setStatus({ tone: "bad", text: "Listing authorization signature is missing." });
       return;
     }
 
@@ -5309,7 +5323,7 @@ export default function App() {
     }
 
     setBusy(true);
-    setStatus({ tone: "idle", text: `Checking ${authorization.id}@proofofwork.me sale authorization...` });
+    setStatus({ tone: "idle", text: `Checking ${authorization.id}@proofofwork.me listing authorization...` });
 
     try {
       const latestRegistry = await fetchIdRegistry(network);
@@ -5645,18 +5659,42 @@ export default function App() {
       <IdLaunchApp
         address={address}
         busy={busy}
-        canCreateSaleAuthorization={canCreateSaleAuthorization}
-        canPurchaseId={canPurchaseId}
         canRegister={canRegisterId}
         connectWallet={connectWallet}
-        createSaleAuthorization={createIdSaleAuthorization}
         disconnectWallet={disconnectWallet}
         feeRate={feeRate}
         hasUnisat={hasUnisat}
         idName={idName}
         idPgpKey={idPgpKey}
         idReceiveAddress={idReceiveAddress}
-        idReceiverUpdateBytes={idReceiverUpdateBytes}
+        lastRegisteredId={lastRegisteredId?.network === "livenet" ? lastRegisteredId : undefined}
+        registryAddress={registryAddressForNetwork("livenet")}
+        registryRecords={idRegistry.filter((record) => record.network === "livenet")}
+        registrationBytes={idRegistrationBytes}
+        setFeeRate={setFeeRate}
+        setIdName={setIdName}
+        setIdPgpKey={setIdPgpKey}
+        setIdReceiveAddress={setIdReceiveAddress}
+        setTheme={setTheme}
+        status={status}
+        submit={registerId}
+        theme={theme}
+        onRefresh={() => void refreshIds()}
+      />
+    );
+  }
+
+  if (marketplaceMode) {
+    return (
+      <MarketplaceApp
+        address={address}
+        busy={busy}
+        canCreateSaleAuthorization={canCreateSaleAuthorization}
+        canPurchaseId={canPurchaseId}
+        connectWallet={connectWallet}
+        createSaleAuthorization={createIdSaleAuthorization}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
         idPurchaseBytes={idPurchaseBytes}
         idPurchaseOwnerAddress={idPurchaseOwnerAddress}
         idPurchaseReceiveAddress={idPurchaseReceiveAddress}
@@ -5664,44 +5702,22 @@ export default function App() {
         idSaleBuyerAddress={idSaleBuyerAddress}
         idSalePriceSats={idSalePriceSats}
         idSaleReceiveAddress={idSaleReceiveAddress}
-        idTransferBytes={idTransferBytes}
-        idTransferOwnerAddress={idTransferOwnerAddress}
-        idTransferReceiveAddress={idTransferReceiveAddress}
-        idUpdateReceiveAddress={idUpdateReceiveAddress}
-        lastRegisteredId={lastRegisteredId?.network === "livenet" ? lastRegisteredId : undefined}
         managedIdName={managedIdRecord?.id ?? ""}
-        network={network}
         registryAddress={registryAddressForNetwork("livenet")}
         registryRecords={idRegistry.filter((record) => record.network === "livenet")}
-        registrationBytes={idRegistrationBytes}
-        canTransfer={canTransferId}
-        canUpdate={canUpdateId}
-        setFeeRate={setFeeRate}
-        setIdName={setIdName}
-        setIdPgpKey={setIdPgpKey}
         setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
         setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
-        setIdReceiveAddress={setIdReceiveAddress}
         setIdSaleAuthorization={setIdSaleAuthorization}
         setIdSaleBuyerAddress={setIdSaleBuyerAddress}
         setIdSalePriceSats={setIdSalePriceSats}
         setIdSaleReceiveAddress={setIdSaleReceiveAddress}
-        setIdTransferOwnerAddress={setIdTransferOwnerAddress}
-        setIdTransferReceiveAddress={setIdTransferReceiveAddress}
-        setIdUpdateReceiveAddress={setIdUpdateReceiveAddress}
         setManagedIdName={(id) => {
-          const record = ownerControlledIds.find((ownedId) => ownedId.id === id);
           setManagedIdName(id);
-          setIdUpdateReceiveAddress(record?.receiveAddress ?? "");
-          setIdTransferOwnerAddress("");
-          setIdTransferReceiveAddress("");
+          setIdSaleAuthorization("");
         }}
         setTheme={setTheme}
         status={status}
         submitPurchase={purchaseId}
-        submitTransfer={transferId}
-        submitUpdate={updateIdReceiver}
-        submit={registerId}
         theme={theme}
         onRefresh={() => void refreshIds()}
       />
@@ -6580,112 +6596,48 @@ function LandingApp({
 function IdLaunchApp({
   address,
   busy,
-  canCreateSaleAuthorization,
-  canPurchaseId,
   canRegister,
   connectWallet,
-  createSaleAuthorization,
   disconnectWallet,
   feeRate,
   hasUnisat,
   idName,
   idPgpKey,
   idReceiveAddress,
-  idReceiverUpdateBytes,
-  idPurchaseBytes,
-  idPurchaseOwnerAddress,
-  idPurchaseReceiveAddress,
-  idSaleAuthorization,
-  idSaleBuyerAddress,
-  idSalePriceSats,
-  idSaleReceiveAddress,
-  idTransferBytes,
-  idTransferOwnerAddress,
-  idTransferReceiveAddress,
-  idUpdateReceiveAddress,
   lastRegisteredId,
-  managedIdName,
-  network,
   registryAddress,
   registryRecords,
   registrationBytes,
-  canTransfer,
-  canUpdate,
   setFeeRate,
   setIdName,
   setIdPgpKey,
-  setIdPurchaseOwnerAddress,
-  setIdPurchaseReceiveAddress,
   setIdReceiveAddress,
-  setIdSaleAuthorization,
-  setIdSaleBuyerAddress,
-  setIdSalePriceSats,
-  setIdSaleReceiveAddress,
-  setIdTransferOwnerAddress,
-  setIdTransferReceiveAddress,
-  setIdUpdateReceiveAddress,
-  setManagedIdName,
   setTheme,
   status,
-  submitPurchase,
-  submitTransfer,
-  submitUpdate,
   submit,
   theme,
   onRefresh,
 }: {
   address: string;
   busy: boolean;
-  canCreateSaleAuthorization: boolean;
-  canPurchaseId: boolean;
   canRegister: boolean;
   connectWallet: () => void;
-  createSaleAuthorization: () => void;
   disconnectWallet: () => void;
   feeRate: number;
   hasUnisat: boolean;
   idName: string;
   idPgpKey: string;
   idReceiveAddress: string;
-  idReceiverUpdateBytes: number;
-  idPurchaseBytes: number;
-  idPurchaseOwnerAddress: string;
-  idPurchaseReceiveAddress: string;
-  idSaleAuthorization: string;
-  idSaleBuyerAddress: string;
-  idSalePriceSats: number;
-  idSaleReceiveAddress: string;
-  idTransferBytes: number;
-  idTransferOwnerAddress: string;
-  idTransferReceiveAddress: string;
-  idUpdateReceiveAddress: string;
   lastRegisteredId?: PowIdRecord;
-  managedIdName: string;
-  network: BitcoinNetwork;
   registryAddress: string;
   registryRecords: PowIdRecord[];
   registrationBytes: number;
-  canTransfer: boolean;
-  canUpdate: boolean;
   setFeeRate: (value: number) => void;
   setIdName: (value: string) => void;
   setIdPgpKey: (value: string) => void;
-  setIdPurchaseOwnerAddress: (value: string) => void;
-  setIdPurchaseReceiveAddress: (value: string) => void;
   setIdReceiveAddress: (value: string) => void;
-  setIdSaleAuthorization: (value: string) => void;
-  setIdSaleBuyerAddress: (value: string) => void;
-  setIdSalePriceSats: (value: number) => void;
-  setIdSaleReceiveAddress: (value: string) => void;
-  setIdTransferOwnerAddress: (value: string) => void;
-  setIdTransferReceiveAddress: (value: string) => void;
-  setIdUpdateReceiveAddress: (value: string) => void;
-  setManagedIdName: (value: string) => void;
   setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
-  submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
-  submitTransfer: (event: FormEvent<HTMLFormElement>) => void;
-  submitUpdate: (event: FormEvent<HTMLFormElement>) => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
   theme: ThemeMode;
   onRefresh: () => void;
@@ -6693,14 +6645,10 @@ function IdLaunchApp({
   const [showAllRegistryRecords, setShowAllRegistryRecords] = useState(false);
   const normalizedId = normalizePowId(idName);
   const ownedIds = ownedPowIds(registryRecords, address);
-  const ownerControlledIds = registryRecords.filter((record) => record.confirmed && record.ownerAddress === address);
-  const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const visibleRegistryRecords = showAllRegistryRecords ? registryRecords : registryRecords.slice(0, 12);
   const hiddenRegistryRecordCount = Math.max(0, registryRecords.length - visibleRegistryRecords.length);
-  const transferTargetResolution = resolvePowIdOwnerInput(idTransferOwnerAddress, network, registryRecords, registryAddress);
-  const transferTargetNote = idTransferOwnerAddress.trim() ? ownerResolutionNote(transferTargetResolution) : "";
   const confirmedMatch = normalizedId ? confirmedRecords.find((record) => record.id === normalizedId) : undefined;
   const pendingMatch = normalizedId ? pendingRecords.find((record) => record.id === normalizedId) : undefined;
   const availabilityTone = !normalizedId ? "idle" : confirmedMatch ? "bad" : pendingMatch ? "idle" : "good";
@@ -6930,106 +6878,6 @@ function IdLaunchApp({
               <IdRecordList records={ownedIds} allowVerification empty={address ? "No IDs for this wallet yet." : "Connect UniSat to see your IDs."} />
             </section>
 
-            <section className="id-launch-card">
-              <h3>Manage ID</h3>
-              <p className="field-note">Owners can update routing or transfer an ID for {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.</p>
-              {ownerControlledIds.length === 0 ? (
-                <p className="field-note">Connect the current owner wallet to manage confirmed IDs.</p>
-              ) : (
-                <>
-                  <label>
-                    ID
-                    <select value={managedId?.id ?? ""} onChange={(event) => setManagedIdName(event.target.value)}>
-                      {ownerControlledIds.map((record) => (
-                        <option key={`${record.network}-${record.id}`} value={record.id}>
-                          {record.id}@proofofwork.me
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {managedId ? (
-                    <dl className="id-manage-state">
-                      <div>
-                        <dt>Owner</dt>
-                        <dd>{shortAddress(managedId.ownerAddress)}</dd>
-                      </div>
-                      <div>
-                        <dt>Receives</dt>
-                        <dd>{shortAddress(managedId.receiveAddress)}</dd>
-                      </div>
-                      <div>
-                        <dt>Last Event</dt>
-                        <dd>{shortAddress(managedId.txid)}</dd>
-                      </div>
-                    </dl>
-                  ) : null}
-                  <form className="id-action-form" onSubmit={submitUpdate}>
-                    <label>
-                      New receive address
-                      <input autoComplete="off" onChange={(event) => setIdUpdateReceiveAddress(event.target.value)} spellCheck={false} value={idUpdateReceiveAddress} />
-                    </label>
-                    <div className={idReceiverUpdateBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
-                      {idReceiverUpdateBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
-                    </div>
-                    <button className="secondary" disabled={!canUpdate} type="submit">
-                      <span className="button-content">
-                        <RefreshCw size={15} />
-                        <span>Update Receiver</span>
-                      </span>
-                    </button>
-                  </form>
-                  <form className="id-action-form" onSubmit={submitTransfer}>
-                    <label>
-                      New owner address or ID
-                      <input autoComplete="off" onChange={(event) => setIdTransferOwnerAddress(event.target.value)} spellCheck={false} value={idTransferOwnerAddress} />
-                    </label>
-                    {transferTargetNote ? <p className={transferTargetResolution.error ? "field-note bad" : "field-note good"}>{transferTargetNote}</p> : null}
-                    <label>
-                      New receive address optional
-                      <input
-                        autoComplete="off"
-                        onChange={(event) => setIdTransferReceiveAddress(event.target.value)}
-                        placeholder="Defaults to new owner"
-                        spellCheck={false}
-                        value={idTransferReceiveAddress}
-                      />
-                    </label>
-                    <div className={idTransferBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
-                      {idTransferBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
-                    </div>
-                    <button className="primary" disabled={!canTransfer} type="submit">
-                      <span className="button-content">
-                        <Send size={15} />
-                        <span>Transfer ID</span>
-                      </span>
-                    </button>
-                  </form>
-                </>
-              )}
-            </section>
-
-            <IdMarketplaceCard
-              busy={busy}
-              canCreateSaleAuthorization={canCreateSaleAuthorization}
-              canPurchaseId={canPurchaseId}
-              createSaleAuthorization={createSaleAuthorization}
-              idPurchaseBytes={idPurchaseBytes}
-              idPurchaseOwnerAddress={idPurchaseOwnerAddress}
-              idPurchaseReceiveAddress={idPurchaseReceiveAddress}
-              idSaleAuthorization={idSaleAuthorization}
-              idSaleBuyerAddress={idSaleBuyerAddress}
-              idSalePriceSats={idSalePriceSats}
-              idSaleReceiveAddress={idSaleReceiveAddress}
-              managedId={managedId}
-              network={network}
-              setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
-              setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
-              setIdSaleAuthorization={setIdSaleAuthorization}
-              setIdSaleBuyerAddress={setIdSaleBuyerAddress}
-              setIdSalePriceSats={setIdSalePriceSats}
-              setIdSaleReceiveAddress={setIdSaleReceiveAddress}
-              submitPurchase={submitPurchase}
-            />
           </aside>
         </div>
 
@@ -7059,6 +6907,255 @@ function IdLaunchApp({
             </button>
           ) : null}
         </section>
+      </section>
+
+      <SocialFooter />
+    </main>
+  );
+}
+
+function MarketplaceApp({
+  address,
+  busy,
+  canCreateSaleAuthorization,
+  canPurchaseId,
+  connectWallet,
+  createSaleAuthorization,
+  disconnectWallet,
+  hasUnisat,
+  idPurchaseBytes,
+  idPurchaseOwnerAddress,
+  idPurchaseReceiveAddress,
+  idSaleAuthorization,
+  idSaleBuyerAddress,
+  idSalePriceSats,
+  idSaleReceiveAddress,
+  managedIdName,
+  registryAddress,
+  registryRecords,
+  setIdPurchaseOwnerAddress,
+  setIdPurchaseReceiveAddress,
+  setIdSaleAuthorization,
+  setIdSaleBuyerAddress,
+  setIdSalePriceSats,
+  setIdSaleReceiveAddress,
+  setManagedIdName,
+  setTheme,
+  status,
+  submitPurchase,
+  theme,
+  onRefresh,
+}: {
+  address: string;
+  busy: boolean;
+  canCreateSaleAuthorization: boolean;
+  canPurchaseId: boolean;
+  connectWallet: () => void;
+  createSaleAuthorization: () => void;
+  disconnectWallet: () => void;
+  hasUnisat: boolean;
+  idPurchaseBytes: number;
+  idPurchaseOwnerAddress: string;
+  idPurchaseReceiveAddress: string;
+  idSaleAuthorization: string;
+  idSaleBuyerAddress: string;
+  idSalePriceSats: number;
+  idSaleReceiveAddress: string;
+  managedIdName: string;
+  registryAddress: string;
+  registryRecords: PowIdRecord[];
+  setIdPurchaseOwnerAddress: (value: string) => void;
+  setIdPurchaseReceiveAddress: (value: string) => void;
+  setIdSaleAuthorization: (value: string) => void;
+  setIdSaleBuyerAddress: (value: string) => void;
+  setIdSalePriceSats: (value: number) => void;
+  setIdSaleReceiveAddress: (value: string) => void;
+  setManagedIdName: (value: string) => void;
+  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
+  status: { tone: StatusTone; text: string };
+  submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
+  theme: ThemeMode;
+  onRefresh: () => void;
+}) {
+  const confirmedRecords = registryRecords.filter((record) => record.confirmed);
+  const pendingRecords = registryRecords.filter((record) => !record.confirmed);
+  const ownerControlledIds = confirmedRecords.filter((record) => record.ownerAddress === address);
+  const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
+
+  return (
+    <main className="id-launch-app marketplace-app">
+      <header className="id-launch-topbar">
+        <div className="brand">
+          <div className="brand-mark" aria-hidden="true">
+            PoW
+          </div>
+          <div>
+            <h1>ProofOfWork Marketplace</h1>
+            <span>Mainnet ID transfers</span>
+          </div>
+        </div>
+
+        <DomainNav compact />
+
+        <div className="topbar-controls">
+          <button
+            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
+            className="icon-button"
+            disabled={busy}
+            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            type="button"
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          <button className="secondary" disabled={busy} onClick={onRefresh} type="button">
+            <span className="button-content">
+              <RefreshCw className={busy ? "refresh-spin" : ""} size={16} />
+              <span>{busy ? "Refreshing" : "Refresh"}</span>
+            </span>
+          </button>
+          {hasUnisat ? (
+            <button className="secondary" disabled={busy} onClick={connectWallet} type="button">
+              <span className="button-content">
+                <Wallet size={16} />
+                <span>{address ? shortAddress(address) : "Connect UniSat"}</span>
+              </span>
+            </button>
+          ) : (
+            <a className="secondary link-button" href={UNISAT_DOWNLOAD_URL} rel="noreferrer" target="_blank">
+              <span className="button-content">
+                <Wallet size={16} />
+                <span>Install UniSat</span>
+                <ArrowUpRight size={15} />
+              </span>
+            </a>
+          )}
+          {address ? (
+            <button className="secondary" disabled={busy} onClick={disconnectWallet} type="button">
+              <span className="button-content">
+                <LogOut size={16} />
+                <span>Disconnect</span>
+              </span>
+            </button>
+          ) : null}
+        </div>
+      </header>
+
+      <div className={`status ${status.tone}`}>
+        <span className="status-dot" aria-hidden="true" />
+        <span>{status.text}</span>
+      </div>
+
+      <section className="id-launch-main">
+        <div className="id-launch-hero">
+          <div>
+            <span className="id-launch-kicker">ProofOfWork ID marketplace</span>
+            <h2>Transfer Bitcoin-native names.</h2>
+            <p>
+              Sellers create signed listing authorizations. Buyers fund the seller payment plus the
+              {` ${ID_MUTATION_PRICE_SATS.toLocaleString()} `}sat registry transfer in one Bitcoin transaction.
+            </p>
+          </div>
+
+          <div className="id-launch-stats" aria-label="Marketplace stats">
+            <div>
+              <strong>{registryRecords.length.toLocaleString()}</strong>
+              <span>Total IDs</span>
+            </div>
+            <div>
+              <strong>{confirmedRecords.length.toLocaleString()}</strong>
+              <span>Confirmed</span>
+            </div>
+            <div>
+              <strong>{pendingRecords.length.toLocaleString()}</strong>
+              <span>Pending</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="ids-content marketplace-content">
+          <section className="id-card">
+            <div className="id-card-head">
+              <div className="empty-icon" aria-hidden="true">
+                <Wallet size={24} />
+              </div>
+              <div>
+                <h3>List an ID</h3>
+                <p>Create an off-chain signed listing authorization for one of your confirmed IDs.</p>
+              </div>
+            </div>
+
+            {ownerControlledIds.length === 0 ? (
+              <p className="field-note">{address ? "This wallet does not own any confirmed IDs yet." : "Connect the owner wallet to list confirmed IDs."}</p>
+            ) : (
+              <>
+                <label>
+                  ID
+                  <select value={managedId?.id ?? ""} onChange={(event) => setManagedIdName(event.target.value)}>
+                    {ownerControlledIds.map((record) => (
+                      <option key={`${record.network}-${record.id}`} value={record.id}>
+                        {record.id}@proofofwork.me
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {managedId ? (
+                  <dl className="id-manage-state">
+                    <div>
+                      <dt>Owner</dt>
+                      <dd>{shortAddress(managedId.ownerAddress)}</dd>
+                    </div>
+                    <div>
+                      <dt>Receives</dt>
+                      <dd>{shortAddress(managedId.receiveAddress)}</dd>
+                    </div>
+                    <div>
+                      <dt>Registry</dt>
+                      <dd>{shortAddress(registryAddress)}</dd>
+                    </div>
+                  </dl>
+                ) : null}
+                <p className="field-note">The signed listing can be shared publicly. The buyer can execute it without the seller spending more sats.</p>
+              </>
+            )}
+          </section>
+
+          <IdMarketplaceCard
+            busy={busy}
+            canCreateSaleAuthorization={canCreateSaleAuthorization}
+            canPurchaseId={canPurchaseId}
+            createSaleAuthorization={createSaleAuthorization}
+            idPurchaseBytes={idPurchaseBytes}
+            idPurchaseOwnerAddress={idPurchaseOwnerAddress}
+            idPurchaseReceiveAddress={idPurchaseReceiveAddress}
+            idSaleAuthorization={idSaleAuthorization}
+            idSaleBuyerAddress={idSaleBuyerAddress}
+            idSalePriceSats={idSalePriceSats}
+            idSaleReceiveAddress={idSaleReceiveAddress}
+            managedId={managedId}
+            network="livenet"
+            setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
+            setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
+            setIdSaleAuthorization={setIdSaleAuthorization}
+            setIdSaleBuyerAddress={setIdSaleBuyerAddress}
+            setIdSalePriceSats={setIdSalePriceSats}
+            setIdSaleReceiveAddress={setIdSaleReceiveAddress}
+            submitPurchase={submitPurchase}
+          />
+
+          <section className="id-card ids-registry-card">
+            <div className="id-card-head">
+              <div className="empty-icon" aria-hidden="true">
+                <Inbox size={24} />
+              </div>
+              <div>
+                <h3>Registry Supply</h3>
+                <p>Confirmed IDs are the assets. The public listing book will build on the same registry.</p>
+              </div>
+            </div>
+            <IdRecordList records={confirmedRecords} empty="No confirmed registry records found yet." />
+          </section>
+        </div>
       </section>
 
       <SocialFooter />
@@ -7655,13 +7752,13 @@ function IdMarketplaceCard({
         </div>
         <div>
           <h3>Marketplace Transfer</h3>
-          <p>Seller signs off-chain. Buyer funds seller payment plus the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
+          <p>Seller signs a listing authorization. Buyer funds seller payment plus the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
         </div>
       </div>
 
       <div className="id-market-grid">
         <div className="id-action-form">
-          <h4>Create sale authorization</h4>
+          <h4>Create listing authorization</h4>
           <p className="field-note">
             {managedId
               ? `Selling ${managedId.id}@proofofwork.me from ${shortAddress(managedId.ownerAddress)}.`
@@ -7700,7 +7797,7 @@ function IdMarketplaceCard({
           <button className="secondary" disabled={!canCreateSaleAuthorization} onClick={createSaleAuthorization} type="button">
             <span className="button-content">
               <FilePenLine size={15} />
-              <span>{busy ? "Signing" : "Create Authorization"}</span>
+              <span>{busy ? "Signing" : "Create Listing"}</span>
             </span>
           </button>
         </div>
@@ -7708,10 +7805,10 @@ function IdMarketplaceCard({
         <form className="id-action-form" onSubmit={submitPurchase}>
           <h4>Buy with authorization</h4>
           <label>
-            Sale authorization JSON
+            Listing authorization JSON
             <textarea
               onChange={(event) => setIdSaleAuthorization(event.target.value)}
-              placeholder="Paste signed sale authorization here."
+              placeholder="Paste signed listing authorization here."
               spellCheck={false}
               value={idSaleAuthorization}
             />
@@ -7719,8 +7816,8 @@ function IdMarketplaceCard({
           {idSaleAuthorization ? (
             <p className={saleIsReady ? "field-note good" : "field-note bad"}>
               {saleIsReady && parsedSale
-                ? `${parsedSale.id}@proofofwork.me sale terms loaded for ${parsedSale.priceSats.toLocaleString()} sats.`
-                : "Sale authorization is not ready yet."}
+                ? `${parsedSale.id}@proofofwork.me listing terms loaded for ${parsedSale.priceSats.toLocaleString()} sats.`
+                : "Listing authorization is not ready yet."}
             </p>
           ) : null}
           <div className="compose-grid">

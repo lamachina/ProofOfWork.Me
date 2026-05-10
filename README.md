@@ -22,6 +22,7 @@ The root domain renders a focused landing page that routes users to the producti
 id.proofofwork.me
 computer.proofofwork.me
 desktop.proofofwork.me
+marketplace.proofofwork.me
 ```
 
 Production app roles:
@@ -30,8 +31,9 @@ Production app roles:
 - `id.proofofwork.me` is the focused Phase 1 ID registry onboarding app.
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
+- `marketplace.proofofwork.me` is the standalone ProofOfWork ID listing and buyer-funded transfer app.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, and Desktop. Public social links should include X, YouTube, GitHub, and Discord.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, and Marketplace. Public social links should include X, YouTube, GitHub, and Discord.
 
 Official YouTube:
 
@@ -105,7 +107,8 @@ Launch invariants for future developers/agents:
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
-- Lets current ID owners create off-chain signed sale authorizations so buyers can fund marketplace-style ID transfers.
+- Lets current ID owners create off-chain signed listing authorizations so buyers can fund marketplace-style ID transfers.
+- Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Can read registry, mail, files, and transaction status from a first-party ProofOfWork OP_RETURN API when `VITE_POW_API_BASE` is configured.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
@@ -234,6 +237,12 @@ To preview the public Desktop locally:
 http://localhost:5173/?desktop=1
 ```
 
+To preview the standalone ID Marketplace locally:
+
+```text
+http://localhost:5173/?marketplace=1
+```
+
 To build a landing-page-only deployment for `proofofwork.me`:
 
 ```bash
@@ -256,6 +265,12 @@ To build the public Desktop app for production:
 
 ```bash
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
+```
+
+To build the standalone ID Marketplace app for production:
+
+```bash
+VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
 ```
 
 To run localhost against the production API:
@@ -307,8 +322,10 @@ Important implementation points:
 - ID launch route switch: `isIdLaunchRoute()` in `src/App.tsx`.
 - Root landing route switch: `isLandingRoute()` in `src/App.tsx`.
 - Public Desktop route switch: `isDesktopRoute()` in `src/App.tsx`.
+- Standalone Marketplace route switch: `isMarketplaceRoute()` in `src/App.tsx`.
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
+- Marketplace-only deploy switch: `VITE_MARKETPLACE_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, `ID_MUTATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
 - Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
@@ -319,8 +336,9 @@ Important implementation points:
 - ID read/compat parser: `parseIdEventPayload()`, `parseIdRegistrationPayload()`, and `idRecordsFromTransactions()`.
 - Confirmed-only ID compose routing: `resolveRecipientInput()`.
 - Multi-recipient compose routing: `resolveRecipientInputs()` and `buildPaymentPsbt()` payment outputs.
-- Dedicated launch UI: `IdLaunchApp`.
+- Dedicated registration-only launch UI: `IdLaunchApp`.
 - Full app ID workspace: `IdsWorkspace`.
+- Standalone marketplace UI: `MarketplaceApp`.
 - OP_RETURN API: `server/proof-api.mjs`.
 - OP_RETURN infrastructure notes: `OP_RETURN_INFRASTRUCTURE.md`.
 - ID refund log: `ID_REFUNDS.md`.

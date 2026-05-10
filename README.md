@@ -51,7 +51,7 @@ Launch invariants for future developers/agents:
 
 - Connects UniSat.
 - Switches UniSat between testnet4, testnet3, and mainnet.
-- Sends BTC to a recipient address.
+- Sends BTC to one or more recipient addresses or confirmed ProofOfWork IDs.
 - Builds a PSBT with BTC, ProofOfWork.Me OP_RETURN outputs, and change.
 - Uses UniSat to sign the PSBT, then broadcasts to the selected mempool.space network route.
 - Shows the txid and a mempool.space link.
@@ -66,6 +66,7 @@ Launch invariants for future developers/agents:
 - Recovers confirmed sent mail from chain data, so Sent and Files do not depend only on browser history.
 - Sorts Incoming, Inbox, and Sent by highest sats, newest, oldest, or thread.
 - Replies to a message by embedding the parent txid so messages can form threads.
+- Supports Reply All for multi-recipient messages.
 - Infers the sender from transaction inputs instead of storing an address in OP_RETURN.
 - Shows self-sends in Incoming/Inbox and Outbox/Sent based on confirmation state.
 - Auto-saves one local draft per wallet and network until the message is broadcast or discarded.
@@ -74,6 +75,7 @@ Launch invariants for future developers/agents:
 - Saves local Contacts for addresses or confirmed ProofOfWork IDs.
 - Adds confirmed registry IDs to Contacts from the Computer app's ID registry rows.
 - Uses saved Contacts as compose suggestions.
+- Accepts multiple compose recipients separated by commas, semicolons, or new lines, with removable recipient chips.
 - Exports and imports local app data backups for contacts, drafts, archives, favorites, theme, and broadcast tracking.
 - Supports one small attachment per message, capped at 60,000 bytes before encoding.
 - Adds a desktop-style Files section for confirmed attachment-only browsing, filtering, sorting, previews, download, and opening the source message.
@@ -136,6 +138,8 @@ The app writes OP_RETURN as:
 ```text
 pwm1:m:<message-chunk>
 ```
+
+Recipients are not stored in OP_RETURN. They are represented by normal Bitcoin payment outputs before the first ProofOfWork.Me OP_RETURN output. Multi-recipient mail uses one shared OP_RETURN payload and one BTC output per recipient.
 
 Replies are written as:
 
@@ -258,6 +262,7 @@ Important implementation points:
 - ID registry history fetcher: `fetchRegistryTransactions()`. It must continue paginating confirmed history with `txs/chain/:last_seen_txid` and merging `txs/mempool`.
 - ID read/compat parser: `parseIdRegistrationPayload()` and `idRecordsFromTransactions()`.
 - Confirmed-only ID compose routing: `resolveRecipientInput()`.
+- Multi-recipient compose routing: `resolveRecipientInputs()` and `buildPaymentPsbt()` payment outputs.
 - Dedicated launch UI: `IdLaunchApp`.
 - Full app ID workspace: `IdsWorkspace`.
 - OP_RETURN API: `server/proof-api.mjs`.

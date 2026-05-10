@@ -19,6 +19,8 @@ Mail organization features that are already implemented in the full app:
 - Drafts in local storage.
 - Archive and Favorites in local storage.
 - Contacts in local storage.
+- Multi-recipient compose with removable recipient chips.
+- Reply All for multi-recipient mail.
 - Files view for confirmed attachments.
 - Export/import for local drafts, archive/favorite preferences, theme, and sent/outbox tracking.
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
@@ -36,6 +38,7 @@ Instead, ProofOfWork.Me can provide local mailbox organization:
 - Favorite important messages.
 - Keep All Mail available so archived messages are still reachable.
 - Keep Sent as local sent history.
+- Send one message to multiple recipients without duplicating the OP_RETURN payload.
 
 This gives users normal mail hygiene without misrepresenting what happens on-chain.
 
@@ -178,6 +181,15 @@ Contacts:
 - Confirmed registry rows can expose an `Add Contact` action next to `View TX`.
 - Compose should offer saved contacts as suggestions.
 - Contacts are convenience metadata only; they do not change on-chain mail routing.
+
+Multi-recipient mail:
+
+- Compose accepts addresses, confirmed ProofOfWork IDs, and saved Contacts separated by commas, semicolons, or new lines.
+- Each resolved recipient gets a normal BTC payment output before the first `pwm1:` OP_RETURN output.
+- The OP_RETURN payload is written once per transaction, so all recipients share the same txid and thread root.
+- The reader derives recipients from payment outputs, not OP_RETURN data.
+- Reply targets the sender; Reply All targets the sender plus other payment-output recipients, excluding the connected wallet address.
+- Keep the current cap at 10 recipients until wallet signing UX and fee estimates have more production mileage.
 
 ## Product Language
 

@@ -576,16 +576,16 @@ function extractProtocolMemo(vout) {
 
 function receivedPaymentAmount(vout, address) {
   const protocolIndex = firstProtocolOutputIndex(vout);
-  const paymentOutput = vout.find((output, index) => {
+  const amount = vout.reduce((total, output, index) => {
     if (output.scriptpubkey_address !== address || typeof output.value !== "number") {
-      return false;
+      return total;
     }
 
-    return protocolIndex === -1 || index < protocolIndex;
-  });
+    return protocolIndex === -1 || index < protocolIndex ? total + output.value : total;
+  }, 0);
 
-  if (typeof paymentOutput?.value === "number") {
-    return paymentOutput.value;
+  if (amount > 0) {
+    return amount;
   }
 
   if (protocolIndex !== -1) {
@@ -594,6 +594,33 @@ function receivedPaymentAmount(vout, address) {
 
   const fallbackOutput = vout.find((output) => output.scriptpubkey_address === address && typeof output.value === "number");
   return typeof fallbackOutput?.value === "number" ? fallbackOutput.value : 0;
+}
+
+function protocolPaymentOutputs(vout) {
+  const protocolIndex = firstProtocolOutputIndex(vout);
+  if (protocolIndex === -1) {
+    return [];
+  }
+
+  return vout.flatMap((output, index) => {
+    if (
+      index >= protocolIndex ||
+      output.scriptpubkey_type === "op_return" ||
+      typeof output.scriptpubkey_address !== "string" ||
+      typeof output.value !== "number" ||
+      output.value <= 0
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        address: output.scriptpubkey_address,
+        amountSats: output.value,
+        display: output.scriptpubkey_address,
+      },
+    ];
+  });
 }
 
 function inputAddresses(vin) {
@@ -605,32 +632,6 @@ function inputAddresses(vin) {
 function senderAddress(vin, targetAddress) {
   const addresses = inputAddresses(vin);
   return addresses.find((inputAddress) => inputAddress !== targetAddress) ?? addresses[0] ?? "Unknown";
-}
-
-function protocolPaymentOutput(vout) {
-  const protocolIndex = firstProtocolOutputIndex(vout);
-  if (protocolIndex === -1) {
-    return undefined;
-  }
-
-  const paymentOutput = vout.find((output, index) => {
-    return (
-      index < protocolIndex &&
-      output.scriptpubkey_type !== "op_return" &&
-      typeof output.scriptpubkey_address === "string" &&
-      typeof output.value === "number" &&
-      output.value > 0
-    );
-  });
-
-  if (typeof paymentOutput?.scriptpubkey_address !== "string" || typeof paymentOutput.value !== "number") {
-    return undefined;
-  }
-
-  return {
-    address: paymentOutput.scriptpubkey_address,
-    value: paymentOutput.value,
-  };
 }
 
 function registryPaymentAmount(vout, registryAddress) {
@@ -782,6 +783,7 @@ function inboxMessagesFromTransactions(txs, address, network) {
     const vout = Array.isArray(tx.vout) ? tx.vout : [];
     const protocolMessage = extractProtocolMemo(vout);
     const amount = receivedPaymentAmount(vout, address);
+    const recipients = protocolPaymentOutputs(vout);
 
     if (!protocolMessage || amount <= 0) {
       return [];
@@ -797,6 +799,7 @@ function inboxMessagesFromTransactions(txs, address, network) {
       from: sender,
       memo: protocolMessage.memo,
       network,
+      recipients: recipients.length > 0 ? recipients : undefined,
       replyTo: sender === "Unknown" ? protocolMessage.replyTo ?? "Unknown" : sender,
       to: address,
       txid: transactionTxid(tx),
@@ -823,7 +826,8 @@ function sentMessagesFromTransactions(txs, address, network) {
     }
 
     const protocolMessage = extractProtocolMemo(vout);
-    const payment = protocolPaymentOutput(vout);
+    const recipients = protocolPaymentOutputs(vout);
+    const payment = recipients[0];
     const txid = transactionTxid(tx);
     if (!protocolMessage || !payment || !txid) {
       return [];
@@ -835,7 +839,7 @@ function sentMessagesFromTransactions(txs, address, network) {
 
     return [
       {
-        amountSats: payment.value,
+        amountSats: recipients.reduce((total, recipient) => total + recipient.amountSats, 0),
         attachment: protocolMessage.attachment,
         confirmedAt: confirmed ? createdAt : undefined,
         createdAt,
@@ -845,9 +849,10 @@ function sentMessagesFromTransactions(txs, address, network) {
         memo: protocolMessage.memo,
         network,
         parentTxid: protocolMessage.parentTxid,
+        recipients,
         replyTo: address,
         status: confirmed ? "confirmed" : "pending",
-        to: payment.address,
+        to: recipients.length === 1 ? payment.display : `${payment.display} +${recipients.length - 1}`,
         txid,
       },
     ];

@@ -1225,6 +1225,31 @@ input[readonly] {
   color: var(--text-muted);
 }
 
+.recipient-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: -8px;
+}
+
+.recipient-chip {
+  align-items: center;
+  background: var(--accent-soft);
+  border: 1px solid rgba(10, 132, 255, 0.2);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 820;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 9px;
+}
+
+.recipient-chip svg {
+  flex: 0 0 auto;
+}
+
 .file-input {
   display: none;
 }

@@ -1,8 +1,8 @@
 # ProofOfWork OP_RETURN Infrastructure
 
-ProofOfWork.Me now has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol and `pwid1:` ID registry protocol.
+ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol and `pwid1:` ID registry protocol.
 
-This is the bridge between the browser-only app and the future multi-carrier indexer. Ordinals should be added later as a second carrier after this OP_RETURN layer is stable.
+The current product direction is OP_RETURN only. Future protocol work should improve this OP_RETURN indexer and API before introducing any new carrier.
 
 ## Current Shape
 
@@ -100,6 +100,7 @@ The mail endpoint:
 
 - Scans address history.
 - Reads only OP_RETURN outputs that follow ProofOfWork protocol prefixes.
+- Derives recipients from normal BTC payment outputs before the first `pwm1:` OP_RETURN output.
 - Reconstructs `pwm1:m` message chunks.
 - Reconstructs `pwm1:a` attachments after size and SHA-256 checks.
 - Separates confirmed inbox/sent records from pending records.

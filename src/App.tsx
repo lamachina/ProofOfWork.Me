@@ -58,6 +58,13 @@ type MailAttachment = {
   data: string;
 };
 
+type MailRecipient = {
+  address: string;
+  amountSats: number;
+  display: string;
+  id?: string;
+};
+
 type DraftMessage = {
   network: BitcoinNetwork;
   from: string;
@@ -136,6 +143,7 @@ type SentMessage = {
   network: BitcoinNetwork;
   from: string;
   to: string;
+  recipients?: MailRecipient[];
   amountSats: number;
   feeRate: number;
   memo: string;
@@ -170,6 +178,7 @@ type InboxMessage = {
   network: BitcoinNetwork;
   from: string;
   to: string;
+  recipients?: MailRecipient[];
   amountSats: number;
   memo: string;
   attachment?: MailAttachment;
@@ -198,6 +207,13 @@ type RecipientResolution = {
   isId: boolean;
   paymentAddress: string;
   record?: PowIdRecord;
+};
+
+type MultiRecipientResolution = {
+  duplicateCount: number;
+  error?: string;
+  idCount: number;
+  recipients: RecipientResolution[];
 };
 
 type MailMessage =
@@ -240,6 +256,11 @@ type UtxoSelection = {
   selected: MempoolUtxo[];
   feeSats: number;
   changeSats: number;
+};
+
+type PaymentOutputSpec = {
+  address: string;
+  amountSats: number;
 };
 
 type PowRegistryApiResponse = {
@@ -295,6 +316,7 @@ const DUST_SATS = 546;
 const DEFAULT_AMOUNT_SATS = 546;
 const DEFAULT_FEE_RATE = 0.1;
 const DEFAULT_MEMO = "";
+const MAX_RECIPIENTS = 10;
 
 function isIdLaunchRoute() {
   if (import.meta.env.VITE_ID_LAUNCH_ONLY === "1") {
@@ -826,6 +848,91 @@ function resolveRecipientInput(
   };
 }
 
+function splitRecipientInputs(value: string) {
+  return value
+    .split(/[,;\n]+/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function resolveRecipientInputs(
+  value: string,
+  targetNetwork: BitcoinNetwork,
+  registryRecords: PowIdRecord[],
+  registryAddress: string,
+): MultiRecipientResolution {
+  const inputs = splitRecipientInputs(value);
+  if (inputs.length === 0) {
+    return { duplicateCount: 0, idCount: 0, recipients: [] };
+  }
+
+  if (inputs.length > MAX_RECIPIENTS) {
+    return {
+      duplicateCount: 0,
+      error: `Send to ${MAX_RECIPIENTS} recipients or fewer for now.`,
+      idCount: 0,
+      recipients: [],
+    };
+  }
+
+  const recipients: RecipientResolution[] = [];
+  const seen = new Set<string>();
+  let duplicateCount = 0;
+  let idCount = 0;
+
+  for (const input of inputs) {
+    const resolved = resolveRecipientInput(input, targetNetwork, registryRecords, registryAddress);
+    if (resolved.error || !resolved.paymentAddress) {
+      return {
+        duplicateCount,
+        error: resolved.error || "Enter valid Bitcoin addresses or confirmed ProofOfWork IDs.",
+        idCount,
+        recipients,
+      };
+    }
+
+    if (resolved.isId) {
+      idCount += 1;
+    }
+
+    const key = resolved.paymentAddress;
+    if (seen.has(key)) {
+      duplicateCount += 1;
+      continue;
+    }
+
+    seen.add(key);
+    recipients.push(resolved);
+  }
+
+  return { duplicateCount, idCount, recipients };
+}
+
+function needsRegistryResolution(value: string, targetNetwork: BitcoinNetwork) {
+  return splitRecipientInputs(value).some((input) => !isValidBitcoinAddress(input, targetNetwork));
+}
+
+function recipientResolutionNote(resolution: MultiRecipientResolution) {
+  if (resolution.error) {
+    return resolution.error;
+  }
+
+  if (resolution.recipients.length === 0) {
+    return "";
+  }
+
+  const pieces = [`${resolution.recipients.length} recipient${resolution.recipients.length === 1 ? "" : "s"}`];
+  if (resolution.idCount > 0) {
+    pieces.push(`${resolution.idCount} confirmed ID${resolution.idCount === 1 ? "" : "s"} resolved`);
+  }
+
+  if (resolution.duplicateCount > 0) {
+    pieces.push(`${resolution.duplicateCount} duplicate${resolution.duplicateCount === 1 ? "" : "s"} skipped`);
+  }
+
+  return pieces.join(" · ");
+}
+
 function explorerNetworkFor(messageNetwork: BitcoinNetwork, activeNetwork: BitcoinNetwork) {
   if (messageNetwork === "livenet" || activeNetwork === "livenet") {
     return messageNetwork;
@@ -843,7 +950,41 @@ function isInboundFolder(folder: MailMessage["folder"]) {
 }
 
 function peerAddress(message: MailMessage) {
-  return isInboundFolder(message.folder) ? message.from : message.to;
+  return isInboundFolder(message.folder) ? message.from : recipientSummary(message.recipients, message.to);
+}
+
+function recipientSummary(recipients: MailRecipient[] | undefined, fallback: string) {
+  if (!recipients || recipients.length === 0) {
+    return fallback;
+  }
+
+  const first = recipients[0];
+  return recipients.length === 1 ? first.display : `${first.display} +${recipients.length - 1}`;
+}
+
+function recipientListText(recipients: MailRecipient[] | undefined, fallback: string) {
+  if (!recipients || recipients.length === 0) {
+    return fallback;
+  }
+
+  return recipients.map((recipient) => recipient.display).join(", ");
+}
+
+function recipientInputSummary(value: string) {
+  const inputs = splitRecipientInputs(value);
+  if (inputs.length === 0) {
+    return "No recipient";
+  }
+
+  return inputs.length === 1 ? shortAddress(inputs[0]) : `${shortAddress(inputs[0])} +${inputs.length - 1}`;
+}
+
+function totalRecipientSats(recipients: MailRecipient[]) {
+  return recipients.reduce((total, recipient) => total + recipient.amountSats, 0);
+}
+
+function messageReplyAmount(message: MailMessage) {
+  return message.recipients?.[0]?.amountSats ?? message.amountSats;
 }
 
 function hasAttachment(message: MailMessage): message is MailMessage & { attachment: MailAttachment } {
@@ -1271,6 +1412,41 @@ async function switchWalletNetwork(wallet: UnisatWallet, network: BitcoinNetwork
   }
 }
 
+function storedMailRecipients(value: unknown, network: BitcoinNetwork): MailRecipient[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item): MailRecipient[] => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+
+    const recipient = item as Partial<MailRecipient>;
+    if (typeof recipient.address !== "string" || !isValidBitcoinAddress(recipient.address, network)) {
+      return [];
+    }
+
+    const amountSats = typeof recipient.amountSats === "number" && recipient.amountSats > 0 ? Math.floor(recipient.amountSats) : DEFAULT_AMOUNT_SATS;
+    const id = typeof recipient.id === "string" ? normalizePowId(recipient.id) : "";
+    const display =
+      typeof recipient.display === "string" && recipient.display.trim()
+        ? recipient.display.trim()
+        : id
+          ? `${id}@proofofwork.me`
+          : recipient.address;
+
+    return [
+      {
+        address: recipient.address,
+        amountSats,
+        display,
+        id: id || undefined,
+      },
+    ];
+  });
+}
+
 function loadSentMessages(): SentMessage[] {
   try {
     const stored = localStorage.getItem(SENT_KEY);
@@ -1297,6 +1473,7 @@ function loadSentMessages(): SentMessage[] {
 
       const network: BitcoinNetwork =
         sent.network === "livenet" || sent.network === "testnet" || sent.network === "testnet4" ? sent.network : "livenet";
+      const recipients = storedMailRecipients(sent.recipients, network);
 
       return [
         {
@@ -1311,6 +1488,7 @@ function loadSentMessages(): SentMessage[] {
           memo: sent.memo,
           network,
           parentTxid: typeof sent.parentTxid === "string" ? sent.parentTxid : undefined,
+          recipients: recipients.length > 0 ? recipients : undefined,
           replyTo: typeof sent.replyTo === "string" ? sent.replyTo : sent.from,
           status: normalizeBroadcastStatus(sent.status),
           to: sent.to,
@@ -1769,16 +1947,16 @@ function extractProtocolMemo(vout: Array<Record<string, unknown>>) {
 
 function receivedPaymentAmount(vout: Array<Record<string, unknown>>, address: string) {
   const protocolIndex = firstProtocolOutputIndex(vout);
-  const paymentOutput = vout.find((output, index) => {
+  const amount = vout.reduce((total, output, index) => {
     if (output.scriptpubkey_address !== address || typeof output.value !== "number") {
-      return false;
+      return total;
     }
 
-    return protocolIndex === -1 || index < protocolIndex;
-  });
+    return protocolIndex === -1 || index < protocolIndex ? total + output.value : total;
+  }, 0);
 
-  if (paymentOutput && typeof paymentOutput.value === "number") {
-    return paymentOutput.value;
+  if (amount > 0) {
+    return amount;
   }
 
   if (protocolIndex !== -1) {
@@ -1790,6 +1968,33 @@ function receivedPaymentAmount(vout: Array<Record<string, unknown>>, address: st
   );
 
   return typeof fallbackOutput?.value === "number" ? fallbackOutput.value : 0;
+}
+
+function protocolPaymentOutputs(vout: Array<Record<string, unknown>>): MailRecipient[] {
+  const protocolIndex = firstProtocolOutputIndex(vout);
+  if (protocolIndex === -1) {
+    return [];
+  }
+
+  return vout.flatMap((output, index): MailRecipient[] => {
+    if (
+      index >= protocolIndex ||
+      output.scriptpubkey_type === "op_return" ||
+      typeof output.scriptpubkey_address !== "string" ||
+      typeof output.value !== "number" ||
+      output.value <= 0
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        address: output.scriptpubkey_address,
+        amountSats: output.value,
+        display: output.scriptpubkey_address,
+      },
+    ];
+  });
 }
 
 function senderAddress(vin: Array<Record<string, unknown>>, targetAddress: string) {
@@ -1810,32 +2015,6 @@ function transactionInputAddresses(vin: Array<Record<string, unknown>>) {
       return typeof prevout?.scriptpubkey_address === "string" ? prevout.scriptpubkey_address : "";
     })
     .filter(Boolean);
-}
-
-function protocolPaymentOutput(vout: Array<Record<string, unknown>>) {
-  const protocolIndex = firstProtocolOutputIndex(vout);
-  if (protocolIndex === -1) {
-    return undefined;
-  }
-
-  const paymentOutput = vout.find((output, index) => {
-    return (
-      index < protocolIndex &&
-      output.scriptpubkey_type !== "op_return" &&
-      typeof output.scriptpubkey_address === "string" &&
-      typeof output.value === "number" &&
-      output.value > 0
-    );
-  });
-
-  if (typeof paymentOutput?.scriptpubkey_address !== "string" || typeof paymentOutput.value !== "number") {
-    return undefined;
-  }
-
-  return {
-    address: paymentOutput.scriptpubkey_address,
-    value: paymentOutput.value,
-  };
 }
 
 function registryPaymentAmount(vout: Array<Record<string, unknown>>, registryAddress: string) {
@@ -2008,6 +2187,7 @@ function inboxMessagesFromTransactions(
       const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
       const protocolMessage = extractProtocolMemo(vout);
       const amount = receivedPaymentAmount(vout, targetAddress);
+      const recipients = protocolPaymentOutputs(vout);
 
       if (!protocolMessage || amount <= 0) {
         return [];
@@ -2026,6 +2206,7 @@ function inboxMessagesFromTransactions(
         memo: protocolMessage.memo,
         attachment: protocolMessage.attachment,
         replyTo: sender === "Unknown" ? protocolMessage.replyTo ?? "Unknown" : sender,
+        recipients: recipients.length > 0 ? recipients : undefined,
         confirmed: Boolean(status?.confirmed),
         createdAt: new Date(blockTime).toISOString(),
       };
@@ -2053,7 +2234,8 @@ function sentMessagesFromTransactions(
     }
 
     const protocolMessage = extractProtocolMemo(vout);
-    const payment = protocolPaymentOutput(vout);
+    const recipients = protocolPaymentOutputs(vout);
+    const payment = recipients[0];
     const txid = typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/.test(tx.txid) ? tx.txid.toLowerCase() : "";
 
     if (!protocolMessage || !payment || !txid) {
@@ -2067,7 +2249,7 @@ function sentMessagesFromTransactions(
 
     return [
       {
-        amountSats: payment.value,
+        amountSats: totalRecipientSats(recipients),
         attachment: protocolMessage.attachment,
         confirmedAt: confirmed ? createdAt : undefined,
         createdAt,
@@ -2077,9 +2259,10 @@ function sentMessagesFromTransactions(
         memo: protocolMessage.memo,
         network: targetNetwork,
         parentTxid: protocolMessage.parentTxid,
+        recipients,
         replyTo: targetAddress,
         status: confirmed ? "confirmed" : "pending",
-        to: payment.address,
+        to: recipientSummary(recipients, payment.address),
         txid,
       },
     ];
@@ -2373,22 +2556,42 @@ async function buildPaymentPsbt({
   feeRate,
   fromAddress,
   network,
+  payments,
   protocolPayloads,
   toAddress,
 }: {
-  amountSats: number;
+  amountSats?: number;
   feeRate: number;
   fromAddress: string;
   network: BitcoinNetwork;
+  payments?: PaymentOutputSpec[];
   protocolPayloads: string[];
-  toAddress: string;
+  toAddress?: string;
 }) {
   const selectedNetwork = bitcoinNetwork(network);
-  const paymentScript = scriptForAddress(toAddress, network, "Recipient");
+  const paymentOutputs = payments ?? (toAddress && typeof amountSats === "number" ? [{ address: toAddress, amountSats }] : []);
+  if (paymentOutputs.length === 0) {
+    throw new Error("Add at least one recipient.");
+  }
+
+  const normalizedPayments = paymentOutputs.map((payment, index) => {
+    const satoshis = Math.floor(payment.amountSats);
+    if (satoshis <= 0) {
+      throw new Error("Recipient amount must be greater than zero.");
+    }
+
+    return {
+      address: payment.address,
+      amountSats: satoshis,
+      script: scriptForAddress(payment.address, network, `Recipient ${index + 1}`),
+    };
+  });
+  const totalAmountSats = normalizedPayments.reduce((total, payment) => total + payment.amountSats, 0);
   const changeScript = scriptForAddress(fromAddress, network, "Connected wallet");
   const opReturnScripts = protocolOutputScripts(protocolPayloads);
   const fixedOutputVbytes =
-    outputVbytesForScript(paymentScript) + opReturnScripts.reduce((total, script) => total + outputVbytesForScript(script), 0);
+    normalizedPayments.reduce((total, payment) => total + outputVbytesForScript(payment.script), 0) +
+    opReturnScripts.reduce((total, script) => total + outputVbytesForScript(script), 0);
   const changeOutputVbytes = outputVbytesForScript(changeScript);
   const utxos = await fetchUtxos(fromAddress, network);
 
@@ -2396,7 +2599,7 @@ async function buildPaymentPsbt({
     throw new Error(`No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`);
   }
 
-  const selection = selectUtxos(utxos, amountSats, feeRate, fixedOutputVbytes, changeOutputVbytes);
+  const selection = selectUtxos(utxos, totalAmountSats, feeRate, fixedOutputVbytes, changeOutputVbytes);
   const selectedWithPreviousTx = await Promise.all(
     selection.selected.map(async (utxo) => {
       const previousTxHex = await fetchTransactionHex(utxo.txid, network);
@@ -2439,10 +2642,12 @@ async function buildPaymentPsbt({
     }
   }
 
-  psbt.addOutput({
-    address: toAddress,
-    value: BigInt(amountSats),
-  });
+  for (const payment of normalizedPayments) {
+    psbt.addOutput({
+      address: payment.address,
+      value: BigInt(payment.amountSats),
+    });
+  }
 
   for (const script of opReturnScripts) {
     psbt.addOutput({
@@ -2462,7 +2667,7 @@ async function buildPaymentPsbt({
     changeSats: selection.changeSats,
     feeSats: selection.feeSats,
     inputCount: selection.selected.length,
-    outputCount: 1 + opReturnScripts.length + (selection.changeSats >= DUST_SATS ? 1 : 0),
+    outputCount: normalizedPayments.length + opReturnScripts.length + (selection.changeSats >= DUST_SATS ? 1 : 0),
     psbtHex: psbt.toHex(),
   };
 }
@@ -2673,15 +2878,13 @@ export default function App() {
     : [];
   const registryAddress = registryAddressForNetwork(network);
   const recipientResolution = useMemo(
-    () => resolveRecipientInput(recipient, network, idRegistry, registryAddress),
+    () => resolveRecipientInputs(recipient, network, idRegistry, registryAddress),
     [idRegistry, network, recipient, registryAddress],
   );
-  const recipientNote = recipient.trim() && recipientResolution.isId
-    ? recipientResolution.error || `${recipientResolution.displayRecipient} resolves to ${shortAddress(recipientResolution.paymentAddress)}.`
-    : "";
+  const recipientNote = recipient.trim() ? recipientResolutionNote(recipientResolution) : "";
   const canSend =
     Boolean(address && recipient.trim() && amountSats > 0 && Number.isFinite(feeRate) && feeRate >= 0 && (memo.trim() || attachment)) &&
-    Boolean(recipientResolution.paymentAddress) &&
+    recipientResolution.recipients.length > 0 &&
     !recipientResolution.error &&
     dataCarrierBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
@@ -2843,8 +3046,7 @@ export default function App() {
   }, [landingMode]);
 
   useEffect(() => {
-    const trimmedRecipient = recipient.trim();
-    if (!trimmedRecipient || isValidBitcoinAddress(trimmedRecipient, network) || !registryAddress) {
+    if (!needsRegistryResolution(recipient, network) || !registryAddress) {
       return undefined;
     }
 
@@ -3050,7 +3252,7 @@ export default function App() {
       memo: message.memo,
       network: message.network,
       parentTxid: message.parentTxid,
-      recipient: message.to,
+      recipient: recipientListText(message.recipients, message.to),
       updatedAt: new Date().toISOString(),
     };
 
@@ -3236,10 +3438,44 @@ export default function App() {
   }
 
   function replyTo(message: MailMessage) {
-    const recipientAddress = isInboundFolder(message.folder) ? message.replyTo : message.to;
+    const recipientAddress = isInboundFolder(message.folder)
+      ? message.replyTo
+      : message.recipients?.[0]?.display ?? message.to;
     const subject = messageSubject(message);
     setRecipient(recipientAddress === "Unknown" ? "" : recipientAddress);
-    setAmountSats(message.amountSats);
+    setAmountSats(messageReplyAmount(message));
+    setMemo(`Re: ${subject}\n\n`);
+    setAttachment(undefined);
+    setReplyParentTxid(rootTxid(message));
+    setComposeOpen(true);
+  }
+
+  function replyAllTo(message: MailMessage) {
+    const targets = new Map<string, string>();
+
+    const addTarget = (display: string, addressHint = display) => {
+      if (!display || display === "Unknown" || addressHint === address) {
+        return;
+      }
+
+      targets.set(addressHint, display);
+    };
+
+    if (isInboundFolder(message.folder)) {
+      addTarget(message.replyTo, message.replyTo);
+    }
+
+    for (const recipientItem of message.recipients ?? []) {
+      addTarget(recipientItem.display, recipientItem.address);
+    }
+
+    if (!isInboundFolder(message.folder) && (!message.recipients || message.recipients.length === 0)) {
+      addTarget(message.to, message.to);
+    }
+
+    const subject = messageSubject(message);
+    setRecipient([...targets.values()].join(", "));
+    setAmountSats(messageReplyAmount(message));
     setMemo(`Re: ${subject}\n\n`);
     setAttachment(undefined);
     setReplyParentTxid(rootTxid(message));
@@ -3536,9 +3772,9 @@ export default function App() {
       return;
     }
 
-    let resolvedRecipient = recipientResolution;
+    let resolvedRecipients = recipientResolution;
     const recipientInput = recipient.trim();
-    const shouldResolveId = Boolean(recipientInput && !isValidBitcoinAddress(recipientInput, network));
+    const shouldResolveId = needsRegistryResolution(recipientInput, network);
 
     setBusy(true);
     setStatus({ tone: "idle", text: shouldResolveId ? "Checking ProofOfWork ID registry..." : "Building PSBT..." });
@@ -3552,11 +3788,11 @@ export default function App() {
 
         const records = await fetchIdRegistry(network);
         setIdRegistry(records);
-        resolvedRecipient = resolveRecipientInput(recipientInput, network, records, registryAddress);
+        resolvedRecipients = resolveRecipientInputs(recipientInput, network, records, registryAddress);
       }
 
-      if (resolvedRecipient.error || !resolvedRecipient.paymentAddress) {
-        setStatus({ tone: "bad", text: resolvedRecipient.error || "Enter a valid Bitcoin address or confirmed ProofOfWork ID." });
+      if (resolvedRecipients.error || resolvedRecipients.recipients.length === 0) {
+        setStatus({ tone: "bad", text: resolvedRecipients.error || "Enter a valid Bitcoin address or confirmed ProofOfWork ID." });
         return;
       }
 
@@ -3567,13 +3803,21 @@ export default function App() {
       }
 
       const satoshis = Math.floor(amountSats);
-      const paymentPsbt = await buildPaymentPsbt({
+      const mailRecipients: MailRecipient[] = resolvedRecipients.recipients.map((resolved) => ({
+        address: resolved.paymentAddress,
         amountSats: satoshis,
+        display: resolved.isId ? resolved.displayRecipient : resolved.paymentAddress,
+        id: resolved.id,
+      }));
+      const paymentPsbt = await buildPaymentPsbt({
         feeRate,
         fromAddress: address,
         network,
+        payments: mailRecipients.map((mailRecipient) => ({
+          address: mailRecipient.address,
+          amountSats: mailRecipient.amountSats,
+        })),
         protocolPayloads,
-        toAddress: resolvedRecipient.paymentAddress,
       });
 
       setStatus({
@@ -3592,8 +3836,9 @@ export default function App() {
         txid,
         network,
         from: address,
-        to: resolvedRecipient.isId ? resolvedRecipient.displayRecipient : resolvedRecipient.paymentAddress,
-        amountSats: satoshis,
+        to: recipientSummary(mailRecipients, recipientInput),
+        recipients: mailRecipients,
+        amountSats: totalRecipientSats(mailRecipients),
         feeRate,
         memo,
         attachment,
@@ -3614,7 +3859,7 @@ export default function App() {
       setSelectedKey(`sent-${network}-${txid}`);
       setStatus({
         tone: "good",
-        text: `Transaction broadcast. ${paymentPsbt.inputCount} input${paymentPsbt.inputCount === 1 ? "" : "s"}, ${paymentPsbt.outputCount} output${paymentPsbt.outputCount === 1 ? "" : "s"}.`,
+        text: `Transaction broadcast to ${mailRecipients.length} recipient${mailRecipients.length === 1 ? "" : "s"}. ${paymentPsbt.inputCount} input${paymentPsbt.inputCount === 1 ? "" : "s"}, ${paymentPsbt.outputCount} output${paymentPsbt.outputCount === 1 ? "" : "s"}.`,
       });
     } catch (error) {
       setStatus({ tone: "bad", text: errorMessage(error, "Transaction failed.") });
@@ -4110,6 +4355,7 @@ export default function App() {
                   onCheckBroadcasts={() => void checkBroadcastStatuses(false)}
                   onFavoriteToggle={setMessageFavorite}
                   onReply={replyTo}
+                  onReplyAll={replyAllTo}
                   onRestoreDraft={restoreSentAsDraft}
                   threadMessages={threadMessages}
                 />
@@ -5176,7 +5422,7 @@ function DraftList({
       <article className="message-row draft-row" data-current="true">
         <button className="draft-open" onClick={() => onOpen(draft)} type="button">
           <div className="message-row-top">
-            <strong>{draft.recipient ? shortAddress(draft.recipient) : "No recipient"}</strong>
+            <strong>{recipientInputSummary(draft.recipient)}</strong>
             <span>{formatDate(draft.updatedAt)}</span>
           </div>
           <div className="message-subject">{messageSubject(draft)}</div>
@@ -5594,6 +5840,11 @@ function ComposePane({
   setRecipient: (value: string) => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const recipientTokens = splitRecipientInputs(recipient);
+  const removeRecipient = (target: string) => {
+    setRecipient(recipientTokens.filter((item) => item !== target).join(", "));
+  };
+
   return (
     <form className="compose-pane" onSubmit={submit}>
       <div className="pane-head">
@@ -5652,11 +5903,21 @@ function ComposePane({
           ))}
         </datalist>
       </label>
+      {recipientTokens.length > 0 ? (
+        <div className="recipient-chip-list" aria-label="Recipients">
+          {recipientTokens.map((token, index) => (
+            <button className="recipient-chip" key={`${token}-${index}`} onClick={() => removeRecipient(token)} title="Remove recipient" type="button">
+              <span>{shortAddress(token)}</span>
+              <X size={13} />
+            </button>
+          ))}
+        </div>
+      ) : null}
       {recipientNote ? <p className={recipientError ? "field-note bad" : "field-note"}>{recipientNote}</p> : null}
 
       <div className="compose-grid">
         <label>
-          Sats
+          Sats each
           <input
             min={1}
             onChange={(event) => setAmountSats(Number(event.target.value))}
@@ -5772,6 +6033,7 @@ function Reader({
   onCheckBroadcasts,
   onFavoriteToggle,
   onReply,
+  onReplyAll,
   onRestoreDraft,
   threadMessages,
 }: {
@@ -5787,12 +6049,14 @@ function Reader({
   onCheckBroadcasts: () => void;
   onFavoriteToggle: (message: MailMessage, favorite: boolean) => void;
   onReply: (message: MailMessage) => void;
+  onReplyAll: (message: MailMessage) => void;
   onRestoreDraft: (message: MailMessage) => void;
   threadMessages: MailMessage[];
 }) {
   const peerLabel = isInboundFolder(message.folder) ? "From" : "To";
-  const peer = isInboundFolder(message.folder) ? message.from : message.to;
+  const peer = isInboundFolder(message.folder) ? message.from : recipientListText(message.recipients, message.to);
   const explorerNetwork = explorerNetworkFor(message.network, activeNetwork);
+  const hasReplyAllTargets = (message.recipients?.length ?? 0) > 1 || (isInboundFolder(message.folder) && Boolean(message.recipients?.length));
 
   return (
     <article className="reader">
@@ -5840,6 +6104,14 @@ function Reader({
               <span>Reply</span>
             </span>
           </button>
+          {hasReplyAllTargets ? (
+            <button className="secondary small" onClick={() => onReplyAll(message)} type="button">
+              <span className="button-content">
+                <Users size={15} />
+                <span>Reply All</span>
+              </span>
+            </button>
+          ) : null}
           <a className="secondary small link-button" href={mempoolTxUrl(message.txid, explorerNetwork)} rel="noreferrer" target="_blank">
             <span className="button-content">
               <ArrowUpRight size={15} />
@@ -5854,6 +6126,12 @@ function Reader({
           <dt>{peerLabel}</dt>
           <dd>{peer}</dd>
         </div>
+        {isInboundFolder(message.folder) && message.recipients && message.recipients.length > 1 ? (
+          <div>
+            <dt>To</dt>
+            <dd>{recipientListText(message.recipients, message.to)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Value</dt>
           <dd>{message.amountSats.toLocaleString()} sats</dd>

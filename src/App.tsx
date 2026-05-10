@@ -319,6 +319,16 @@ type RecipientResolution = {
   record?: PowIdRecord;
 };
 
+type PowIdOwnerResolution = {
+  displayRecipient: string;
+  error?: string;
+  id?: string;
+  isId: boolean;
+  ownerAddress: string;
+  receiveAddress: string;
+  record?: PowIdRecord;
+};
+
 type MultiRecipientResolution = {
   duplicateCount: number;
   error?: string;
@@ -1006,6 +1016,85 @@ function resolveRecipientInput(
   };
 }
 
+function resolvePowIdOwnerInput(
+  value: string,
+  targetNetwork: BitcoinNetwork,
+  registryRecords: PowIdRecord[],
+  registryAddress: string,
+): PowIdOwnerResolution {
+  const input = value.trim();
+  if (!input) {
+    return { displayRecipient: "", isId: false, ownerAddress: "", receiveAddress: "" };
+  }
+
+  if (isValidBitcoinAddress(input, targetNetwork)) {
+    return {
+      displayRecipient: input,
+      isId: false,
+      ownerAddress: input,
+      receiveAddress: input,
+    };
+  }
+
+  const id = normalizePowId(input);
+  const displayRecipient = id ? `${id}@proofofwork.me` : input;
+  if (!id) {
+    return {
+      displayRecipient,
+      error: "Enter a valid Bitcoin address or confirmed ProofOfWork ID.",
+      isId: true,
+      ownerAddress: "",
+      receiveAddress: "",
+    };
+  }
+
+  if (!registryAddress) {
+    return {
+      displayRecipient,
+      error: `ProofOfWork ID registry is not configured for ${networkLabel(targetNetwork)}.`,
+      id,
+      isId: true,
+      ownerAddress: "",
+      receiveAddress: "",
+    };
+  }
+
+  const matchingRecords = registryRecords.filter((record) => record.network === targetNetwork && record.id === id);
+  const confirmedRecord = matchingRecords.find((record) => record.confirmed);
+  if (confirmedRecord) {
+    return {
+      displayRecipient,
+      id,
+      isId: true,
+      ownerAddress: confirmedRecord.ownerAddress,
+      receiveAddress: confirmedRecord.receiveAddress,
+      record: confirmedRecord,
+    };
+  }
+
+  const pendingRecord = matchingRecords.find((record) => !record.confirmed);
+  if (pendingRecord) {
+    return {
+      displayRecipient,
+      error: `${displayRecipient} is pending. Wait for confirmation before transferring to this ID.`,
+      id,
+      isId: true,
+      ownerAddress: "",
+      receiveAddress: "",
+      record: pendingRecord,
+    };
+  }
+
+  return {
+    displayRecipient,
+    error: `No confirmed ProofOfWork ID found for ${displayRecipient}.`,
+    id,
+    isId: true,
+    ownerAddress: "",
+    receiveAddress: "",
+  };
+}
+
 function splitRecipientInputs(value: string) {
   return value
     .split(/[,;\n]+/u)
@@ -1089,6 +1178,22 @@ function recipientResolutionNote(resolution: MultiRecipientResolution) {
   }
 
   return pieces.join(" · ");
+}
+
+function ownerResolutionNote(resolution: PowIdOwnerResolution) {
+  if (resolution.error) {
+    return resolution.error;
+  }
+
+  if (!resolution.ownerAddress) {
+    return "";
+  }
+
+  if (resolution.isId) {
+    return `${resolution.displayRecipient} resolves to owner ${shortAddress(resolution.ownerAddress)} and receiver ${shortAddress(resolution.receiveAddress)}.`;
+  }
+
+  return "Raw Bitcoin owner address.";
 }
 
 function explorerNetworkFor(messageNetwork: BitcoinNetwork, activeNetwork: BitcoinNetwork) {
@@ -3774,9 +3879,22 @@ export default function App() {
     () => (managedIdRecord && idUpdateReceiveAddress.trim() ? buildIdReceiverUpdatePayload(managedIdRecord.id, idUpdateReceiveAddress.trim()) : ""),
     [idUpdateReceiveAddress, managedIdRecord],
   );
+  const transferOwnerResolution = useMemo(
+    () => resolvePowIdOwnerInput(idTransferOwnerAddress, network, idRegistry, registryAddress),
+    [idRegistry, idTransferOwnerAddress, network, registryAddress],
+  );
+  const transferReceiveAddress = idTransferReceiveAddress.trim();
+  const effectiveTransferReceiveAddress = transferReceiveAddress || transferOwnerResolution.receiveAddress;
+  const transferPayloadReceiveAddress =
+    effectiveTransferReceiveAddress && effectiveTransferReceiveAddress !== transferOwnerResolution.ownerAddress
+      ? effectiveTransferReceiveAddress
+      : "";
   const idTransferPayload = useMemo(
-    () => (managedIdRecord && idTransferOwnerAddress.trim() ? buildIdTransferPayload(managedIdRecord.id, idTransferOwnerAddress.trim(), idTransferReceiveAddress.trim()) : ""),
-    [idTransferOwnerAddress, idTransferReceiveAddress, managedIdRecord],
+    () =>
+      managedIdRecord && transferOwnerResolution.ownerAddress
+        ? buildIdTransferPayload(managedIdRecord.id, transferOwnerResolution.ownerAddress, transferPayloadReceiveAddress)
+        : "",
+    [managedIdRecord, transferOwnerResolution.ownerAddress, transferPayloadReceiveAddress],
   );
   const parsedSaleAuthorization = useMemo(() => {
     const trimmed = idSaleAuthorization.trim();
@@ -3813,8 +3931,6 @@ export default function App() {
     () => (idPurchasePayload ? dataCarrierBytesForPayload(idPurchasePayload) : 0),
     [idPurchasePayload],
   );
-  const transferReceiveAddress = idTransferReceiveAddress.trim();
-  const effectiveTransferReceiveAddress = transferReceiveAddress || idTransferOwnerAddress.trim();
   const salePriceSats = Math.floor(idSalePriceSats);
   const saleBuyerAddress = idSaleBuyerAddress.trim();
   const saleReceiveAddress = idSaleReceiveAddress.trim();
@@ -3847,9 +3963,10 @@ export default function App() {
         registryAddress &&
         managedIdRecord &&
         idTransferPayload &&
-        isValidBitcoinAddress(idTransferOwnerAddress.trim(), network) &&
-        (!transferReceiveAddress || isValidBitcoinAddress(transferReceiveAddress, network)) &&
-        (idTransferOwnerAddress.trim() !== managedIdRecord.ownerAddress || effectiveTransferReceiveAddress !== managedIdRecord.receiveAddress),
+        !transferOwnerResolution.error &&
+        isValidBitcoinAddress(transferOwnerResolution.ownerAddress, network) &&
+        isValidBitcoinAddress(effectiveTransferReceiveAddress, network) &&
+        (transferOwnerResolution.ownerAddress !== managedIdRecord.ownerAddress || effectiveTransferReceiveAddress !== managedIdRecord.receiveAddress),
     ) &&
     idTransferBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
@@ -5279,16 +5396,16 @@ export default function App() {
       return;
     }
 
-    const ownerAddress = idTransferOwnerAddress.trim();
+    const ownerAddress = transferOwnerResolution.ownerAddress;
     const receiveAddress = idTransferReceiveAddress.trim();
-    const effectiveReceiveAddress = receiveAddress || ownerAddress;
+    const effectiveReceiveAddress = receiveAddress || transferOwnerResolution.receiveAddress;
 
-    if (!isValidBitcoinAddress(ownerAddress, network)) {
-      setStatus({ tone: "bad", text: "New owner address is not valid for the selected network." });
+    if (transferOwnerResolution.error || !ownerAddress || !isValidBitcoinAddress(ownerAddress, network)) {
+      setStatus({ tone: "bad", text: transferOwnerResolution.error || "New owner is not valid for the selected network." });
       return;
     }
 
-    if (receiveAddress && !isValidBitcoinAddress(receiveAddress, network)) {
+    if (!isValidBitcoinAddress(effectiveReceiveAddress, network)) {
       setStatus({ tone: "bad", text: "New receive address is not valid for the selected network." });
       return;
     }
@@ -5301,7 +5418,7 @@ export default function App() {
     await broadcastIdMutation({
       expectedOwner: managedIdRecord.ownerAddress,
       id: managedIdRecord.id,
-      payload: buildIdTransferPayload(managedIdRecord.id, ownerAddress, receiveAddress),
+      payload: buildIdTransferPayload(managedIdRecord.id, ownerAddress, transferPayloadReceiveAddress),
       successText: `Transfer for ${managedIdRecord.id}@proofofwork.me`,
     });
 
@@ -6571,6 +6688,8 @@ function IdLaunchApp({
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const visibleRegistryRecords = showAllRegistryRecords ? registryRecords : registryRecords.slice(0, 12);
   const hiddenRegistryRecordCount = Math.max(0, registryRecords.length - visibleRegistryRecords.length);
+  const transferTargetResolution = resolvePowIdOwnerInput(idTransferOwnerAddress, network, registryRecords, registryAddress);
+  const transferTargetNote = idTransferOwnerAddress.trim() ? ownerResolutionNote(transferTargetResolution) : "";
   const confirmedMatch = normalizedId ? confirmedRecords.find((record) => record.id === normalizedId) : undefined;
   const pendingMatch = normalizedId ? pendingRecords.find((record) => record.id === normalizedId) : undefined;
   const availabilityTone = !normalizedId ? "idle" : confirmedMatch ? "bad" : pendingMatch ? "idle" : "good";
@@ -6850,9 +6969,10 @@ function IdLaunchApp({
                   </form>
                   <form className="id-action-form" onSubmit={submitTransfer}>
                     <label>
-                      New owner address
+                      New owner address or ID
                       <input autoComplete="off" onChange={(event) => setIdTransferOwnerAddress(event.target.value)} spellCheck={false} value={idTransferOwnerAddress} />
                     </label>
+                    {transferTargetNote ? <p className={transferTargetResolution.error ? "field-note bad" : "field-note good"}>{transferTargetNote}</p> : null}
                     <label>
                       New receive address optional
                       <input
@@ -7208,6 +7328,8 @@ function IdsWorkspace({
   const ownedIds = ownedPowIds(registryRecords, address);
   const ownerControlledIds = registryRecords.filter((record) => record.network === network && record.confirmed && record.ownerAddress === address);
   const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
+  const transferTargetResolution = resolvePowIdOwnerInput(idTransferOwnerAddress, network, registryRecords, registryAddress);
+  const transferTargetNote = idTransferOwnerAddress.trim() ? ownerResolutionNote(transferTargetResolution) : "";
 
   return (
     <section className="ids-workspace">
@@ -7344,9 +7466,10 @@ function IdsWorkspace({
 
               <form className="id-action-form" onSubmit={submitTransfer}>
                 <label>
-                  New owner address
+                  New owner address or ID
                   <input autoComplete="off" onChange={(event) => setIdTransferOwnerAddress(event.target.value)} spellCheck={false} value={idTransferOwnerAddress} />
                 </label>
+                {transferTargetNote ? <p className={transferTargetResolution.error ? "field-note bad" : "field-note good"}>{transferTargetNote}</p> : null}
                 <label>
                   New receive address optional
                   <input

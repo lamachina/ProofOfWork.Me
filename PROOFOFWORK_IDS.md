@@ -132,6 +132,7 @@ Rules:
 - Receiver updates and transfers must be paid from the current owner address, because the resolver verifies the current owner appears in the transaction inputs.
 - `pwid1:u` changes only the receive address. The owner remains unchanged.
 - `pwid1:t` changes ownership. If the new receive address is omitted, the new owner address also becomes the receive address.
+- App UI may accept a confirmed ProofOfWork ID as a transfer target, but the written `pwid1:t` event must still contain resolved Bitcoin addresses.
 - `pwid1:buy2` changes ownership using an off-chain signed sale authorization from the current owner. The buyer can fund the transaction, so the seller does not need spendable sats.
 - A `buy2` transaction must pay the registry fee before the ID OP_RETURN and must also pay the signed sale price to the current owner before the ID OP_RETURN.
 - A `buy2` sale authorization uses JSON version `pwid-sale-v1` and is base64url encoded inside the OP_RETURN payload.

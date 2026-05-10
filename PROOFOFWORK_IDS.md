@@ -10,6 +10,7 @@ Do not change these without an explicit migration plan:
 
 - Mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`
 - Registration price: `1000` sats
+- Mutation price: `546` sats for receiver updates, transfers, buyer-funded marketplace transfers, and future listing/unlisting events
 - Protocol prefix: `pwid1:`
 - Registration event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
 - Receiver update event: `pwid1:u:<id-base64url>:<receive-address>`
@@ -47,11 +48,12 @@ They are not traditional DNS records. They are on-chain mail IDs resolved by the
 - Registry events live in Bitcoin OP_RETURN outputs.
 - First valid registration wins.
 - Registration requires a 1,000 sat payment to the canonical registry address.
+- Receiver updates, transfers, buyer-funded marketplace transfers, and future listing/unlisting events require a 546 sat mutation payment to the same canonical registry address.
 - Transfers update the current owner/receiver.
 - Marketplace transfers let a seller sign sale terms off-chain while the buyer funds the on-chain registry event.
 - Future messages resolve to the current receiver.
 - The app resolves IDs by scanning registry history and applying valid events in chain order.
-- All registry mutations use the same canonical registry address and pay the registry fee.
+- All registry mutations use the same canonical registry address and pay the mutation fee.
 
 ## ID Model
 
@@ -125,7 +127,8 @@ pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-
 
 Rules:
 
-- The transaction must pay at least `1000` sats to the registry address.
+- `pwid1:r2` registration transactions must pay at least `1000` sats to the registry address.
+- `pwid1:u`, `pwid1:t`, `pwid1:buy2`, and future listing/unlisting transactions must pay at least `546` sats to the registry address.
 - The registry payment output must appear before the ID OP_RETURN output in the transaction.
 - The OP_RETURN must start with `pwid1:`.
 - Registrations, receiver updates, and transfers all use the same canonical registry address.
@@ -134,11 +137,11 @@ Rules:
 - `pwid1:t` changes ownership. If the new receive address is omitted, the new owner address also becomes the receive address.
 - App UI may accept a confirmed ProofOfWork ID as a transfer target, but the written `pwid1:t` event must still contain resolved Bitcoin addresses.
 - `pwid1:buy2` changes ownership using an off-chain signed sale authorization from the current owner. The buyer can fund the transaction, so the seller does not need spendable sats.
-- A `buy2` transaction must pay the registry fee before the ID OP_RETURN and must also pay the signed sale price to the current owner before the ID OP_RETURN.
+- A `buy2` transaction must pay the 546 sat mutation fee before the ID OP_RETURN and must also pay the signed sale price to the current owner before the ID OP_RETURN.
 - A `buy2` sale authorization uses JSON version `pwid-sale-v1` and is base64url encoded inside the OP_RETURN payload.
 - The sale authorization signs canonical text with the ID, seller address, price, optional buyer lock, optional receive-address lock, nonce, and optional expiry.
 - The resolver applies `buy2` only when the signature verifies for the current owner, the current owner still matches the seller, and the buyer/receiver constraints match the event.
-- Sale authorizations are off-chain bearer objects. Anyone holding an open authorization can execute it by paying the signed price and registry fee.
+- Sale authorizations are off-chain bearer objects. Anyone holding an open authorization can execute it by paying the signed price and mutation fee.
 - IDs are case-insensitive forever. `User`, `user`, and `USER` all resolve to `user`.
 - The app normalizes IDs to lowercase for writing, display, lookup, and first-claim comparisons.
 - There is no arbitrary app-level ID length or character whitelist.
@@ -199,7 +202,9 @@ Rules to preserve:
 
 - All event ID fields should be base64url encoded and normalized case-insensitively by resolvers.
 - `r2` is valid only if the ID is unclaimed.
+- `r2` requires at least `1000` sats to the registry address.
 - `u`, `t`, `k`, `list`, `unlist`, and `accept` are valid only from the current owner.
+- `u`, `t`, `buy2`, `list`, and `unlist` require at least `546` sats to the registry address.
 - `u`, `t`, and `buy2` are live registry events.
 - `buy2` is valid only with a current-owner sale authorization and matching seller payment.
 - `buy` is valid only against an active listing.

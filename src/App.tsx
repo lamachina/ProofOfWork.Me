@@ -432,6 +432,7 @@ const PROTOCOL_PREFIX = "pwm1:";
 // must use the same registry as the full mail app so first-confirmed-wins stays global.
 const ID_PROTOCOL_PREFIX = "pwid1:";
 const ID_REGISTRATION_PRICE_SATS = 1000;
+const ID_MUTATION_PRICE_SATS = 546;
 const ID_SALE_AUTH_VERSION = "pwid-sale-v1";
 const ID_REGISTRY_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
@@ -2635,16 +2636,22 @@ function transactionInputAddresses(vin: Array<Record<string, unknown>>) {
 
 function registryPaymentAmount(vout: Array<Record<string, unknown>>, registryAddress: string) {
   const protocolIndex = firstIdProtocolOutputIndex(vout);
-  const paymentOutput = vout.find((output, index) => {
-    return (
+  return vout.reduce((total, output, index) => {
+    if (
       output.scriptpubkey_address === registryAddress &&
       typeof output.value === "number" &&
-      output.value >= ID_REGISTRATION_PRICE_SATS &&
+      output.value > 0 &&
       (protocolIndex === -1 || index < protocolIndex)
-    );
-  });
+    ) {
+      return total + output.value;
+    }
 
-  return typeof paymentOutput?.value === "number" ? paymentOutput.value : 0;
+    return total;
+  }, 0);
+}
+
+function idEventMinimumPaymentSats(kind: "register" | "update" | "transfer" | "marketTransfer") {
+  return kind === "register" ? ID_REGISTRATION_PRICE_SATS : ID_MUTATION_PRICE_SATS;
 }
 
 function paymentAmountBeforeIdProtocol(vout: Array<Record<string, unknown>>, address: string) {
@@ -3082,7 +3089,7 @@ function idRecordsFromTransactions(
     const amount = registryPaymentAmount(vout, registryAddress);
     const txid = typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid) ? tx.txid.toLowerCase() : "";
 
-    if (!txid || amount < ID_REGISTRATION_PRICE_SATS) {
+    if (!txid || amount <= 0) {
       return [];
     }
 
@@ -3091,6 +3098,10 @@ function idRecordsFromTransactions(
       .map((payload) => parseIdEventPayload(payload, targetNetwork))
       .find(Boolean);
     if (!eventMessage) {
+      return [];
+    }
+
+    if (amount < idEventMinimumPaymentSats(eventMessage.kind)) {
       return [];
     }
 
@@ -5113,7 +5124,7 @@ export default function App() {
 
       setStatus({ tone: "idle", text: `${successText}...` });
       const paymentPsbt = await buildPaymentPsbt({
-        amountSats: ID_REGISTRATION_PRICE_SATS,
+        amountSats: ID_MUTATION_PRICE_SATS,
         feeRate,
         fromAddress: address,
         network,
@@ -5227,7 +5238,7 @@ export default function App() {
       setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
       setStatus({
         tone: "good",
-        text: `Sale authorization ready. Buyer pays ${salePriceSats.toLocaleString()} sats to seller plus ${ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats to registry.`,
+        text: `Sale authorization ready. Buyer pays ${salePriceSats.toLocaleString()} sats to seller plus ${ID_MUTATION_PRICE_SATS.toLocaleString()} sats to registry.`,
       });
     } catch (error) {
       setStatus({ tone: "bad", text: errorMessage(error, "Sale authorization failed.") });
@@ -5323,7 +5334,7 @@ export default function App() {
       const payments: PaymentOutputSpec[] = [
         {
           address: registryAddress,
-          amountSats: ID_REGISTRATION_PRICE_SATS,
+          amountSats: ID_MUTATION_PRICE_SATS,
         },
       ];
 
@@ -6921,7 +6932,7 @@ function IdLaunchApp({
 
             <section className="id-launch-card">
               <h3>Manage ID</h3>
-              <p className="field-note">Owners can update routing or transfer an ID for {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats.</p>
+              <p className="field-note">Owners can update routing or transfer an ID for {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.</p>
               {ownerControlledIds.length === 0 ? (
                 <p className="field-note">Connect the current owner wallet to manage confirmed IDs.</p>
               ) : (
@@ -7412,7 +7423,7 @@ function IdsWorkspace({
             </div>
             <div>
               <h3>Manage ID</h3>
-              <p>Current owners can update routing or transfer the asset. Each registry mutation pays {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats.</p>
+              <p>Current owners can update routing or transfer the asset. Each registry mutation pays {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.</p>
             </div>
           </div>
 
@@ -7644,7 +7655,7 @@ function IdMarketplaceCard({
         </div>
         <div>
           <h3>Marketplace Transfer</h3>
-          <p>Seller signs off-chain. Buyer funds seller payment plus the {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
+          <p>Seller signs off-chain. Buyer funds seller payment plus the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
         </div>
       </div>
 

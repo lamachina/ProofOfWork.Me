@@ -26,6 +26,7 @@ const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
 const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
 const ID_REGISTRATION_PRICE_SATS = 1000;
+const ID_MUTATION_PRICE_SATS = 546;
 const ID_SALE_AUTH_VERSION = "pwid-sale-v1";
 const MAX_ATTACHMENT_BYTES = 60_000;
 const ID_REGISTRY_ADDRESSES = {
@@ -657,16 +658,22 @@ function senderAddress(vin, targetAddress) {
 
 function registryPaymentAmount(vout, registryAddress) {
   const protocolIndex = firstIdProtocolOutputIndex(vout);
-  const paymentOutput = vout.find((output, index) => {
-    return (
+  return vout.reduce((total, output, index) => {
+    if (
       output.scriptpubkey_address === registryAddress &&
       typeof output.value === "number" &&
-      output.value >= ID_REGISTRATION_PRICE_SATS &&
+      output.value > 0 &&
       (protocolIndex === -1 || index < protocolIndex)
-    );
-  });
+    ) {
+      return total + output.value;
+    }
 
-  return typeof paymentOutput?.value === "number" ? paymentOutput.value : 0;
+    return total;
+  }, 0);
+}
+
+function idEventMinimumPaymentSats(kind) {
+  return kind === "register" ? ID_REGISTRATION_PRICE_SATS : ID_MUTATION_PRICE_SATS;
 }
 
 function paymentAmountBeforeIdProtocol(vout, address) {
@@ -997,7 +1004,7 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
     const amount = registryPaymentAmount(vout, registryAddress);
     const txid = transactionTxid(tx);
 
-    if (!txid || amount < ID_REGISTRATION_PRICE_SATS) {
+    if (!txid || amount <= 0) {
       return [];
     }
 
@@ -1006,6 +1013,10 @@ function idRecordsFromTransactions(txs, registryAddress, network) {
       .map((payload) => parseIdEventPayload(payload, network))
       .find(Boolean);
     if (!eventMessage) {
+      return [];
+    }
+
+    if (amount < idEventMinimumPaymentSats(eventMessage.kind)) {
       return [];
     }
 

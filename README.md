@@ -198,7 +198,7 @@ pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64
 
 ID lookup normalizes casing, so `User`, `user`, and `USER` resolve to the same record. New registrations encode the ID field as base64url, which keeps punctuation and Unicode parseable while the aggregate OP_RETURN limit keeps total size bounded.
 
-ID owners can mutate confirmed IDs with the same canonical registry address and fee:
+ID owners can mutate confirmed IDs through the same canonical registry address:
 
 ```text
 pwid1:u:<id-base64url>:<receive-address>
@@ -206,8 +206,8 @@ pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>
 pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-address?>
 ```
 
-`pwid1:u` and `pwid1:t` require a 1,000 sat registry payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
-`pwid1:buy2` is the buyer-funded marketplace path: the seller signs a `pwid-sale-v1` authorization off-chain, and the buyer funds both the registry fee and the signed seller payment in one transaction. The resolver accepts it only if the current owner signature, seller payment, optional buyer lock, and optional receive-address lock all match.
+`pwid1:r2` registrations require a 1,000 sat registry payment. `pwid1:u` and `pwid1:t` require a 546 sat mutation payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
+`pwid1:buy2` is the buyer-funded marketplace path: the seller signs a `pwid-sale-v1` authorization off-chain, and the buyer funds both the 546 sat mutation payment and the signed seller payment in one transaction. The resolver accepts it only if the current owner signature, seller payment, optional buyer lock, and optional receive-address lock all match.
 
 ## Run
 
@@ -309,7 +309,7 @@ Important implementation points:
 - Public Desktop route switch: `isDesktopRoute()` in `src/App.tsx`.
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
-- ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
+- ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, `ID_MUTATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
 - Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
 - In-app file preview UI: `AttachmentViewer`, `FileInspector`, `attachmentPreviewKind()`, and `attachmentText()` in `src/App.tsx`.

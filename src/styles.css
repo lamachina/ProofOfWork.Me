@@ -934,6 +934,11 @@ select {
   padding: 5px;
 }
 
+.desktop-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus);
+}
+
 .desktop-search svg {
   color: var(--text-muted);
   margin-left: 7px;
@@ -945,6 +950,12 @@ select {
   box-shadow: none;
   min-height: 34px;
   padding: 6px 4px;
+}
+
+.desktop-search input:focus {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .desktop-screensaver {
@@ -1012,6 +1023,17 @@ select {
 }
 
 .desktop-search-large input {
+  background: transparent;
+  color: #111827;
+  caret-color: #0a84ff;
+}
+
+.desktop-search-large input::placeholder {
+  color: #6b7280;
+}
+
+.desktop-search-large input:focus {
+  background: transparent;
   color: #111827;
 }
 

@@ -72,6 +72,7 @@ Launch invariants for future developers/agents:
 - Uses the correct mempool.space explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
+- Can read registry, mail, files, and transaction status from a first-party ProofOfWork OP_RETURN API when `VITE_POW_API_BASE` is configured.
 - Treats ProofOfWork IDs as case-insensitive names capped by the aggregate 100 KB OP_RETURN transaction limit, not arbitrary character rules.
 - Resolves ProofOfWork IDs in the compose recipient field only after a confirmed registry record exists; pending IDs cannot receive routed mail yet.
 - Re-checks the full registry immediately before broadcasting an ID registration to block stale duplicate claims.
@@ -152,6 +153,18 @@ To build an ID-registration-only deployment that hides the full mail app on ever
 VITE_ID_LAUNCH_ONLY=1 npm run build
 ```
 
+To build against the ProofOfWork-owned OP_RETURN API instead of browser-side public mempool.space reads:
+
+```bash
+VITE_POW_API_BASE=https://api.proofofwork.me npm run build
+```
+
+To run the OP_RETURN API on the node server or locally:
+
+```bash
+npm run proof-api
+```
+
 ## Registry Audit
 
 To find duplicate or failed ProofOfWork ID registrations for refund review:
@@ -179,3 +192,5 @@ Important implementation points:
 - Confirmed-only ID compose routing: `resolveRecipientInput()`.
 - Dedicated launch UI: `IdLaunchApp`.
 - Full app ID workspace: `IdsWorkspace`.
+- OP_RETURN API: `server/proof-api.mjs`.
+- OP_RETURN infrastructure notes: `OP_RETURN_INFRASTRUCTURE.md`.

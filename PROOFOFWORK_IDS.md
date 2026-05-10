@@ -221,7 +221,15 @@ Possible indexer approaches:
 - Esplora/electrs for general address and transaction APIs.
 - A custom ProofOfWork.Me indexer for `pwid1:` registry events and `pwm1:` mail events.
 
-The custom indexer should scan blocks, parse OP_RETURNs, resolve IDs, and expose fast API endpoints.
+The custom indexer/API has started as `server/proof-api.mjs`. It reads from the private mempool/electrs stack, parses ProofOfWork OP_RETURN protocols, and exposes browser-ready endpoints for registry state, mail state, and transaction status.
+
+Production apps can opt into it with:
+
+```bash
+VITE_POW_API_BASE=<production-api-url>
+```
+
+For ID safety, production should prefer this API over public mempool.space reads. If the first-party API is unavailable, it is safer for ID registration/routing to fail closed than to create duplicates from incomplete public API state.
 
 ## VPS Specs
 

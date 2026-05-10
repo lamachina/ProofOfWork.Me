@@ -229,6 +229,19 @@ type UtxoSelection = {
   changeSats: number;
 };
 
+type PowRegistryApiResponse = {
+  records?: PowIdRecord[];
+};
+
+type PowMailApiResponse = {
+  inboxMessages?: InboxMessage[];
+  sentMessages?: SentMessage[];
+};
+
+type PowTxStatusApiResponse = {
+  status?: BroadcastStatus;
+};
+
 declare global {
   interface Window {
     unisat?: UnisatWallet;
@@ -248,6 +261,7 @@ const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
+const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "").trim().replace(/\/+$/u, "");
 const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_REGISTRY_TX_PAGES = 100;
@@ -528,6 +542,26 @@ function mempoolBase(network: BitcoinNetwork) {
 
 function mempoolTxUrl(txid: string, network: BitcoinNetwork) {
   return `${mempoolBase(network)}/tx/${txid}`;
+}
+
+function proofApiUrl(path: string, network: BitcoinNetwork) {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${POW_API_BASE}${path}${separator}network=${encodeURIComponent(network)}`;
+}
+
+async function fetchProofApiJson<T>(path: string, network: BitcoinNetwork): Promise<T> {
+  const response = await fetch(proofApiUrl(path, network), {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const responseText = await response.text().catch(() => "");
+    throw new Error(responseText || `ProofOfWork API returned ${response.status}.`);
+  }
+
+  return response.json() as Promise<T>;
 }
 
 function xVerificationUrl(record: PowIdRecord) {
@@ -1871,6 +1905,14 @@ function sentMessagesFromTransactions(
 }
 
 async function fetchAddressMail(targetAddress: string, targetNetwork: BitcoinNetwork) {
+  if (POW_API_BASE) {
+    const payload = await fetchProofApiJson<PowMailApiResponse>(`/api/v1/address/${encodeURIComponent(targetAddress)}/mail`, targetNetwork);
+    return {
+      inboxMessages: Array.isArray(payload.inboxMessages) ? payload.inboxMessages : [],
+      sentMessages: Array.isArray(payload.sentMessages) ? payload.sentMessages : [],
+    };
+  }
+
   const txs = await fetchAddressTransactions(targetAddress, targetNetwork);
   return {
     inboxMessages: inboxMessagesFromTransactions(txs, targetAddress, targetNetwork),
@@ -1952,6 +1994,11 @@ async function fetchIdRegistry(targetNetwork: BitcoinNetwork): Promise<PowIdReco
     return [];
   }
 
+  if (POW_API_BASE) {
+    const payload = await fetchProofApiJson<PowRegistryApiResponse>("/api/v1/registry", targetNetwork);
+    return Array.isArray(payload.records) ? payload.records : [];
+  }
+
   const txs = await fetchRegistryTransactions(registryAddress, targetNetwork);
   return idRecordsFromTransactions(txs, registryAddress, targetNetwork);
 }
@@ -1992,6 +2039,11 @@ async function fetchTransactionHex(txid: string, ownerNetwork: BitcoinNetwork) {
 }
 
 async function fetchBroadcastStatus(txid: string, ownerNetwork: BitcoinNetwork): Promise<BroadcastStatus> {
+  if (POW_API_BASE) {
+    const payload = await fetchProofApiJson<PowTxStatusApiResponse>(`/api/v1/tx/${encodeURIComponent(txid)}/status`, ownerNetwork);
+    return normalizeBroadcastStatus(payload.status);
+  }
+
   const response = await fetch(`${mempoolBase(ownerNetwork)}/api/tx/${txid}`);
   if (response.status === 404) {
     return "dropped";

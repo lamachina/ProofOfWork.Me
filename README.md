@@ -6,7 +6,7 @@ Bitcoin-native mail and ProofOfWork ID registry, written to BTC OP_RETURN output
 
 Before modifying ProofOfWork.Me, read `SOUL.md`.
 
-This repository is built for agent collaboration. `SOUL.md` explains the project's voice, thesis, and long-term direction. Protocol behavior lives in `README.md`, `PROOFOFWORK_IDS.md`, and the source code.
+This repository is built for agent collaboration. `SOUL.md` explains the project's voice, thesis, and long-term direction. Protocol behavior lives in `README.md`, `PROOFOFWORK_IDS.md`, `MARKETPLACE.md`, and the source code.
 
 ## Phase 1 Launch
 
@@ -109,6 +109,7 @@ Launch invariants for future developers/agents:
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
 - Lets current ID owners create off-chain signed listing authorizations so buyers can fund marketplace-style ID transfers.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
+- Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Can read registry, mail, files, and transaction status from a first-party ProofOfWork OP_RETURN API when `VITE_POW_API_BASE` is configured.
@@ -344,3 +345,4 @@ Important implementation points:
 - OP_RETURN API: `server/proof-api.mjs`.
 - OP_RETURN infrastructure notes: `OP_RETURN_INFRASTRUCTURE.md`.
 - ID refund log: `ID_REFUNDS.md`.
+- Marketplace protocol notes: `MARKETPLACE.md`.

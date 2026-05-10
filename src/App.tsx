@@ -6030,22 +6030,12 @@ export default function App() {
           <IdsWorkspace
             address={address}
             busy={busy}
-            canCreateSaleAuthorization={canCreateSaleAuthorization}
-            canPurchaseId={canPurchaseId}
             canRegister={canRegisterId}
             contacts={contactsForNetwork}
-            createSaleAuthorization={createIdSaleAuthorization}
             feeRate={feeRate}
             idName={idName}
             idPgpKey={idPgpKey}
             idReceiveAddress={idReceiveAddress}
-            idPurchaseBytes={idPurchaseBytes}
-            idPurchaseOwnerAddress={idPurchaseOwnerAddress}
-            idPurchaseReceiveAddress={idPurchaseReceiveAddress}
-            idSaleAuthorization={idSaleAuthorization}
-            idSaleBuyerAddress={idSaleBuyerAddress}
-            idSalePriceSats={idSalePriceSats}
-            idSaleReceiveAddress={idSaleReceiveAddress}
             idTransferBytes={idTransferBytes}
             idTransferOwnerAddress={idTransferOwnerAddress}
             idTransferReceiveAddress={idTransferReceiveAddress}
@@ -6069,19 +6059,12 @@ export default function App() {
             }}
             setIdName={setIdName}
             setIdPgpKey={setIdPgpKey}
-            setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
-            setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
             setIdReceiveAddress={setIdReceiveAddress}
-            setIdSaleAuthorization={setIdSaleAuthorization}
-            setIdSaleBuyerAddress={setIdSaleBuyerAddress}
-            setIdSalePriceSats={setIdSalePriceSats}
-            setIdSaleReceiveAddress={setIdSaleReceiveAddress}
             setIdTransferOwnerAddress={setIdTransferOwnerAddress}
             setIdTransferReceiveAddress={setIdTransferReceiveAddress}
             setIdUpdateReceiveAddress={setIdUpdateReceiveAddress}
             onAddContact={addRegistryContact}
             onRefresh={() => void refreshIds()}
-            submitPurchase={purchaseId}
             submitTransfer={transferId}
             submitUpdate={updateIdReceiver}
             submit={registerId}
@@ -7541,23 +7524,13 @@ function ContactsWorkspace({
 function IdsWorkspace({
   address,
   busy,
-  canCreateSaleAuthorization,
-  canPurchaseId,
   canRegister,
   contacts,
-  createSaleAuthorization,
   feeRate,
   idName,
   idPgpKey,
   idReceiveAddress,
   idReceiverUpdateBytes,
-  idPurchaseBytes,
-  idPurchaseOwnerAddress,
-  idPurchaseReceiveAddress,
-  idSaleAuthorization,
-  idSaleBuyerAddress,
-  idSalePriceSats,
-  idSaleReceiveAddress,
   idTransferBytes,
   idTransferOwnerAddress,
   idTransferReceiveAddress,
@@ -7573,43 +7546,26 @@ function IdsWorkspace({
   setFeeRate,
   setIdName,
   setIdPgpKey,
-  setIdPurchaseOwnerAddress,
-  setIdPurchaseReceiveAddress,
   setIdReceiveAddress,
-  setIdSaleAuthorization,
-  setIdSaleBuyerAddress,
-  setIdSalePriceSats,
-  setIdSaleReceiveAddress,
   setIdTransferOwnerAddress,
   setIdTransferReceiveAddress,
   setIdUpdateReceiveAddress,
   setManagedIdName,
   onAddContact,
   onRefresh,
-  submitPurchase,
   submitTransfer,
   submitUpdate,
   submit,
 }: {
   address: string;
   busy: boolean;
-  canCreateSaleAuthorization: boolean;
-  canPurchaseId: boolean;
   canRegister: boolean;
   contacts: ContactRecord[];
-  createSaleAuthorization: () => void;
   feeRate: number;
   idName: string;
   idPgpKey: string;
   idReceiveAddress: string;
   idReceiverUpdateBytes: number;
-  idPurchaseBytes: number;
-  idPurchaseOwnerAddress: string;
-  idPurchaseReceiveAddress: string;
-  idSaleAuthorization: string;
-  idSaleBuyerAddress: string;
-  idSalePriceSats: number;
-  idSaleReceiveAddress: string;
   idTransferBytes: number;
   idTransferOwnerAddress: string;
   idTransferReceiveAddress: string;
@@ -7625,20 +7581,13 @@ function IdsWorkspace({
   setFeeRate: (value: number) => void;
   setIdName: (value: string) => void;
   setIdPgpKey: (value: string) => void;
-  setIdPurchaseOwnerAddress: (value: string) => void;
-  setIdPurchaseReceiveAddress: (value: string) => void;
   setIdReceiveAddress: (value: string) => void;
-  setIdSaleAuthorization: (value: string) => void;
-  setIdSaleBuyerAddress: (value: string) => void;
-  setIdSalePriceSats: (value: number) => void;
-  setIdSaleReceiveAddress: (value: string) => void;
   setIdTransferOwnerAddress: (value: string) => void;
   setIdTransferReceiveAddress: (value: string) => void;
   setIdUpdateReceiveAddress: (value: string) => void;
   setManagedIdName: (value: string) => void;
   onAddContact: (record: PowIdRecord) => void;
   onRefresh: () => void;
-  submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
   submitTransfer: (event: FormEvent<HTMLFormElement>) => void;
   submitUpdate: (event: FormEvent<HTMLFormElement>) => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
@@ -7813,29 +7762,6 @@ function IdsWorkspace({
             </>
           )}
         </section>
-
-        <IdMarketplaceCard
-          busy={busy}
-          canCreateSaleAuthorization={canCreateSaleAuthorization}
-          canPurchaseId={canPurchaseId}
-          createSaleAuthorization={createSaleAuthorization}
-          idPurchaseBytes={idPurchaseBytes}
-          idPurchaseOwnerAddress={idPurchaseOwnerAddress}
-          idPurchaseReceiveAddress={idPurchaseReceiveAddress}
-          idSaleAuthorization={idSaleAuthorization}
-          idSaleBuyerAddress={idSaleBuyerAddress}
-          idSalePriceSats={idSalePriceSats}
-          idSaleReceiveAddress={idSaleReceiveAddress}
-          managedId={managedId}
-          network={network}
-          setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
-          setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
-          setIdSaleAuthorization={setIdSaleAuthorization}
-          setIdSaleBuyerAddress={setIdSaleBuyerAddress}
-          setIdSalePriceSats={setIdSalePriceSats}
-          setIdSaleReceiveAddress={setIdSaleReceiveAddress}
-          submitPurchase={submitPurchase}
-        />
 
         {lastRegisteredId ? (
           <section className="id-card id-verify-card">

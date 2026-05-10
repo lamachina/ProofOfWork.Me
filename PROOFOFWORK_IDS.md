@@ -86,7 +86,7 @@ id.proofofwork.me
 ```
 
 The ID subdomain renders a focused mainnet claim flow using the same registry address and `pwid1:r2` protocol. It is intentionally narrower than the full mail app: connect UniSat, check availability, register, view registry stats, view owned IDs, view public registry records, and verify owned/routed IDs on X. Do not put ID transfer, management, or marketplace tools on `id.proofofwork.me`; those belong in the Computer app and the standalone Marketplace app.
-Inside `computer.proofofwork.me`, Marketplace is a dedicated sidebar workspace for listing owned confirmed IDs and executing buyer-funded transfers.
+Inside `computer.proofofwork.me`, the IDs workspace is limited to registration, receiver updates, and direct owner transfers. Marketplace is a dedicated sidebar workspace for listing owned confirmed IDs and executing buyer-funded transfers.
 
 Production domains:
 

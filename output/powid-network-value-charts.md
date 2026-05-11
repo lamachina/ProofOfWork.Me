@@ -12,6 +12,7 @@ Long-term projection pack:
 
 - [PowID long-term value charts](powid-long-term-value-charts.md)
 - [PowID modeling data](modeling-data/README.md)
+- [Bitcoin Computer agent adoption model](bitcoin-computer-agent-adoption-model.md)
 - [PowID mail app value model](powid-mail-app-value-model.md)
 - [PowID files app value model](powid-files-app-value-model.md)
 

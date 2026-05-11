@@ -8123,6 +8123,8 @@ function IdsWorkspace({
                 </dl>
               ) : null}
 
+              <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+
               <form className="id-action-form" onSubmit={submitUpdate}>
                 <label>
                   New receive address or ID

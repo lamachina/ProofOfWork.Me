@@ -6042,6 +6042,7 @@ export default function App() {
         createSaleAuthorization={createIdSaleAuthorization}
         delistListing={delistIdListing}
         disconnectWallet={disconnectWallet}
+        feeRate={feeRate}
         hasUnisat={hasUnisat}
         idPurchaseBytes={idPurchaseBytes}
         idPurchaseOwnerAddress={idPurchaseOwnerAddress}
@@ -6061,6 +6062,7 @@ export default function App() {
         setIdSaleBuyerAddress={setIdSaleBuyerAddress}
         setIdSalePriceSats={setIdSalePriceSats}
         setIdSaleReceiveAddress={setIdSaleReceiveAddress}
+        setFeeRate={setFeeRate}
         setManagedIdName={(id) => {
           setManagedIdName(id);
           setIdSaleAuthorization("");
@@ -6423,6 +6425,7 @@ export default function App() {
             canPurchaseId={canPurchaseId}
             createSaleAuthorization={createIdSaleAuthorization}
             delistListing={delistIdListing}
+            feeRate={feeRate}
             idPurchaseBytes={idPurchaseBytes}
             idPurchaseOwnerAddress={idPurchaseOwnerAddress}
             idPurchaseReceiveAddress={idPurchaseReceiveAddress}
@@ -6442,6 +6445,7 @@ export default function App() {
             setIdSaleBuyerAddress={setIdSaleBuyerAddress}
             setIdSalePriceSats={setIdSalePriceSats}
             setIdSaleReceiveAddress={setIdSaleReceiveAddress}
+            setFeeRate={setFeeRate}
             setManagedIdName={setManagedIdName}
             submitPurchase={purchaseId}
             useListing={(listing) => {
@@ -7306,6 +7310,7 @@ function MarketplaceApp({
   createSaleAuthorization,
   delistListing,
   disconnectWallet,
+  feeRate,
   hasUnisat,
   idPurchaseBytes,
   idPurchaseOwnerAddress,
@@ -7325,6 +7330,7 @@ function MarketplaceApp({
   setIdSaleBuyerAddress,
   setIdSalePriceSats,
   setIdSaleReceiveAddress,
+  setFeeRate,
   setManagedIdName,
   setTheme,
   status,
@@ -7341,6 +7347,7 @@ function MarketplaceApp({
   createSaleAuthorization: () => void;
   delistListing: (listing: PowIdListing) => void;
   disconnectWallet: () => void;
+  feeRate: number;
   hasUnisat: boolean;
   idPurchaseBytes: number;
   idPurchaseOwnerAddress: string;
@@ -7360,6 +7367,7 @@ function MarketplaceApp({
   setIdSaleBuyerAddress: (value: string) => void;
   setIdSalePriceSats: (value: number) => void;
   setIdSaleReceiveAddress: (value: string) => void;
+  setFeeRate: (value: number) => void;
   setManagedIdName: (value: string) => void;
   setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
@@ -7516,6 +7524,7 @@ function MarketplaceApp({
             canCreateSaleAuthorization={canCreateSaleAuthorization}
             canPurchaseId={canPurchaseId}
             createSaleAuthorization={createSaleAuthorization}
+            feeRate={feeRate}
             idPurchaseBytes={idPurchaseBytes}
             idPurchaseOwnerAddress={idPurchaseOwnerAddress}
             idPurchaseReceiveAddress={idPurchaseReceiveAddress}
@@ -7532,6 +7541,7 @@ function MarketplaceApp({
             setIdSaleBuyerAddress={setIdSaleBuyerAddress}
             setIdSalePriceSats={setIdSalePriceSats}
             setIdSaleReceiveAddress={setIdSaleReceiveAddress}
+            setFeeRate={setFeeRate}
             submitPurchase={submitPurchase}
           />
 
@@ -7569,6 +7579,7 @@ function MarketplaceWorkspace({
   canPurchaseId,
   createSaleAuthorization,
   delistListing,
+  feeRate,
   idPurchaseBytes,
   idPurchaseOwnerAddress,
   idPurchaseReceiveAddress,
@@ -7588,6 +7599,7 @@ function MarketplaceWorkspace({
   setIdSaleBuyerAddress,
   setIdSalePriceSats,
   setIdSaleReceiveAddress,
+  setFeeRate,
   setManagedIdName,
   submitPurchase,
   useListing,
@@ -7599,6 +7611,7 @@ function MarketplaceWorkspace({
   canPurchaseId: boolean;
   createSaleAuthorization: () => void;
   delistListing: (listing: PowIdListing) => void;
+  feeRate: number;
   idPurchaseBytes: number;
   idPurchaseOwnerAddress: string;
   idPurchaseReceiveAddress: string;
@@ -7618,6 +7631,7 @@ function MarketplaceWorkspace({
   setIdSaleBuyerAddress: (value: string) => void;
   setIdSalePriceSats: (value: number) => void;
   setIdSaleReceiveAddress: (value: string) => void;
+  setFeeRate: (value: number) => void;
   setManagedIdName: (value: string) => void;
   submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
   useListing: (listing: PowIdListing) => void;
@@ -7701,6 +7715,7 @@ function MarketplaceWorkspace({
           canCreateSaleAuthorization={canCreateSaleAuthorization}
           canPurchaseId={canPurchaseId}
           createSaleAuthorization={createSaleAuthorization}
+          feeRate={feeRate}
           idPurchaseBytes={idPurchaseBytes}
           idPurchaseOwnerAddress={idPurchaseOwnerAddress}
           idPurchaseReceiveAddress={idPurchaseReceiveAddress}
@@ -7717,6 +7732,7 @@ function MarketplaceWorkspace({
           setIdSaleBuyerAddress={setIdSaleBuyerAddress}
           setIdSalePriceSats={setIdSalePriceSats}
           setIdSaleReceiveAddress={setIdSaleReceiveAddress}
+          setFeeRate={setFeeRate}
           submitPurchase={submitPurchase}
         />
 
@@ -8297,11 +8313,42 @@ function MarketplaceListingList({
   );
 }
 
+function FeeRateControl({
+  feeRate,
+  setFeeRate,
+}: {
+  feeRate: number;
+  setFeeRate: (value: number) => void;
+}) {
+  return (
+    <div className="fee-control">
+      <label>
+        Fee sat/vB
+        <input
+          min={0}
+          onChange={(event) => setFeeRate(Number(event.target.value))}
+          step={0.01}
+          type="number"
+          value={feeRate}
+        />
+      </label>
+      <div className="fee-presets" aria-label="Fee presets">
+        {[0.1, 0.25, 0.5, 1].map((preset) => (
+          <button aria-pressed={feeRate === preset} key={preset} onClick={() => setFeeRate(preset)} type="button">
+            {preset}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function IdMarketplaceCard({
   busy,
   canCreateSaleAuthorization,
   canPurchaseId,
   createSaleAuthorization,
+  feeRate,
   idPurchaseBytes,
   idPurchaseOwnerAddress,
   idPurchaseReceiveAddress,
@@ -8318,12 +8365,14 @@ function IdMarketplaceCard({
   setIdSaleBuyerAddress,
   setIdSalePriceSats,
   setIdSaleReceiveAddress,
+  setFeeRate,
   submitPurchase,
 }: {
   busy: boolean;
   canCreateSaleAuthorization: boolean;
   canPurchaseId: boolean;
   createSaleAuthorization: () => void;
+  feeRate: number;
   idPurchaseBytes: number;
   idPurchaseOwnerAddress: string;
   idPurchaseReceiveAddress: string;
@@ -8340,6 +8389,7 @@ function IdMarketplaceCard({
   setIdSaleBuyerAddress: (value: string) => void;
   setIdSalePriceSats: (value: number) => void;
   setIdSaleReceiveAddress: (value: string) => void;
+  setFeeRate: (value: number) => void;
   submitPurchase: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const parsedSale = useMemo(() => {
@@ -8405,6 +8455,7 @@ function IdMarketplaceCard({
               value={idSaleReceiveAddress}
             />
           </label>
+          <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           <div className="id-record-actions">
             <button className="primary" disabled={!canCreateSaleAuthorization} onClick={publishListing} type="button">
               <span className="button-content">
@@ -8453,6 +8504,7 @@ function IdMarketplaceCard({
           <div className={idPurchaseBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
             {idPurchaseBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
           </div>
+          <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           <details className="id-advanced marketplace-manual-auth">
             <summary>Advanced manual authorization</summary>
             <div className="id-advanced-content">

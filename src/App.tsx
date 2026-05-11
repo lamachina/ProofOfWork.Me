@@ -4408,16 +4408,37 @@ async function loadUtxoPreviousOutput(utxo: MempoolUtxo, network: BitcoinNetwork
   };
 }
 
-async function chooseSellerAnchorUtxo(fromAddress: string, network: BitcoinNetwork) {
+async function chooseSellerAnchorPlan(fromAddress: string, network: BitcoinNetwork, priceSats: number) {
   const walletUtxos = await fetchUtxos(fromAddress, network);
-  const confirmedUtxos = walletUtxos.filter((utxo) => utxo.status?.confirmed && utxo.value >= DUST_SATS);
+  const confirmedUtxos = walletUtxos
+    .filter((utxo) => utxo.status?.confirmed && utxo.value >= DUST_SATS)
+    .sort((left, right) => left.value - right.value || left.txid.localeCompare(right.txid) || left.vout - right.vout);
 
   if (confirmedUtxos.length < 2) {
-    throw new Error("A hardened listing needs two confirmed wallet UTXOs: one reserved as the sale anchor and one to publish the listing.");
+    throw new Error("A hardened listing needs at least two confirmed wallet UTXOs: one reserved as the sale anchor and one to publish the listing.");
   }
 
-  const candidates = [...confirmedUtxos].sort((left, right) => left.value - right.value || left.txid.localeCompare(right.txid) || left.vout - right.vout);
-  return loadUtxoPreviousOutput(candidates[0], network);
+  const anchor = confirmedUtxos[0];
+  const sealTargetSats = Math.floor(priceSats) + anchor.value;
+  const fillerUtxos: MempoolUtxo[] = [];
+  let totalSats = anchor.value;
+
+  for (const utxo of confirmedUtxos.slice(1)) {
+    fillerUtxos.push(utxo);
+    totalSats += utxo.value;
+    if (totalSats >= sealTargetSats + DUST_SATS) {
+      break;
+    }
+  }
+
+  if (totalSats < sealTargetSats) {
+    throw new Error(`Need confirmed wallet UTXOs covering at least ${sealTargetSats.toLocaleString()} sats to create the seller anchor seal.`);
+  }
+
+  return {
+    anchorUtxo: await loadUtxoPreviousOutput(anchor, network),
+    sealFundingUtxos: await Promise.all(fillerUtxos.map((utxo) => loadUtxoPreviousOutput(utxo, network))),
+  };
 }
 
 async function fetchBroadcastStatus(txid: string, ownerNetwork: BitcoinNetwork): Promise<BroadcastStatus> {
@@ -4762,6 +4783,7 @@ async function signSellerAnchorAuthorization({
   priceSats,
   sellerAddress,
   sellerPublicKey,
+  sealFundingUtxos,
   wallet,
 }: {
   anchorUtxo: MempoolUtxo & { previousOutput: bitcoin.Transaction["outs"][number]; previousTxHex: string };
@@ -4769,6 +4791,7 @@ async function signSellerAnchorAuthorization({
   priceSats: number;
   sellerAddress: string;
   sellerPublicKey: string;
+  sealFundingUtxos: Array<MempoolUtxo & { previousOutput: bitcoin.Transaction["outs"][number]; previousTxHex: string }>;
   wallet: UnisatWallet;
 }) {
   if (!wallet.signPsbt) {
@@ -4782,21 +4805,62 @@ async function signSellerAnchorAuthorization({
     sighashType: ID_LISTING_ANCHOR_SIGHASH_TYPE,
     ...utxoInputData(anchorUtxo),
   });
+
+  for (const utxo of sealFundingUtxos) {
+    psbt.addInput({
+      hash: utxo.txid,
+      index: utxo.vout,
+      ...utxoInputData(utxo),
+    });
+  }
+
+  const totalInputSats = anchorUtxo.value + sealFundingUtxos.reduce((total, utxo) => total + utxo.value, 0);
+  const sellerOutputSats = Math.floor(priceSats) + anchorUtxo.value;
+  const changeSats = totalInputSats - sellerOutputSats;
+  if (changeSats < 0) {
+    throw new Error("Seller anchor seal does not have enough temporary wallet input value.");
+  }
+
   psbt.addOutput({
     address: sellerAddress,
-    value: BigInt(Math.floor(priceSats) + anchorUtxo.value),
+    value: BigInt(sellerOutputSats),
   });
 
-  const signedPsbtHex = await wallet.signPsbt(psbt.toHex(), {
-    autoFinalized: false,
-    toSignInputs: [
-      {
-        index: 0,
-        publicKey: sellerPublicKey,
-        sighashTypes: [ID_LISTING_ANCHOR_SIGHASH_TYPE],
-      },
-    ],
-  });
+  if (changeSats >= DUST_SATS) {
+    psbt.addOutput({
+      address: sellerAddress,
+      value: BigInt(changeSats),
+    });
+  }
+
+  let signedPsbtHex = "";
+  try {
+    signedPsbtHex = await wallet.signPsbt(psbt.toHex(), {
+      autoFinalized: false,
+      toSignInputs: [
+        {
+          address: sellerAddress,
+          index: 0,
+          sighashTypes: [ID_LISTING_ANCHOR_SIGHASH_TYPE],
+        },
+      ],
+    });
+  } catch (addressError) {
+    try {
+      signedPsbtHex = await wallet.signPsbt(psbt.toHex(), {
+        autoFinalized: false,
+        toSignInputs: [
+          {
+            index: 0,
+            publicKey: sellerPublicKey,
+            sighashTypes: [ID_LISTING_ANCHOR_SIGHASH_TYPE],
+          },
+        ],
+      });
+    } catch {
+      throw addressError;
+    }
+  }
   const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, { network: bitcoinNetwork(network) });
   const partialSig =
     signedPsbt.data.inputs[0]?.partialSig?.find((candidate) => bytesToHex(candidate.pubkey).toLowerCase() === sellerPublicKey.toLowerCase()) ??
@@ -6706,18 +6770,21 @@ export default function App() {
       await switchWalletNetwork(window.unisat, network);
     }
 
+    setStatus({ tone: "idle", text: "Preparing hardened seller anchor..." });
     const sellerPublicKey = (await window.unisat.getPublicKey?.())?.trim().toLowerCase() ?? "";
     if (!validPublicKeyHex(sellerPublicKey)) {
       throw new Error("Could not read a seller public key from UniSat for the hardened listing anchor.");
     }
 
-    const anchorUtxo = await chooseSellerAnchorUtxo(address, network);
+    const { anchorUtxo, sealFundingUtxos } = await chooseSellerAnchorPlan(address, network, salePriceSats);
+    setStatus({ tone: "idle", text: "Approve the seller anchor seal in UniSat. This is not broadcast." });
     const anchorSignature = await signSellerAnchorAuthorization({
       anchorUtxo,
       network,
       priceSats: salePriceSats,
       sellerAddress: latestRecord.ownerAddress,
       sellerPublicKey,
+      sealFundingUtxos,
       wallet: window.unisat,
     });
 

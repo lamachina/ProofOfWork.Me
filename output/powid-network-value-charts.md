@@ -12,6 +12,7 @@ Long-term projection pack:
 
 - [PowID long-term value charts](powid-long-term-value-charts.md)
 - [PowID modeling data](modeling-data/README.md)
+- [PowID mail app value model](powid-mail-app-value-model.md)
 
 ![Confirmed PowID growth](powid-growth-linear.png)
 

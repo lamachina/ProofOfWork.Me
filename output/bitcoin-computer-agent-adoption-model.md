@@ -22,6 +22,27 @@ lower relay fees unlock exponentially more agent usage
 IDs, Mail, and Drive reinforce each other
 ```
 
+## Visual Read
+
+These visuals are generated from this same canonical model.
+
+They are written for normal human pattern recognition: big labels, plain words, and no scientific notation.
+
+![What is compounding](bitcoin-computer-model-compounding.png)
+
+![Dollar growth in human words](bitcoin-computer-model-dollar-growth.png)
+
+![IDs Mail Drive product split](bitcoin-computer-model-product-split.png)
+
+![Bitcoin volatility translation](bitcoin-computer-model-volatility.png)
+
+SVG versions:
+
+- [What is compounding](bitcoin-computer-model-compounding.svg)
+- [Dollar growth in human words](bitcoin-computer-model-dollar-growth.svg)
+- [IDs Mail Drive product split](bitcoin-computer-model-product-split.svg)
+- [Bitcoin volatility translation](bitcoin-computer-model-volatility.svg)
+
 ## Real Inputs
 
 ### Bitcoin Network Input

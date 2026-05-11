@@ -231,11 +231,212 @@ function growthEngineTable(rows) {
   );
 }
 
+function esc(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+
+function humanUsdShort(value) {
+  const units = [
+    [1e30, "N"],
+    [1e27, "O"],
+    [1e24, "Sp"],
+    [1e21, "Sx"],
+    [1e18, "Qn"],
+    [1e15, "Qd"],
+    [1e12, "T"],
+    [1e9, "B"],
+    [1e6, "M"],
+    [1e3, "K"],
+  ];
+  const unit = units.find(([size]) => value >= size);
+  if (!unit) return fmtUsd(value);
+  const [size, label] = unit;
+  const scaled = value / size;
+  const decimals = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+  return `$${scaled.toFixed(decimals).replace(/\.0+$|(\.\d*[1-9])0+$/, "$1")}${label}`;
+}
+
+function svgText(lines, x, y, options = {}) {
+  const {
+    size = 28,
+    weight = 500,
+    fill = "#0f172a",
+    lineHeight = size * 1.28,
+    anchor = "start",
+    family = "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+  } = options;
+  return lines
+    .map(
+      (line, index) =>
+        `<text x="${x}" y="${y + index * lineHeight}" text-anchor="${anchor}" font-family="${family}" font-size="${size}" font-weight="${weight}" fill="${fill}">${esc(line)}</text>`,
+    )
+    .join("\n");
+}
+
+function svgShell(title, subtitle, body) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<rect width="1600" height="900" fill="#f8fafc"/>
+${svgText([title], 80, 82, { size: 56, weight: 850, fill: "#0f172a" })}
+${svgText([subtitle], 82, 126, { size: 25, weight: 500, fill: "#475569" })}
+${body}
+${svgText(["ProofOfWork.Me Bitcoin Computer Model | generated from output/bitcoin-computer-agent-adoption-model.md"], 80, 848, { size: 20, fill: "#64748b" })}
+</svg>
+`;
+}
+
+function renderCompoundingVisual() {
+  const cards = [
+    {
+      title: "1. Agents appear",
+      value: "51% of nodes",
+      body: ["Bitcoin nodes grow.", "Agent nodes inherit PowIDs.", "Every PowID becomes", "addressable."],
+      color: "#0f766e",
+    },
+    {
+      title: "2. Identity compounds",
+      value: "n squared",
+      body: ["More PowIDs create more", "possible relationships.", "The graph becomes", "the asset."],
+      color: "#2563eb",
+    },
+    {
+      title: "3. Usage compounds",
+      value: "fees fall",
+      body: ["Mail, files, proofs, and state", "become cheap enough for", "machine-scale traffic."],
+      color: "#c2410c",
+    },
+    {
+      title: "4. Bitcoin reprices it",
+      value: "log growth + vol",
+      body: ["BTC value is translated to USD", "with Bitcoin's 10Y log growth", "and volatility cone."],
+      color: "#7c3aed",
+    },
+  ];
+
+  const cardSvg = cards
+    .map((card, index) => {
+      const x = 80 + index * 375;
+      return `<rect x="${x}" y="205" width="330" height="360" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<rect x="${x}" y="205" width="330" height="12" rx="6" fill="${card.color}"/>
+${svgText([card.title], x + 28, 270, { size: 28, weight: 750, fill: "#0f172a" })}
+${svgText([card.value], x + 28, 340, { size: 43, weight: 850, fill: card.color })}
+${svgText(card.body, x + 28, 415, { size: 22, weight: 500, fill: "#334155", lineHeight: 31 })}`;
+    })
+    .join("\n");
+
+  const body = `${cardSvg}
+<rect x="160" y="635" width="1280" height="96" rx="24" fill="#0f172a"/>
+${svgText(["Native value is IDs + Mail + Drive in sats/BTC."], 800, 680, { size: 32, weight: 800, fill: "#ffffff", anchor: "middle" })}
+${svgText(["USD value is a translation layer after Bitcoin's historical growth and volatility are applied."], 800, 720, { size: 24, fill: "#cbd5e1", anchor: "middle" })}`;
+
+  return svgShell("What is compounding?", "The model is simple: more agents, more IDs, more usage, lower fees, Bitcoin reprices the result.", body);
+}
+
+function renderDollarGrowthVisual(rows) {
+  const selected = rows.slice(0, 5);
+  const minLog = Math.log10(selected[0].usdBase);
+  const maxLog = Math.log10(selected.at(-1).usdBase);
+  const baseline = 690;
+  const minHeight = 190;
+  const maxHeight = 510;
+  const body = selected
+    .map((row, index) => {
+      const x = 80 + index * 300;
+      const logShare = (Math.log10(row.usdBase) - minLog) / (maxLog - minLog);
+      const barHeight = minHeight + logShare * (maxHeight - minHeight);
+      const y = baseline - barHeight;
+      return `<rect x="${x}" y="${y}" width="250" height="${barHeight}" rx="20" fill="#7c3aed" opacity="${0.58 + index * 0.08}"/>
+${svgText([row.label], x + 125, y - 26, { size: 24, weight: 750, fill: "#334155", anchor: "middle" })}
+${svgText([humanUsdShort(row.usdBase)], x + 125, y + 64, { size: 44, weight: 900, fill: "#ffffff", anchor: "middle" })}
+${svgText([humanUsd(row.usdBase)], x + 125, y + 108, { size: 20, weight: 650, fill: "#ede9fe", anchor: "middle" })}
+${svgText([`${humanUsdShort(row.usdLow)} - ${humanUsdShort(row.usdHigh)}`], x + 125, y + 148, { size: 20, weight: 650, fill: "#f5f3ff", anchor: "middle" })}`;
+    })
+    .join("\n");
+
+  const footer = `<rect x="170" y="735" width="1260" height="74" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+${svgText(["This is why exponents matter: the same model moves from millions to billions to trillions", "as agents, usage, fees, and Bitcoin compound together."], 800, 766, { size: 22, weight: 700, fill: "#0f172a", anchor: "middle", lineHeight: 28 })}`;
+
+  return svgShell("Dollar growth, in human words", "Canonical deep-fee path. Big labels show base USD. Smaller line shows volatility range.", `${body}${footer}`);
+}
+
+function renderProductSplitVisual(rows) {
+  const selected = [rows[0], rows[2], rows[4]];
+  const productColors = {
+    id: "#2563eb",
+    mail: "#0f766e",
+    drive: "#c2410c",
+  };
+  const bars = selected
+    .map((row, index) => {
+      const x = 220;
+      const y = 260 + index * 150;
+      const width = 1080;
+      const idW = (row.idSats / row.totalSats) * width;
+      const mailW = (row.mailSats / row.totalSats) * width;
+      const driveW = width - idW - mailW;
+      const btcUsd = row.btcUsdBase;
+      const idUsd = (row.idSats / 100_000_000) * btcUsd;
+      const mailUsd = (row.mailSats / 100_000_000) * btcUsd;
+      const driveUsd = (row.driveSats / 100_000_000) * btcUsd;
+      return `${svgText([row.label], 190, y + 50, { size: 28, weight: 850, fill: "#0f172a", anchor: "end" })}
+<rect x="${x}" y="${y}" width="${idW}" height="64" rx="12" fill="${productColors.id}"/>
+<rect x="${x + idW}" y="${y}" width="${mailW}" height="64" fill="${productColors.mail}"/>
+<rect x="${x + idW + mailW}" y="${y}" width="${driveW}" height="64" rx="12" fill="${productColors.drive}"/>
+${svgText([`Total: ${humanUsd(row.usdBase)}`], 1365, y + 42, { size: 24, weight: 800, fill: "#0f172a", anchor: "end" })}
+${svgText([`IDs ${humanUsdShort(idUsd)}  |  Mail ${humanUsdShort(mailUsd)}  |  Drive ${humanUsdShort(driveUsd)}`], x, y + 100, { size: 22, weight: 650, fill: "#334155" })}`;
+    })
+    .join("\n");
+
+  const legend = `<rect x="170" y="182" width="28" height="28" rx="6" fill="${productColors.id}"/>${svgText(["IDs"], 210, 205, { size: 24, weight: 750 })}
+<rect x="300" y="182" width="28" height="28" rx="6" fill="${productColors.mail}"/>${svgText(["Mail"], 340, 205, { size: 24, weight: 750 })}
+<rect x="440" y="182" width="28" height="28" rx="6" fill="${productColors.drive}"/>${svgText(["Drive"], 480, 205, { size: 24, weight: 750 })}`;
+
+  return svgShell("IDs + Mail + Drive = Bitcoin Computer", "The aggregate is not one product. It is three reinforcing products measured together.", `${legend}${bars}`);
+}
+
+function renderVolatilityVisual(rows) {
+  const row = rows[4];
+  const items = [
+    { label: "Low volatility path", value: row.usdLow, color: "#0f766e", text: "Bitcoin still grows, but below the base path." },
+    { label: "Base log-growth path", value: row.usdBase, color: "#2563eb", text: "Backward-facing 10Y Bitcoin log growth." },
+    { label: "High volatility path", value: row.usdHigh, color: "#7c3aed", text: "Same sats value, stronger USD repricing." },
+  ];
+  const cards = items
+    .map((item, index) => {
+      const x = 110 + index * 490;
+      return `<rect x="${x}" y="235" width="430" height="360" rx="26" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<rect x="${x}" y="235" width="430" height="16" rx="8" fill="${item.color}"/>
+${svgText([item.label], x + 215, 312, { size: 28, weight: 800, fill: "#0f172a", anchor: "middle" })}
+${svgText([humanUsdShort(item.value)], x + 215, 404, { size: 56, weight: 900, fill: item.color, anchor: "middle" })}
+${svgText([humanUsd(item.value)], x + 215, 450, { size: 22, weight: 700, fill: "#334155", anchor: "middle" })}
+${svgText([item.text], x + 215, 520, { size: 22, fill: "#475569", anchor: "middle" })}`;
+    })
+    .join("\n");
+
+  const footer = `${svgText(["10-year canonical model: the Bitcoin Computer is 570,056.66 BTC in every path."], 800, 685, { size: 30, weight: 850, fill: "#0f172a", anchor: "middle" })}
+${svgText(["Only the USD translation changes with Bitcoin volatility."], 800, 728, { size: 24, weight: 650, fill: "#475569", anchor: "middle" })}`;
+
+  return svgShell("Volatility does not change the Bitcoin Computer", "It changes what the same BTC-denominated value looks like in dollars.", `${cards}${footer}`);
+}
+
+function writeVisuals(rows) {
+  const visuals = [
+    ["output/bitcoin-computer-model-compounding.svg", renderCompoundingVisual()],
+    ["output/bitcoin-computer-model-dollar-growth.svg", renderDollarGrowthVisual(rows)],
+    ["output/bitcoin-computer-model-product-split.svg", renderProductSplitVisual(rows)],
+    ["output/bitcoin-computer-model-volatility.svg", renderVolatilityVisual(rows)],
+  ];
+
+  for (const [path, svg] of visuals) {
+    writeFileSync(path, svg);
+  }
+}
+
 const canonicalRows = inputs.scenario.horizons.map((horizon) => modelRow(horizon, inputs.scenario.canonicalFee));
 const aggregateRows = inputs.scenario.horizons.flatMap((horizon) =>
   inputs.scenario.feeTiers.map((feeRate) => modelRow(horizon, feeRate)),
 );
 const growthRows = inputs.scenario.horizons.map((horizon) => modelRow(horizon, inputs.scenario.canonicalFee));
+writeVisuals(canonicalRows);
 
 const markdown = `# ProofOfWork.Me Bitcoin Computer Model
 
@@ -260,6 +461,27 @@ BTC/USD includes a one-standard-deviation volatility cone
 lower relay fees unlock exponentially more agent usage
 IDs, Mail, and Drive reinforce each other
 \`\`\`
+
+## Visual Read
+
+These visuals are generated from this same canonical model.
+
+They are written for normal human pattern recognition: big labels, plain words, and no scientific notation.
+
+![What is compounding](bitcoin-computer-model-compounding.png)
+
+![Dollar growth in human words](bitcoin-computer-model-dollar-growth.png)
+
+![IDs Mail Drive product split](bitcoin-computer-model-product-split.png)
+
+![Bitcoin volatility translation](bitcoin-computer-model-volatility.png)
+
+SVG versions:
+
+- [What is compounding](bitcoin-computer-model-compounding.svg)
+- [Dollar growth in human words](bitcoin-computer-model-dollar-growth.svg)
+- [IDs Mail Drive product split](bitcoin-computer-model-product-split.svg)
+- [Bitcoin volatility translation](bitcoin-computer-model-volatility.svg)
 
 ## Real Inputs
 

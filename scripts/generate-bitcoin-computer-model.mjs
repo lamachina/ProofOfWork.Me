@@ -31,6 +31,15 @@ const inputs = {
     fileFlowSats: 2184,
     satsPerFileBase: 1000,
   },
+  blockspace: {
+    maxBlockWeightUnits: 4_000_000,
+    witnessScaleFactor: 4,
+    targetBlocksPerDay: 144,
+    daysPerYear: 365,
+    idVbytesPerWrite: 350,
+    mailVbytesPerWrite: 500,
+    txOverheadVbytes: 300,
+  },
   scenario: {
     agentShare: 0.51,
     nodeCagr: 0.25,
@@ -59,6 +68,11 @@ const inputs = {
 
 const btcLogGrowth = Math.log(inputs.btc.currentUsd / inputs.btc.historicalUsd) / 10;
 const btcEquivalentCagr = Math.exp(btcLogGrowth) - 1;
+const blockspaceVbytesPerBlock = inputs.blockspace.maxBlockWeightUnits / inputs.blockspace.witnessScaleFactor;
+const blockspaceVbytesPerYear =
+  blockspaceVbytesPerBlock * inputs.blockspace.targetBlocksPerDay * inputs.blockspace.daysPerYear;
+const averageFilePayloadBytes = inputs.pow.totalFileBytes / inputs.pow.uniqueFileHashes;
+const driveVbytesPerWrite = Math.ceil(averageFilePayloadBytes + inputs.blockspace.txOverheadVbytes);
 
 function feeMultiplier(feeRate, elasticity) {
   return (0.01 / feeRate) ** elasticity;
@@ -82,20 +96,38 @@ function modelRow(horizon, feeRate) {
   const idMultiplier = feeMultiplier(feeRate, inputs.scenario.elasticities.id);
   const mailMultiplier = feeMultiplier(feeRate, inputs.scenario.elasticities.mail);
   const driveMultiplier = feeMultiplier(feeRate, inputs.scenario.elasticities.drive);
-  const idSats = powids ** 2 * inputs.pow.idDensitySatsPerN2 * idMultiplier;
-  const mailSats =
+  const rawIdSats = powids ** 2 * inputs.pow.idDensitySatsPerN2 * idMultiplier;
+  const rawMailSats =
     directedPairs *
     inputs.pow.mailEdgeDensity *
     inputs.scenario.mailMessagesPerPairPerYear *
     inputs.pow.mailSatsPerDelivery *
     inputs.scenario.mailValueMultiple *
     mailMultiplier;
-  const driveSats =
+  const rawDriveSats =
     powids *
     inputs.scenario.driveFilesPerIdPerYear *
     inputs.pow.satsPerFileBase *
     inputs.scenario.driveValueMultiple *
     driveMultiplier;
+  const idWrites = powids * idMultiplier;
+  const mailWrites =
+    directedPairs *
+    inputs.pow.mailEdgeDensity *
+    inputs.scenario.mailMessagesPerPairPerYear *
+    mailMultiplier;
+  const driveWrites = powids * inputs.scenario.driveFilesPerIdPerYear * driveMultiplier;
+  const idVbytes = idWrites * inputs.blockspace.idVbytesPerWrite;
+  const mailVbytes = mailWrites * inputs.blockspace.mailVbytesPerWrite;
+  const driveVbytes = driveWrites * driveVbytesPerWrite;
+  const rawBlockspaceVbytes = idVbytes + mailVbytes + driveVbytes;
+  const executedBlockspaceVbytes = Math.min(rawBlockspaceVbytes, blockspaceVbytesPerYear);
+  const blockspaceUsageRatio = rawBlockspaceVbytes > 0 ? executedBlockspaceVbytes / rawBlockspaceVbytes : 1;
+  const blockspaceSaturation = executedBlockspaceVbytes / blockspaceVbytesPerYear;
+  const isBlockspaceCapped = rawBlockspaceVbytes > blockspaceVbytesPerYear;
+  const idSats = rawIdSats;
+  const mailSats = rawMailSats * blockspaceUsageRatio;
+  const driveSats = rawDriveSats * blockspaceUsageRatio;
   const totalSats = idSats + mailSats + driveSats;
   const btc = totalSats / 100_000_000;
   const usdPath = futureBtcUsd(horizon.years);
@@ -106,10 +138,29 @@ function modelRow(horizon, feeRate) {
     nodes,
     agentNodes,
     powids,
+    directedPairs,
+    idMultiplier,
+    mailMultiplier,
+    driveMultiplier,
+    rawIdSats,
+    rawMailSats,
+    rawDriveSats,
+    rawTotalSats: rawIdSats + rawMailSats + rawDriveSats,
     idSats,
     mailSats,
     driveSats,
     totalSats,
+    idWrites,
+    mailWrites,
+    driveWrites,
+    idVbytes,
+    mailVbytes,
+    driveVbytes,
+    rawBlockspaceVbytes,
+    executedBlockspaceVbytes,
+    blockspaceUsageRatio,
+    blockspaceSaturation,
+    isBlockspaceCapped,
     btc,
     btcUsdLow: usdPath.low,
     btcUsdBase: usdPath.base,
@@ -147,6 +198,12 @@ function fmtPct(value, decimals = 2) {
   return `${(value * 100).toFixed(decimals)}%`;
 }
 
+function fmtPctReadable(value, decimals = 2) {
+  const percent = value * 100;
+  if (percent > 0 && percent < 10 ** -decimals) return `<${(10 ** -decimals).toFixed(decimals)}%`;
+  return `${percent.toFixed(decimals)}%`;
+}
+
 function fmtFee(value) {
   return value.toLocaleString("en-US", { maximumFractionDigits: 5, minimumFractionDigits: 0 });
 }
@@ -171,6 +228,24 @@ function humanUsd(value) {
   const scaled = value / size;
   const decimals = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
   return `$${scaled.toFixed(decimals).replace(/\.0+$|(\.\d*[1-9])0+$/, "$1")} ${label}`;
+}
+
+function humanVbytes(value) {
+  const units = [
+    [1e21, "sextillion vB"],
+    [1e18, "quintillion vB"],
+    [1e15, "quadrillion vB"],
+    [1e12, "trillion vB"],
+    [1e9, "billion vB"],
+    [1e6, "million vB"],
+    [1e3, "thousand vB"],
+  ];
+  const unit = units.find(([size]) => value >= size);
+  if (!unit) return `${fmtNumber(value, 0)} vB`;
+  const [size, label] = unit;
+  const scaled = value / size;
+  const decimals = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+  return `${scaled.toFixed(decimals).replace(/\.0+$|(\.\d*[1-9])0+$/, "$1")} ${label}`;
 }
 
 function table(headers, rows) {
@@ -227,6 +302,20 @@ function growthEngineTable(rows) {
       fmtUsd(row.btcUsdLow),
       fmtUsd(row.btcUsdBase),
       fmtUsd(row.btcUsdHigh),
+    ]),
+  );
+}
+
+function blockspaceConstraintTable(rows) {
+  return table(
+    ["Horizon", "Raw annual demand", "Executable blockspace", "Ceiling used", "Usage fulfilled", "Capped?"],
+    rows.map((row) => [
+      row.label,
+      humanVbytes(row.rawBlockspaceVbytes),
+      humanVbytes(row.executedBlockspaceVbytes),
+      fmtPct(row.blockspaceSaturation, 2),
+      fmtPctReadable(row.blockspaceUsageRatio, 2),
+      row.isBlockspaceCapped ? "yes" : "no",
     ]),
   );
 }
@@ -299,15 +388,15 @@ function renderCompoundingVisual() {
       color: "#2563eb",
     },
     {
-      title: "3. Usage compounds",
-      value: "fees fall",
-      body: ["Mail, files, proofs, and state", "become cheap enough for", "machine-scale traffic."],
+      title: "3. Usage hits blockspace",
+      value: "52.56B vB/year",
+      body: ["Write demand compounds.", "Bitcoin blockspace is finite.", "Usage becomes scarce", "at the ceiling."],
       color: "#c2410c",
     },
     {
       title: "4. Bitcoin reprices it",
-      value: "log growth + vol",
-      body: ["BTC value is translated to USD", "with Bitcoin's 10Y log growth", "and volatility cone."],
+      value: "log + vol",
+      body: ["Sats/BTC value is translated", "to USD with Bitcoin's 10Y", "log growth and volatility."],
       color: "#7c3aed",
     },
   ];
@@ -328,7 +417,7 @@ ${svgText(card.body, x + 28, 415, { size: 22, weight: 500, fill: "#334155", line
 ${svgText(["Native value is IDs + Mail + Drive in sats/BTC."], 800, 680, { size: 32, weight: 800, fill: "#ffffff", anchor: "middle" })}
 ${svgText(["USD value is a translation layer after Bitcoin's historical growth and volatility are applied."], 800, 720, { size: 24, fill: "#cbd5e1", anchor: "middle" })}`;
 
-  return svgShell("What is compounding?", "The model is simple: more agents, more IDs, more usage, lower fees, Bitcoin reprices the result.", body);
+  return svgShell("What is compounding?", "More agents, more IDs, lower fees, finite blockspace, then Bitcoin reprices the result.", body);
 }
 
 function renderDollarGrowthVisual(rows) {
@@ -393,6 +482,37 @@ ${svgText([`IDs ${humanUsdShort(idUsd)}  |  Mail ${humanUsdShort(mailUsd)}  |  D
   return svgShell("IDs + Mail + Drive = Bitcoin Computer", "The aggregate is not one product. It is three reinforcing products measured together.", `${legend}${bars}`);
 }
 
+function renderBlockspaceVisual(rows) {
+  const selected = [rows[0], rows[1], rows[2], rows[3], rows[4]];
+  const maxLog = Math.log10(Math.max(...selected.map((row) => row.rawBlockspaceVbytes)));
+  const minLog = Math.log10(Math.min(...selected.map((row) => row.rawBlockspaceVbytes)));
+  const cards = selected
+    .map((row, index) => {
+      const x = 80 + index * 300;
+      const logShare = (Math.log10(row.rawBlockspaceVbytes) - minLog) / (maxLog - minLog);
+      const demandHeight = 70 + logShare * 145;
+      const capY = 548;
+      const demandY = capY - demandHeight;
+      const capLabel = row.isBlockspaceCapped ? "FULL" : `${fmtPct(row.blockspaceSaturation, 0)} used`;
+      const capFill = row.isBlockspaceCapped ? "#dc2626" : "#0f766e";
+      return `<rect x="${x}" y="235" width="250" height="450" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+${svgText([row.label], x + 125, 295, { size: 26, weight: 850, fill: "#0f172a", anchor: "middle" })}
+<line x1="${x + 34}" y1="${capY}" x2="${x + 216}" y2="${capY}" stroke="#0f172a" stroke-width="4" stroke-dasharray="10 8"/>
+<rect x="${x + 82}" y="${demandY}" width="86" height="${demandHeight}" rx="16" fill="#c2410c" opacity="0.82"/>
+${svgText([capLabel], x + 125, 598, { size: 27, weight: 900, fill: capFill, anchor: "middle" })}
+${svgText(["raw demand", humanVbytes(row.rawBlockspaceVbytes)], x + 125, 642, { size: 18, weight: 700, fill: "#334155", anchor: "middle", lineHeight: 24 })}`;
+    })
+    .join("\n");
+
+  const header = `<rect x="190" y="156" width="1220" height="54" rx="18" fill="#0f172a"/>
+${svgText([`Current theoretical ceiling: ${humanVbytes(blockspaceVbytesPerYear)} per year`], 800, 191, { size: 27, weight: 850, fill: "#ffffff", anchor: "middle" })}`;
+
+  const footer = `<rect x="170" y="735" width="1260" height="74" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+${svgText(["Once raw write demand crosses the ceiling, Mail and Drive are throttled by executable blockspace.", "Scarce blockspace becomes part of the model instead of infinite throughput."], 800, 766, { size: 22, weight: 700, fill: "#0f172a", anchor: "middle", lineHeight: 28 })}`;
+
+  return svgShell("Blockspace is the ceiling", "Usage demand compounds until it hits today's theoretical Bitcoin blockspace limit.", `${header}${cards}${footer}`);
+}
+
 function renderVolatilityVisual(rows) {
   const row = rows[4];
   const items = [
@@ -423,6 +543,7 @@ function writeVisuals(rows) {
     ["output/bitcoin-computer-model-compounding.svg", renderCompoundingVisual()],
     ["output/bitcoin-computer-model-dollar-growth.svg", renderDollarGrowthVisual(rows)],
     ["output/bitcoin-computer-model-product-split.svg", renderProductSplitVisual(rows)],
+    ["output/bitcoin-computer-model-blockspace.svg", renderBlockspaceVisual(rows)],
     ["output/bitcoin-computer-model-volatility.svg", renderVolatilityVisual(rows)],
   ];
 
@@ -459,6 +580,7 @@ Bitcoin node count grows exponentially
 BTC/USD follows Bitcoin's backward-facing log-growth benchmark
 BTC/USD includes a one-standard-deviation volatility cone
 lower relay fees unlock exponentially more agent usage
+Bitcoin Computer write demand grows exponentially until today's blockspace ceiling
 IDs, Mail, and Drive reinforce each other
 \`\`\`
 
@@ -474,6 +596,8 @@ They are written for normal human pattern recognition: big labels, plain words, 
 
 ![IDs Mail Drive product split](bitcoin-computer-model-product-split.png)
 
+![Blockspace ceiling](bitcoin-computer-model-blockspace.png)
+
 ![Bitcoin volatility translation](bitcoin-computer-model-volatility.png)
 
 SVG versions:
@@ -481,6 +605,7 @@ SVG versions:
 - [What is compounding](bitcoin-computer-model-compounding.svg)
 - [Dollar growth in human words](bitcoin-computer-model-dollar-growth.svg)
 - [IDs Mail Drive product split](bitcoin-computer-model-product-split.svg)
+- [Blockspace ceiling](bitcoin-computer-model-blockspace.svg)
 - [Bitcoin volatility translation](bitcoin-computer-model-volatility.svg)
 
 ## Real Inputs
@@ -576,6 +701,47 @@ high_btc_usd(t) = current_btc_usd * e^(mu * t + sigma * sqrt(t))
 
 The volatility band changes only the USD translation. It does not change the sats or BTC valuation of the Bitcoin Computer.
 
+## Bitcoin Blockspace Ceiling
+
+This version adds the blockspace constraint.
+
+The success case assumes Bitcoin Computer usage compounds exponentially as agents, PowIDs, fee collapse, Mail, and Drive reinforce each other. That usage cannot grow through infinite blockspace. It compounds until it hits the current theoretical Bitcoin blockspace ceiling.
+
+Protocol-derived ceiling:
+
+\`\`\`text
+Max block weight: ${fmtNumber(inputs.blockspace.maxBlockWeightUnits)} weight units
+Witness scale factor: ${inputs.blockspace.witnessScaleFactor}
+Theoretical max virtual size per block: ${fmtNumber(blockspaceVbytesPerBlock)} vB
+Target blocks per day: ${inputs.blockspace.targetBlocksPerDay}
+Annual theoretical ceiling: ${fmtNumber(blockspaceVbytesPerYear)} vB
+\`\`\`
+
+Sources:
+
+\`\`\`text
+https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki
+https://github.com/bitcoin/bitcoin/blob/master/src/consensus/consensus.h
+\`\`\`
+
+Blockspace accounting assumptions:
+
+\`\`\`text
+ID write size: ${fmtNumber(inputs.blockspace.idVbytesPerWrite)} vB
+Mail write size: ${fmtNumber(inputs.blockspace.mailVbytesPerWrite)} vB
+Average current file payload: ${fmtNumber(averageFilePayloadBytes, 0)} bytes
+Drive write size: ${fmtNumber(driveVbytesPerWrite)} vB
+\`\`\`
+
+Important boundary:
+
+\`\`\`text
+The blockspace ceiling is protocol-derived.
+The per-product write sizes are model accounting assumptions.
+The model does not claim every block will be filled by ProofOfWork.Me.
+It asks what the Bitcoin Computer can execute if demand compounds until today's ceiling is binding.
+\`\`\`
+
 ## Scenario Inputs
 
 \`\`\`text
@@ -620,6 +786,25 @@ Drive elasticity = ${inputs.scenario.elasticities.drive}
 
 ${growthEngineTable(growthRows)}
 
+## Blockspace Constraint
+
+This is the canonical lowest-fee success path at ${fmtFee(inputs.scenario.canonicalFee)} sat/vB.
+
+\`\`\`text
+raw_blockspace_demand_vbytes =
+  id_writes * id_write_vbytes
+  + mail_writes * mail_write_vbytes
+  + drive_writes * drive_write_vbytes
+
+executable_blockspace_vbytes =
+  min(raw_blockspace_demand_vbytes, annual_theoretical_blockspace_ceiling)
+
+blockspace_usage_fulfillment_ratio =
+  executable_blockspace_vbytes / raw_blockspace_demand_vbytes
+\`\`\`
+
+${blockspaceConstraintTable(canonicalRows)}
+
 ## Product Formulas
 
 ### IDs
@@ -630,6 +815,8 @@ id_value_sats =
   * current_id_sats_per_n2_unit
   * id_fee_multiplier
 \`\`\`
+
+ID is modeled as network stock value. It is not reduced by the annual blockspace fulfillment ratio once the ID graph exists.
 
 ### Mail
 
@@ -642,6 +829,7 @@ mail_value_sats =
   * sats_per_delivery
   * value_multiple
   * mail_fee_multiplier
+  * blockspace_usage_fulfillment_ratio
 \`\`\`
 
 ### Files / Bitcoin Drive
@@ -653,6 +841,7 @@ drive_value_sats =
   * sats_per_file
   * value_multiple
   * drive_fee_multiplier
+  * blockspace_usage_fulfillment_ratio
 \`\`\`
 
 ### Bitcoin Computer
@@ -675,6 +864,8 @@ ${productTable(canonicalRows)}
 ## Aggregate Fee Sensitivity
 
 This is still one model. Fee tier is a variable inside the model, not a separate model.
+
+Every fee tier also runs through the same annual blockspace ceiling.
 
 ${aggregateFeeTable(aggregateRows)}
 
@@ -723,7 +914,7 @@ The Bitcoin node count is network-observed.
 
 The Bitcoin price benchmark is backward-facing historical log growth with volatility.
 
-The node growth, agent share, agent adoption curve, fee tiers, and fee elasticities are success-case scenario assumptions.
+The node growth, agent share, agent adoption curve, fee tiers, fee elasticities, and per-product blockspace usage assumptions are success-case scenario assumptions.
 `;
 
 writeFileSync(OUTPUT, `${markdown.trim()}\n`);

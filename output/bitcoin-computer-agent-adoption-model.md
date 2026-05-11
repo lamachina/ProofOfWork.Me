@@ -10,7 +10,15 @@ It values the three working products:
 2. ProofOfWork Mail
 3. ProofOfWork Files / Bitcoin Drive
 
-The model assumes agent adoption succeeds, lower relay fees unlock exponentially more activity, and the three products reinforce each other.
+The model assumes:
+
+```text
+agent adoption succeeds
+Bitcoin node count grows exponentially
+BTC/USD grows exponentially
+lower relay fees unlock exponentially more agent usage
+ProofOfWork IDs, Mail, and Drive reinforce each other
+```
 
 ## Real Inputs
 
@@ -20,7 +28,7 @@ Bitnodes network snapshot:
 
 ```text
 Reachable Bitcoin nodes: 23,984
-Snapshot time: 2026-04-30 01:22:25 UTC
+Snapshot time: 2026-04-30 08:58:26 UTC
 Source: Bitnodes
 ```
 
@@ -86,34 +94,41 @@ Agent node assumption:
 Every participating agent node can have one PowID.
 ```
 
-Computed from the Bitnodes snapshot:
+Exponential growth assumptions:
 
 ```text
-Bitcoin nodes = 23,984
-Agent share = 51%
-Agent nodes = 12,232
+Bitcoin node CAGR: 25%
+BTC/USD CAGR: 30%
 ```
 
-Successful adoption curve:
-
-| Horizon | Agent PowID adoption | Projected PowIDs |
-|---|---:|---:|
-| 6 months | 10% | 1,223 |
-| 12 months | 20% | 2,446 |
-| 24 months | 40% | 4,893 |
-| 5 years | 60% | 7,339 |
-| 10 years | 80% | 9,786 |
-| 25 years | 90% | 11,009 |
-| 50 years | 100% | 12,232 |
-
-Fee tiers:
+Important boundary:
 
 ```text
-0.01 sat/vB
-0.001 sat/vB
-0.0001 sat/vB
-0.00001 sat/vB
+Current ProofOfWork.Me inputs are on-chain and verifiable.
+The current Bitcoin node count is network-observed from Bitnodes.
+Future node growth is a success-case scenario assumption.
+Future BTC/USD growth is a success-case scenario assumption.
+The agent adoption curve and fee elasticities are success-case scenario assumptions.
 ```
+
+## Horizon Growth Curve
+
+```text
+future_bitcoin_nodes = current_bitcoin_nodes * (1 + node_cagr) ^ years
+future_btc_usd = current_btc_usd * (1 + btc_price_cagr) ^ years
+future_agent_nodes = future_bitcoin_nodes * 0.51
+future_powids = future_agent_nodes * agent_powid_adoption
+```
+
+| Horizon | Years | Future Bitcoin nodes | Future agent nodes | Agent PowID adoption | Projected PowIDs | Future BTC/USD |
+|---|---:|---:|---:|---:|---:|---:|
+| 6 months | 0.5 | 26,815 | 13,676 | 10% | 1,368 | $92,217 |
+| 12 months | 1 | 29,980 | 15,290 | 20% | 3,058 | $105,143 |
+| 24 months | 2 | 37,475 | 19,112 | 40% | 7,645 | $136,686 |
+| 5 years | 5 | 73,193 | 37,329 | 60% | 22,397 | $300,299 |
+| 10 years | 10 | 223,368 | 113,918 | 80% | 91,134 | $1,114,990 |
+| 25 years | 25 | 6,348,512 | 3,237,741 | 90% | 2,913,967 | $57,071,771 |
+| 50 years | 50 | 1,680,437,118 | 857,022,930 | 100% | 857,022,930 | $40,272,181,942 |
 
 ## Fee Collapse Multiplier
 
@@ -150,14 +165,6 @@ Fee multipliers:
 | 0.001 sat/vB | 1.7783x | 3.1623x | 5.6234x |
 | 0.0001 sat/vB | 3.1623x | 10.0000x | 31.6228x |
 | 0.00001 sat/vB | 5.6234x | 31.6228x | 177.8279x |
-
-Important boundary:
-
-```text
-The ProofOfWork.Me inputs are on-chain and verifiable.
-The Bitnodes count is network-observed.
-The agent adoption curve and fee elasticities are success-case scenario assumptions.
-```
 
 ## Product Formulas
 
@@ -225,110 +232,89 @@ bitcoin_computer_value_sats =
   + drive_value_sats
 ```
 
+The BTC column is a sats-denominated valuation converted into BTC as a unit of account. It is not a claim that those sats are locked in the protocol.
+
+## Horizon Summary
+
+This table shows the baseline fee case and the deep fee-collapse case.
+
+| Horizon | Future nodes | Future BTC/USD | 0.01 sat/vB value | 0.00001 sat/vB value |
+|---|---:|---:|---:|---:|
+| 6 months | 26,815 | $92,217 | 8.5695 BTC / $790,252 | 200.2615 BTC / $18,467,437 |
+| 12 months | 29,980 | $105,143 | 41.6942 BTC / $4,383,860 | 799.3523 BTC / $84,046,403 |
+| 24 months | 37,475 | $136,686 | 257.1678 BTC / $35,151,252 | 4,384.7864 BTC / $599,339,217 |
+| 5 years | 73,193 | $300,299 | 2,194.3049 BTC / $658,948,196 | 35,330.0600 BTC / $10,609,591,965 |
+| 10 years | 223,368 | $1,114,990 | 36,247.6257 BTC / $40,415,749,067 | 570,052.8056 BTC / $635,603,317,714 |
+| 25 years | 6,348,512 | $57,071,771 | 37,031,583.8235 BTC / $2,113,458,087,321,886 | 577,994,903.7020 BTC / $32,987,193,026,452,744 |
+| 50 years | 1,680,437,118 | $40,272,181,942 | 3,203,153,504,398.8390 BTC / $128,997,980,717,216,770,000,000 | 49,983,115,798,236.4300 BTC / $2,012,929,133,453,256,200,000,000 |
+
 ## Success-Case Valuation Matrix
 
-This table assumes the successful adoption curve above and applies the exponential fee multiplier.
-
-| Horizon | Adoption | Fee tier | PowIDs | ID value sats | Mail value sats | Drive value sats | Total sats | BTC | USD |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 6 months | 10% | 0.01 | 1,223 | 401,886,436 | 250,206,362 | 36,690,000 | 688,782,799 | 6.8878 | $557,083 |
-| 6 months | 10% | 0.001 | 1,223 | 714,666,375 | 791,221,990 | 206,323,032 | 1,712,211,398 | 17.1221 | $1,384,825 |
-| 6 months | 10% | 0.0001 | 1,223 | 1,270,876,500 | 2,502,063,625 | 1,160,239,674 | 4,933,179,798 | 49.3318 | $3,989,923 |
-| 6 months | 10% | 0.00001 | 1,223 | 2,259,973,512 | 7,912,219,904 | 6,524,507,155 | 16,696,700,572 | 166.9670 | $13,504,180 |
-| 12 months | 20% | 0.01 | 2,446 | 1,607,545,746 | 1,001,234,953 | 73,380,000 | 2,682,160,699 | 26.8216 | $2,169,314 |
-| 12 months | 20% | 0.001 | 2,446 | 2,858,665,500 | 3,166,182,924 | 412,646,064 | 6,437,494,489 | 64.3749 | $5,206,602 |
-| 12 months | 20% | 0.0001 | 2,446 | 5,083,505,999 | 10,012,349,529 | 2,320,479,347 | 17,416,334,875 | 174.1633 | $14,086,215 |
-| 12 months | 20% | 0.00001 | 2,446 | 9,039,894,050 | 31,661,829,240 | 13,049,014,311 | 53,750,737,601 | 537.5074 | $43,473,236 |
-| 24 months | 40% | 0.01 | 4,893 | 6,432,812,108 | 4,007,396,830 | 146,790,000 | 10,586,998,938 | 105.8700 | $8,562,694 |
-| 24 months | 40% | 0.001 | 4,893 | 11,439,337,321 | 12,672,501,470 | 825,460,831 | 24,937,299,622 | 249.3730 | $20,169,121 |
-| 24 months | 40% | 0.0001 | 4,893 | 20,342,338,022 | 40,073,968,297 | 4,641,907,377 | 65,058,213,696 | 650.5821 | $52,618,647 |
-| 24 months | 40% | 0.00001 | 4,893 | 36,174,360,856 | 126,725,014,701 | 26,103,363,460 | 189,002,739,017 | 1,890.0274 | $152,864,149 |
-| 5 years | 60% | 0.01 | 7,339 | 14,471,855,265 | 9,016,028,612 | 220,170,000 | 23,708,053,877 | 237.0805 | $19,174,915 |
-| 5 years | 60% | 0.001 | 7,339 | 25,735,002,243 | 28,511,185,864 | 1,238,106,896 | 55,484,295,003 | 554.8430 | $44,875,326 |
-| 5 years | 60% | 0.0001 | 7,339 | 45,764,024,606 | 90,160,286,123 | 6,962,386,724 | 142,886,697,454 | 1,428.8670 | $115,565,804 |
-| 5 years | 60% | 0.00001 | 7,339 | 81,381,222,677 | 285,111,858,642 | 39,152,377,771 | 405,645,459,090 | 4,056.4546 | $328,083,329 |
-| 10 years | 80% | 0.01 | 9,786 | 25,731,248,433 | 16,031,225,666 | 293,580,000 | 42,056,054,098 | 420.5605 | $34,014,655 |
-| 10 years | 80% | 0.001 | 9,786 | 45,757,349,282 | 50,695,186,789 | 1,650,921,662 | 98,103,457,733 | 981.0346 | $79,345,419 |
-| 10 years | 80% | 0.0001 | 9,786 | 81,369,352,086 | 160,312,256,660 | 9,283,814,755 | 250,965,423,501 | 2,509.6542 | $202,979,153 |
-| 10 years | 80% | 0.00001 | 9,786 | 144,697,443,423 | 506,951,867,886 | 52,206,726,920 | 703,856,038,229 | 7,038.5604 | $569,274,048 |
-| 25 years | 90% | 0.01 | 11,009 | 32,564,632,280 | 20,288,828,858 | 330,270,000 | 53,183,731,138 | 531.8373 | $43,014,645 |
-| 25 years | 90% | 0.001 | 11,009 | 57,909,015,079 | 64,158,910,249 | 1,857,244,695 | 123,925,170,023 | 1,239.2517 | $100,229,847 |
-| 25 years | 90% | 0.0001 | 11,009 | 102,978,409,171 | 202,888,288,582 | 10,444,054,428 | 316,310,752,181 | 3,163.1075 | $255,830,017 |
-| 25 years | 90% | 0.00001 | 11,009 | 183,124,384,707 | 641,589,102,491 | 58,731,234,075 | 883,444,721,274 | 8,834.4472 | $714,524,171 |
-| 50 years | 100% | 0.01 | 12,232 | 40,201,789,001 | 25,047,254,278 | 366,960,000 | 65,616,003,279 | 656.1600 | $53,069,784 |
-| 50 years | 100% | 0.001 | 12,232 | 71,490,013,627 | 79,206,372,653 | 2,063,567,727 | 152,759,954,006 | 1,527.5995 | $123,551,227 |
-| 50 years | 100% | 0.0001 | 12,232 | 127,129,219,255 | 250,472,542,783 | 11,604,294,102 | 389,206,056,140 | 3,892.0606 | $314,787,251 |
-| 50 years | 100% | 0.00001 | 12,232 | 226,071,273,016 | 792,063,726,528 | 65,255,741,231 | 1,083,390,740,775 | 10,833.9074 | $876,239,172 |
-
-## Lowest-Fee Adoption Sensitivity
-
-At `0.00001 sat/vB`, agent usage is highly unlocked:
-
-| Agent PowID adoption | Projected PowIDs | Total sats | BTC | USD |
-|---:|---:|---:|---:|---:|
-| 10% | 1,223 | 16,696,700,572 | 166.9670 | $13,504,180 |
-| 20% | 2,446 | 53,750,737,601 | 537.5074 | $43,473,236 |
-| 30% | 3,670 | 111,217,383,665 | 1,112.1738 | $89,951,875 |
-| 40% | 4,893 | 189,002,739,017 | 1,890.0274 | $152,864,149 |
-| 50% | 6,116 | 287,145,430,825 | 2,871.4543 | $232,241,301 |
-| 60% | 7,339 | 405,645,459,090 | 4,056.4546 | $328,083,329 |
-| 70% | 8,562 | 544,502,823,812 | 5,445.0282 | $440,390,236 |
-| 80% | 9,786 | 703,856,038,229 | 7,038.5604 | $569,274,048 |
-| 90% | 11,009 | 883,444,721,274 | 8,834.4472 | $714,524,171 |
-| 100% | 12,232 | 1,083,390,740,775 | 10,833.9074 | $876,239,172 |
-
-## Current Success-Case Read
-
-Using the current Bitnodes snapshot and current ProofOfWork.Me on-chain density:
+This table assumes:
 
 ```text
-If 51% of reachable Bitcoin nodes are agents:
-12,232 agent nodes.
-
-If 100% of those agent nodes have PowIDs:
-12,232 PowIDs.
+25% annual Bitcoin node growth
+30% annual BTC/USD growth
+51% agent-controlled Bitcoin nodes
+successful agent PowID adoption curve
+exponential product usage as fees drop
 ```
 
-At baseline low fee, `0.01 sat/vB`:
+| Horizon | Adoption | Fee tier | Future nodes | Future BTC/USD | PowIDs | ID value sats | Mail value sats | Drive value sats | Total sats | BTC | USD |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 6 months | 10% | 0.01 | 26,815 | $92,217 | 1,368 | 502,831,678 | 313,079,981 | 41,040,000 | 856,951,658 | 8.5695 | $790,252 |
+| 6 months | 10% | 0.001 | 26,815 | $92,217 | 1,368 | 894,175,219 | 990,045,828 | 230,784,880 | 2,115,005,927 | 21.1501 | $1,950,387 |
+| 6 months | 10% | 0.0001 | 26,815 | $92,217 | 1,368 | 1,590,093,381 | 3,130,799,805 | 1,297,798,752 | 6,018,691,938 | 60.1869 | $5,550,235 |
+| 6 months | 10% | 0.00001 | 26,815 | $92,217 | 1,368 | 2,827,630,320 | 9,900,458,282 | 7,298,058,699 | 20,026,147,300 | 200.2615 | $18,467,437 |
+| 12 months | 20% | 0.01 | 29,980 | $105,143 | 3,058 | 2,512,611,813 | 1,565,069,421 | 91,740,000 | 4,169,421,233 | 41.6942 | $4,383,860 |
+| 12 months | 20% | 0.001 | 29,980 | $105,143 | 3,058 | 4,468,125,852 | 4,949,184,065 | 515,891,932 | 9,933,201,848 | 99.3320 | $10,444,079 |
+| 12 months | 20% | 0.0001 | 29,980 | $105,143 | 3,058 | 7,945,576,203 | 15,650,694,205 | 2,901,073,525 | 26,497,343,934 | 264.9734 | $27,860,137 |
+| 12 months | 20% | 0.00001 | 29,980 | $105,143 | 3,058 | 14,129,454,564 | 49,491,840,651 | 16,313,935,308 | 79,935,230,522 | 799.3523 | $84,046,403 |
+| 24 months | 40% | 0.01 | 37,475 | $136,686 | 7,645 | 15,703,823,828 | 9,783,603,738 | 229,350,000 | 25,716,777,566 | 257.1678 | $35,151,252 |
+| 24 months | 40% | 0.001 | 37,475 | $136,686 | 7,645 | 27,925,786,573 | 30,938,471,535 | 1,289,729,829 | 60,153,987,938 | 601.5399 | $82,222,121 |
+| 24 months | 40% | 0.0001 | 37,475 | $136,686 | 7,645 | 49,659,851,272 | 97,836,037,376 | 7,252,683,814 | 154,748,572,461 | 1,547.4857 | $211,519,739 |
+| 24 months | 40% | 0.00001 | 37,475 | $136,686 | 7,645 | 88,309,091,022 | 309,384,715,354 | 40,784,838,269 | 438,478,644,645 | 4,384.7864 | $599,339,217 |
+| 5 years | 60% | 0.01 | 73,193 | $300,299 | 22,397 | 134,781,453,342 | 83,977,123,591 | 671,910,000 | 219,430,486,932 | 2,194.3049 | $658,948,196 |
+| 5 years | 60% | 0.001 | 73,193 | $300,299 | 22,397 | 239,679,083,332 | 265,558,981,897 | 3,778,427,598 | 509,016,492,827 | 5,090.1649 | $1,528,572,918 |
+| 5 years | 60% | 0.0001 | 73,193 | $300,299 | 22,397 | 426,216,378,907 | 839,771,235,910 | 21,247,659,826 | 1,287,235,274,643 | 12,872.3527 | $3,865,558,400 |
+| 5 years | 60% | 0.00001 | 73,193 | $300,299 | 22,397 | 757,931,810,832 | 2,655,589,818,969 | 119,484,371,840 | 3,533,006,001,640 | 35,330.0600 | $10,609,591,965 |
+| 10 years | 80% | 0.01 | 223,368 | $1,114,990 | 91,134 | 2,231,574,037,005 | 1,390,454,511,820 | 2,734,020,000 | 3,624,762,568,825 | 36,247.6257 | $40,415,749,067 |
+| 10 years | 80% | 0.001 | 223,368 | $1,114,990 | 91,134 | 3,968,362,161,983 | 4,397,003,240,209 | 15,374,524,299 | 8,380,739,926,491 | 83,807.3993 | $93,444,432,686 |
+| 10 years | 80% | 0.0001 | 223,368 | $1,114,990 | 91,134 | 7,056,856,724,231 | 13,904,545,118,202 | 86,457,303,685 | 21,047,859,146,118 | 210,478.5915 | $234,681,576,378 |
+| 10 years | 80% | 0.00001 | 223,368 | $1,114,990 | 91,134 | 12,549,063,012,295 | 43,970,032,402,094 | 486,185,147,263 | 57,005,280,561,652 | 570,052.8056 | $635,603,317,714 |
+| 25 years | 90% | 0.01 | 6,348,512 | $57,071,771 | 2,913,967 | 2,281,495,903,884,156 | 1,421,575,059,452,236 | 87,419,010,000 | 3,703,158,382,346,392 | 37,031,583.8235 | $2,113,458,087,321,886 |
+| 25 years | 90% | 0.001 | 6,348,512 | $57,071,771 | 2,913,967 | 4,057,137,189,965,336 | 4,495,415,052,758,343 | 491,593,219,302 | 8,553,043,835,942,980 | 85,530,438.3594 | $4,881,373,627,567,796 |
+| 25 years | 90% | 0.0001 | 6,348,512 | $57,071,771 | 2,913,967 | 7,214,723,528,618,530 | 14,215,750,594,522,362 | 2,764,431,823,970 | 21,433,238,554,964,864 | 214,332,385.5496 | $12,232,328,916,158,294 |
+| 25 years | 90% | 0.00001 | 6,348,512 | $57,071,771 | 2,913,967 | 12,829,794,300,065,696 | 44,954,150,527,583,420 | 15,545,542,552,899 | 57,799,490,370,202,020 | 577,994,903.7020 | $32,987,193,026,452,744 |
+| 50 years | 100% | 0.01 | 1,680,437,118 | $40,272,181,942 | 857,022,930 | 197,349,176,563,801,200,000 | 122,966,148,165,394,860,000 | 25,710,687,900,000 | 320,315,350,439,883,900,000 | 3,203,153,504,398.8390 | $128,997,980,717,216,770,000,000 |
+| 50 years | 100% | 0.001 | 1,680,437,118 | $40,272,181,942 | 857,022,930 | 350,941,977,271,543,600,000 | 388,853,103,300,383,150,000 | 144,581,823,052,415 | 739,795,225,153,749,800,000 | 7,397,952,251,537.4980 | $297,931,679,071,943,040,000,000 |
+| 50 years | 100% | 0.0001 | 1,680,437,118 | $40,272,181,942 | 857,022,930 | 624,072,892,300,333,500,000 | 1,229,661,481,653,948,600,000 | 813,043,339,737,315 | 1,853,735,186,997,622,000,000 | 18,537,351,869,976.2230 | $746,539,607,230,046,100,000,000 |
+| 50 years | 100% | 0.00001 | 1,680,437,118 | $40,272,181,942 | 857,022,930 | 1,109,775,974,741,121,600,000 | 3,888,531,033,003,831,000,000 | 4,572,078,691,050,686 | 4,998,311,579,823,643,000,000 | 49,983,115,798,236.4300 | $2,012,929,133,453,256,200,000,000 |
+
+## Current Correction
+
+The previous model still held Bitcoin nodes and BTC/USD flat.
+
+That was wrong for a success-case network-effect model.
+
+This version compounds both:
 
 ```text
-65,616,003,279 sats
-656.1600 BTC
-~$53.07M
+Bitcoin nodes compound at 25% per year.
+BTC/USD compounds at 30% per year.
 ```
 
-At deep fee collapse, `0.00001 sat/vB`:
+Then it applies:
 
 ```text
-1,083,390,740,775 sats
-10,833.9074 BTC
-~$876.24M
-```
-
-Product split at 100% agent-node PowID adoption and `0.00001 sat/vB`:
-
-```text
-ID network: 226,071,273,016 sats
-Mail:       792,063,726,528 sats
-Drive:       65,255,741,231 sats
-```
-
-## Interpretation
-
-The earlier conservative model was wrong because it treated fee drops as passive.
-
-This corrected model assumes the successful network effect:
-
-```text
-More agent PowIDs create more addressable agents.
-More addressable agents create more mail edges.
-More mail edges create more files, proofs, manifests, and app records.
-More agent-readable records create more reason to own and use PowIDs.
-Lower fees increase the frequency of every agent action.
+51% agent-controlled Bitcoin nodes
+successful PowID adoption by horizon
+exponential fee-collapse usage multipliers
+ID + Mail + Drive product valuation
 ```
 
 The source of truth for ProofOfWork.Me is the chain.
 
 The Bitcoin node count is network-observed.
 
-The fee elasticities and adoption curve are the success-case scenario.
+The node growth, BTC/USD growth, fee elasticities, and adoption curve are the success-case scenario.

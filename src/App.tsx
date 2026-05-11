@@ -6371,12 +6371,6 @@ export default function App() {
         feeRate,
         fromAddress: address,
         network,
-        postProtocolPayments: [
-          {
-            amountSats: ID_LISTING_ANCHOR_VALUE_SATS,
-            script: marketplaceAnchorOutputScript(network),
-          },
-        ],
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
@@ -6488,6 +6482,12 @@ export default function App() {
         feeRate,
         fromAddress: address,
         network,
+        postProtocolPayments: [
+          {
+            amountSats: ID_LISTING_ANCHOR_VALUE_SATS,
+            script: marketplaceAnchorOutputScript(network),
+          },
+        ],
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
         toAddress: registryAddress,

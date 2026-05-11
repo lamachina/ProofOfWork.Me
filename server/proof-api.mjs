@@ -1166,6 +1166,30 @@ function listingAnchorIsPresent(vout, authorization) {
   );
 }
 
+async function listingAnchorSpent(listing, network) {
+  if (listing?.listingVersion !== "list3" || !saleAuthorizationHasAnchor(listing.saleAuthorization)) {
+    return false;
+  }
+
+  for (const base of pendingMempoolBases(network)) {
+    try {
+      const outspend = await fetchJson(`${base}/api/tx/${listing.listingId}/outspend/${listing.saleAuthorization.anchorVout}`);
+      if (outspend?.spent) {
+        return true;
+      }
+    } catch {
+      // Keep the listing visible if a transient outspend lookup fails.
+    }
+  }
+
+  return false;
+}
+
+async function filterSpendableListings(listings, network) {
+  const spentStates = await Promise.all(listings.map((listing) => listingAnchorSpent(listing, network)));
+  return listings.filter((_listing, index) => !spentStates[index]);
+}
+
 function saleAuthorizationExpired(authorization, eventCreatedAt) {
   if (!authorization.expiresAt) {
     return false;
@@ -1947,7 +1971,9 @@ async function registryPayload(network) {
   }
 
   const txs = await fetchRegistryTransactions(registryAddress, network);
-  const { listings, pendingEvents, records } = idRegistryStateFromTransactions(txs, registryAddress, network);
+  const state = idRegistryStateFromTransactions(txs, registryAddress, network);
+  const listings = await filterSpendableListings(state.listings, network);
+  const { pendingEvents, records } = state;
   const confirmed = records.filter((record) => record.confirmed).length;
   const pendingRecords = records.length - confirmed;
 

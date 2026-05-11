@@ -2182,6 +2182,29 @@ function listingAnchorIsPresent(vout: Array<Record<string, unknown>>, authorizat
   );
 }
 
+async function listingAnchorSpent(listing: PowIdListing, network: BitcoinNetwork) {
+  if (listing.listingVersion !== "list3" || !saleAuthorizationHasAnchor(listing.saleAuthorization)) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${mempoolBase(network)}/api/tx/${listing.listingId}/outspend/${listing.saleAuthorization.anchorVout}`);
+    if (!response.ok) {
+      return false;
+    }
+
+    const outspend = (await response.json()) as Record<string, unknown>;
+    return outspend.spent === true;
+  } catch {
+    return false;
+  }
+}
+
+async function filterSpendableListings(listings: PowIdListing[], network: BitcoinNetwork) {
+  const spentStates = await Promise.all(listings.map((listing) => listingAnchorSpent(listing, network)));
+  return listings.filter((_listing, index) => !spentStates[index]);
+}
+
 function saleAuthorizationExpired(authorization: PowIdSaleAuthorization, eventCreatedAt: string) {
   if (!authorization.expiresAt) {
     return false;
@@ -4189,15 +4212,20 @@ async function fetchIdRegistryState(targetNetwork: BitcoinNetwork): Promise<{ li
 
   if (POW_API_BASE) {
     const payload = await fetchProofApiJson<PowRegistryApiResponse>("/api/v1/registry", targetNetwork);
+    const listings = Array.isArray(payload.listings) ? payload.listings : [];
     return {
-      listings: Array.isArray(payload.listings) ? payload.listings : [],
+      listings: await filterSpendableListings(listings, targetNetwork),
       pendingEvents: Array.isArray(payload.pendingEvents) ? payload.pendingEvents : [],
       records: Array.isArray(payload.records) ? payload.records : [],
     };
   }
 
   const txs = await fetchRegistryTransactions(registryAddress, targetNetwork);
-  return idRegistryStateFromTransactions(txs, registryAddress, targetNetwork);
+  const state = idRegistryStateFromTransactions(txs, registryAddress, targetNetwork);
+  return {
+    ...state,
+    listings: await filterSpendableListings(state.listings, targetNetwork),
+  };
 }
 
 async function fetchUtxos(ownerAddress: string, ownerNetwork: BitcoinNetwork): Promise<MempoolUtxo[]> {

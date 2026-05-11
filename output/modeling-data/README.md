@@ -13,6 +13,8 @@ Confirmed chain data is canonical. Pending records are included only where expli
 - `powid-projection-scenarios-2026-05-11.csv`
 - `powid-mail-app-model-2026-05-11.json`
 - `powid-mail-app-projection-scenarios-2026-05-11.csv`
+- `powid-files-app-model-2026-05-11.json`
+- `powid-files-app-projection-scenarios-2026-05-11.csv`
 
 ## Model
 
@@ -49,4 +51,22 @@ Current snapshot:
 10,202 sats of paid attention flow
 4 attachments
 5 replies
+```
+
+## Files App Model
+
+The files app model values confirmed `pwm1:a` attachment writes as Bitcoin-native file publishing and public Desktop retrieval demand:
+
+```text
+annual_flow_sats = projected_ids * files_per_id_per_year * sats_per_file
+network_value_sats = annual_flow_sats * flow_multiple
+```
+
+Current snapshot:
+
+```text
+4 confirmed file txids
+4 unique file hashes
+37,284 bytes
+2,184 sats of file-bearing payment flow
 ```

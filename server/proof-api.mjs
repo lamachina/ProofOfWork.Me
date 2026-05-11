@@ -29,9 +29,12 @@ const ID_PROTOCOL_PREFIX = "pwid1:";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
 const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
-const ID_SALE_AUTH_VERSION = "pwid-sale-v2";
-const ID_LISTING_ANCHOR_TYPE = "p2wsh-op-true-v1";
+const ID_SALE_AUTH_VERSION_ANCHORED = "pwid-sale-v2";
+const ID_SALE_AUTH_VERSION = "pwid-sale-v3";
+const ID_LISTING_ANCHOR_TYPE_LEGACY = "p2wsh-op-true-v1";
+const ID_LISTING_ANCHOR_TYPE = "seller-utxo-v1";
 const ID_LISTING_ANCHOR_VALUE_SATS = 546;
+const ID_LISTING_ANCHOR_SIGHASH_TYPE = bitcoin.Transaction.SIGHASH_SINGLE | bitcoin.Transaction.SIGHASH_ANYONECANPAY;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const ID_REGISTRY_ADDRESSES = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
@@ -184,14 +187,14 @@ function isValidBitcoinAddress(address, network) {
   }
 }
 
-function marketplaceAnchorWitnessScript() {
+function marketplaceLegacyAnchorWitnessScript() {
   return bitcoin.script.compile([bitcoin.opcodes.OP_TRUE]);
 }
 
-function marketplaceAnchorScriptPubKey() {
+function marketplaceLegacyAnchorScriptPubKey() {
   const payment = bitcoin.payments.p2wsh({
     redeem: {
-      output: marketplaceAnchorWitnessScript(),
+      output: marketplaceLegacyAnchorWitnessScript(),
     },
   });
 
@@ -200,6 +203,14 @@ function marketplaceAnchorScriptPubKey() {
   }
 
   return Buffer.from(payment.output).toString("hex");
+}
+
+function validPublicKeyHex(value) {
+  return /^(02|03)[0-9a-fA-F]{64}$/u.test(value) || /^04[0-9a-fA-F]{128}$/u.test(value);
+}
+
+function validSignatureHex(value) {
+  return /^[0-9a-fA-F]+$/u.test(value) && value.length >= 18 && value.length <= 146 && value.length % 2 === 0;
 }
 
 function scriptHashForAddress(address, network) {
@@ -957,7 +968,10 @@ function parseIdTransferPayload(payload, network) {
 }
 
 function saleAuthorizationDraft({
+  anchorSigHashType,
+  anchorSignature,
   anchorScriptPubKey,
+  anchorTxid,
   anchorType,
   anchorValueSats,
   anchorVout,
@@ -968,6 +982,7 @@ function saleAuthorizationDraft({
   priceSats,
   receiveAddress,
   sellerAddress,
+  sellerPublicKey,
   version = ID_SALE_AUTH_VERSION,
 }) {
   const draft = {
@@ -978,14 +993,26 @@ function saleAuthorizationDraft({
     priceSats: Math.floor(priceSats),
     receiveAddress: receiveAddress?.trim() || undefined,
     sellerAddress: sellerAddress.trim(),
+    sellerPublicKey: sellerPublicKey?.trim().toLowerCase() || undefined,
     version,
   };
 
-  if (version === ID_SALE_AUTH_VERSION) {
-    draft.anchorScriptPubKey = anchorScriptPubKey?.trim().toLowerCase() || marketplaceAnchorScriptPubKey();
-    draft.anchorType = anchorType?.trim() || ID_LISTING_ANCHOR_TYPE;
+  if (version === ID_SALE_AUTH_VERSION_ANCHORED || version === ID_SALE_AUTH_VERSION) {
+    draft.anchorSigHashType = Number.isSafeInteger(anchorSigHashType)
+      ? Math.floor(anchorSigHashType)
+      : version === ID_SALE_AUTH_VERSION
+        ? ID_LISTING_ANCHOR_SIGHASH_TYPE
+        : undefined;
+    draft.anchorSignature = anchorSignature?.trim().toLowerCase() || undefined;
+    draft.anchorScriptPubKey = anchorScriptPubKey?.trim().toLowerCase() || undefined;
+    draft.anchorTxid = anchorTxid?.trim().toLowerCase() || undefined;
+    draft.anchorType = anchorType?.trim() || (version === ID_SALE_AUTH_VERSION ? ID_LISTING_ANCHOR_TYPE : ID_LISTING_ANCHOR_TYPE_LEGACY);
     draft.anchorValueSats = Number.isSafeInteger(anchorValueSats) ? Math.floor(anchorValueSats) : ID_LISTING_ANCHOR_VALUE_SATS;
     draft.anchorVout = Number.isSafeInteger(anchorVout) ? Math.floor(anchorVout) : 2;
+
+    if (version === ID_SALE_AUTH_VERSION_ANCHORED && !draft.anchorScriptPubKey) {
+      draft.anchorScriptPubKey = marketplaceLegacyAnchorScriptPubKey();
+    }
   }
 
   return draft;
@@ -1004,12 +1031,15 @@ function saleAuthorizationMessage(authorization) {
     `expiresAt:${authorization.expiresAt || ""}`,
   ];
 
-  if (authorization.version === ID_SALE_AUTH_VERSION) {
+  if (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION) {
     lines.push(
       `anchorType:${authorization.anchorType || ""}`,
+      `anchorTxid:${authorization.anchorTxid || ""}`,
       `anchorVout:${authorization.anchorVout ?? ""}`,
       `anchorValueSats:${authorization.anchorValueSats ?? ""}`,
       `anchorScriptPubKey:${authorization.anchorScriptPubKey || ""}`,
+      `anchorSigHashType:${authorization.anchorSigHashType ?? ""}`,
+      `sellerPublicKey:${authorization.sellerPublicKey || ""}`,
     );
   }
 
@@ -1030,11 +1060,22 @@ function parseSaleAuthorizationJson(value, network) {
   const nonce = typeof parsed.nonce === "string" ? parsed.nonce.trim() : "";
   const expiresAt = typeof parsed.expiresAt === "string" ? parsed.expiresAt.trim() : "";
   const priceSats = typeof parsed.priceSats === "number" ? Math.floor(parsed.priceSats) : Number.NaN;
-  const version = parsed.version === ID_SALE_AUTH_VERSION_LEGACY ? ID_SALE_AUTH_VERSION_LEGACY : parsed.version === ID_SALE_AUTH_VERSION ? ID_SALE_AUTH_VERSION : "";
+  const version =
+    parsed.version === ID_SALE_AUTH_VERSION_LEGACY
+      ? ID_SALE_AUTH_VERSION_LEGACY
+      : parsed.version === ID_SALE_AUTH_VERSION_ANCHORED
+        ? ID_SALE_AUTH_VERSION_ANCHORED
+        : parsed.version === ID_SALE_AUTH_VERSION
+          ? ID_SALE_AUTH_VERSION
+          : "";
   const anchorType = typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
+  const anchorSigHashType = typeof parsed.anchorSigHashType === "number" ? Math.floor(parsed.anchorSigHashType) : Number.NaN;
+  const anchorSignature = typeof parsed.anchorSignature === "string" ? parsed.anchorSignature.trim().toLowerCase() : "";
   const anchorScriptPubKey = typeof parsed.anchorScriptPubKey === "string" ? parsed.anchorScriptPubKey.trim().toLowerCase() : "";
+  const anchorTxid = typeof parsed.anchorTxid === "string" ? parsed.anchorTxid.trim().toLowerCase() : "";
   const anchorVout = typeof parsed.anchorVout === "number" ? Math.floor(parsed.anchorVout) : Number.NaN;
   const anchorValueSats = typeof parsed.anchorValueSats === "number" ? Math.floor(parsed.anchorValueSats) : Number.NaN;
+  const sellerPublicKey = typeof parsed.sellerPublicKey === "string" ? parsed.sellerPublicKey.trim().toLowerCase() : "";
 
   if (!version || !id || !isValidBitcoinAddress(sellerAddress, network)) {
     throw new Error("Sale authorization is invalid.");
@@ -1056,14 +1097,31 @@ function parseSaleAuthorizationJson(value, network) {
     throw new Error("Sale authorization expiry is invalid.");
   }
 
-  if (version === ID_SALE_AUTH_VERSION) {
+  if (version === ID_SALE_AUTH_VERSION_ANCHORED) {
     if (
-      anchorType !== ID_LISTING_ANCHOR_TYPE ||
+      anchorType !== ID_LISTING_ANCHOR_TYPE_LEGACY ||
       !Number.isSafeInteger(anchorVout) ||
       anchorVout < 0 ||
       !Number.isSafeInteger(anchorValueSats) ||
       anchorValueSats < 546 ||
-      anchorScriptPubKey !== marketplaceAnchorScriptPubKey()
+      anchorScriptPubKey !== marketplaceLegacyAnchorScriptPubKey()
+    ) {
+      throw new Error("Sale authorization anchor is invalid.");
+    }
+  }
+
+  if (version === ID_SALE_AUTH_VERSION) {
+    if (
+      anchorType !== ID_LISTING_ANCHOR_TYPE ||
+      !/^[0-9a-f]{64}$/u.test(anchorTxid) ||
+      !Number.isSafeInteger(anchorVout) ||
+      anchorVout < 0 ||
+      !Number.isSafeInteger(anchorValueSats) ||
+      anchorValueSats < 546 ||
+      !/^[0-9a-f]+$/u.test(anchorScriptPubKey) ||
+      !validPublicKeyHex(sellerPublicKey) ||
+      anchorSigHashType !== ID_LISTING_ANCHOR_SIGHASH_TYPE ||
+      !validSignatureHex(anchorSignature)
     ) {
       throw new Error("Sale authorization anchor is invalid.");
     }
@@ -1071,7 +1129,10 @@ function parseSaleAuthorizationJson(value, network) {
 
   return {
     ...saleAuthorizationDraft({
+      anchorSigHashType,
+      anchorSignature,
       anchorScriptPubKey,
+      anchorTxid,
       anchorType,
       anchorValueSats,
       anchorVout,
@@ -1082,6 +1143,7 @@ function parseSaleAuthorizationJson(value, network) {
       priceSats,
       receiveAddress,
       sellerAddress,
+      sellerPublicKey,
       version,
     }),
     signature,
@@ -1130,8 +1192,8 @@ function findMatchingActiveListing(listings, authorization, currentOwnerAddress)
 
 function saleAuthorizationHasAnchor(authorization) {
   return (
-    authorization?.version === ID_SALE_AUTH_VERSION &&
-    authorization.anchorType === ID_LISTING_ANCHOR_TYPE &&
+    (authorization?.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization?.version === ID_SALE_AUTH_VERSION) &&
+    (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY || authorization.anchorType === ID_LISTING_ANCHOR_TYPE) &&
     typeof authorization.anchorScriptPubKey === "string" &&
     /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey) &&
     Number.isSafeInteger(authorization.anchorVout) &&
@@ -1140,12 +1202,36 @@ function saleAuthorizationHasAnchor(authorization) {
   );
 }
 
-function spendsListingAnchor(spent, listing) {
+function saleAuthorizationUsesSellerUtxoAnchor(authorization) {
+  return (
+    saleAuthorizationHasAnchor(authorization) &&
+    authorization.version === ID_SALE_AUTH_VERSION &&
+    authorization.anchorType === ID_LISTING_ANCHOR_TYPE &&
+    typeof authorization.anchorTxid === "string" &&
+    /^[0-9a-f]{64}$/u.test(authorization.anchorTxid) &&
+    typeof authorization.sellerPublicKey === "string" &&
+    validPublicKeyHex(authorization.sellerPublicKey) &&
+    authorization.anchorSigHashType === ID_LISTING_ANCHOR_SIGHASH_TYPE &&
+    typeof authorization.anchorSignature === "string" &&
+    validSignatureHex(authorization.anchorSignature)
+  );
+}
+
+function listingAnchorOutpoint(listing) {
   if (!saleAuthorizationHasAnchor(listing?.saleAuthorization)) {
-    return false;
+    return null;
   }
 
-  return spent.some((outpoint) => outpoint.txid === listing.listingId && outpoint.vout === listing.saleAuthorization.anchorVout);
+  return {
+    txid: saleAuthorizationUsesSellerUtxoAnchor(listing.saleAuthorization) ? listing.saleAuthorization.anchorTxid : listing.listingId,
+    vout: listing.saleAuthorization.anchorVout,
+  };
+}
+
+function spendsListingAnchor(spent, listing) {
+  const anchor = listingAnchorOutpoint(listing);
+
+  return Boolean(anchor && spent.some((outpoint) => outpoint.txid === anchor.txid && outpoint.vout === anchor.vout));
 }
 
 function sellerPaymentRequiredSats(listing) {
@@ -1154,7 +1240,11 @@ function sellerPaymentRequiredSats(listing) {
 }
 
 function listingAnchorIsPresent(vout, authorization) {
-  if (!saleAuthorizationHasAnchor(authorization)) {
+  if (
+    !saleAuthorizationHasAnchor(authorization) ||
+    authorization.version !== ID_SALE_AUTH_VERSION_ANCHORED ||
+    authorization.anchorType !== ID_LISTING_ANCHOR_TYPE_LEGACY
+  ) {
     return false;
   }
 
@@ -1167,13 +1257,14 @@ function listingAnchorIsPresent(vout, authorization) {
 }
 
 async function listingAnchorSpent(listing, network) {
-  if (listing?.listingVersion !== "list3" || !saleAuthorizationHasAnchor(listing.saleAuthorization)) {
+  const anchor = listingAnchorOutpoint(listing);
+  if ((listing?.listingVersion !== "list3" && listing?.listingVersion !== "list4") || !anchor) {
     return false;
   }
 
   for (const base of pendingMempoolBases(network)) {
     try {
-      const outspend = await fetchJson(`${base}/api/tx/${listing.listingId}/outspend/${listing.saleAuthorization.anchorVout}`);
+      const outspend = await fetchJson(`${base}/api/tx/${anchor.txid}/outspend/${anchor.vout}`);
       if (outspend?.spent) {
         return true;
       }
@@ -1218,7 +1309,7 @@ function compareRegistryEventOrder(left, right) {
 
 function parseIdMarketplaceTransferPayload(payload, network) {
   const parts = payload.split(":");
-  if (payload.startsWith("buy3:")) {
+  if (payload.startsWith("buy3:") || payload.startsWith("buy4:")) {
     if (parts.length < 3 || parts.length > 4 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
       return null;
     }
@@ -1233,7 +1324,7 @@ function parseIdMarketplaceTransferPayload(payload, network) {
       listingId: listingId.toLowerCase(),
       ownerAddress: owner,
       receiveAddress,
-      transferVersion: "buy3",
+      transferVersion: payload.startsWith("buy4:") ? "buy4" : "buy3",
     };
   }
 
@@ -1278,7 +1369,7 @@ function parseIdMarketplaceTransferPayload(payload, network) {
 }
 
 function parseIdListingPayload(payload, network) {
-  const listingVersion = payload.startsWith("list3:") ? "list3" : payload.startsWith("list2:") ? "list2" : "";
+  const listingVersion = payload.startsWith("list4:") ? "list4" : payload.startsWith("list3:") ? "list3" : payload.startsWith("list2:") ? "list2" : "";
   if (!listingVersion) {
     return null;
   }
@@ -1306,7 +1397,7 @@ function parseIdListingPayload(payload, network) {
 }
 
 function parseIdDelistingPayload(payload) {
-  const delistingVersion = payload.startsWith("delist3:") ? "delist3" : payload.startsWith("delist2:") ? "delist2" : "";
+  const delistingVersion = payload.startsWith("delist4:") ? "delist4" : payload.startsWith("delist3:") ? "delist3" : payload.startsWith("delist2:") ? "delist2" : "";
   if (!delistingVersion) {
     return null;
   }
@@ -1533,7 +1624,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     if (event.kind === "delist") {
       const listing = listings.get(event.listingId);
       const current = listing ? records.get(listing.id) : undefined;
-      const anchorOk = event.delistingVersion === "delist2" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
+      const anchorOk = event.delistingVersion !== "delist3" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
       if (listing && current && event.inputAddresses.includes(current.ownerAddress) && anchorOk) {
         listings.delete(event.listingId);
       }
@@ -1541,14 +1632,15 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     }
 
     if (event.kind === "marketTransfer") {
-      if (event.transferVersion === "buy3") {
+      if (event.transferVersion === "buy3" || event.transferVersion === "buy4") {
         const listing = event.listingId ? listings.get(event.listingId) : undefined;
         const current = listing ? records.get(listing.id) : undefined;
         const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
         if (
           !listing ||
           !current ||
-          listing.listingVersion !== "list3" ||
+          (event.transferVersion === "buy3" && listing.listingVersion !== "list3") ||
+          (event.transferVersion === "buy4" && listing.listingVersion !== "list4") ||
           current.ownerAddress !== listing.sellerAddress ||
           !spendsListingAnchor(event.spentOutpoints, listing) ||
           sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
@@ -1611,6 +1703,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         !event.inputAddresses.includes(current.ownerAddress) ||
         saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
         (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
+        (event.listingVersion === "list4" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
         (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
       ) {
         continue;
@@ -1618,7 +1711,10 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
 
       listings.set(event.txid, {
         amountSats: event.amountSats,
+        anchorSigHashType: event.saleAuthorization.anchorSigHashType,
+        anchorSignature: event.saleAuthorization.anchorSignature,
         anchorScriptPubKey: event.saleAuthorization.anchorScriptPubKey,
+        anchorTxid: event.saleAuthorization.anchorTxid,
         anchorType: event.saleAuthorization.anchorType,
         anchorValueSats: event.saleAuthorization.anchorValueSats,
         anchorVout: event.saleAuthorization.anchorVout,
@@ -1634,6 +1730,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         receiveAddress: event.saleAuthorization.receiveAddress,
         saleAuthorization: event.saleAuthorization,
         sellerAddress: event.sellerAddress,
+        sellerPublicKey: event.saleAuthorization.sellerPublicKey,
         txid: event.txid,
       });
       continue;
@@ -1672,7 +1769,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       if (event.kind === "delist") {
         const listing = listings.get(event.listingId);
         const current = listing ? records.get(listing.id) : undefined;
-        const anchorOk = event.delistingVersion === "delist2" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
+        const anchorOk = event.delistingVersion !== "delist3" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
         if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress) || !anchorOk) {
           return [];
         }
@@ -1695,14 +1792,15 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       }
 
       if (event.kind === "marketTransfer") {
-        if (event.transferVersion === "buy3") {
+        if (event.transferVersion === "buy3" || event.transferVersion === "buy4") {
           const listing = event.listingId ? listings.get(event.listingId) : undefined;
           const current = listing ? records.get(listing.id) : undefined;
           const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
           if (
             !listing ||
             !current ||
-            listing.listingVersion !== "list3" ||
+            (event.transferVersion === "buy3" && listing.listingVersion !== "list3") ||
+            (event.transferVersion === "buy4" && listing.listingVersion !== "list4") ||
             current.ownerAddress !== listing.sellerAddress ||
             !spendsListingAnchor(event.spentOutpoints, listing) ||
             sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
@@ -1782,6 +1880,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           !event.inputAddresses.includes(current.ownerAddress) ||
           saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
           (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
+          (event.listingVersion === "list4" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
           (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
         ) {
           return [];

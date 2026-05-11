@@ -553,6 +553,7 @@ const ID_LISTING_ANCHOR_TYPE = "seller-utxo-v1";
 const ID_LISTING_ANCHOR_VALUE_SATS = 546;
 const ID_LISTING_ANCHOR_VOUT = 2;
 const ID_LISTING_ANCHOR_SIGHASH_TYPE = bitcoin.Transaction.SIGHASH_SINGLE | bitcoin.Transaction.SIGHASH_ANYONECANPAY;
+const ID_LISTING_ANCHOR_SEAL_FEE_SATS = 500;
 const ID_REGISTRY_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
 };
@@ -4419,7 +4420,7 @@ async function chooseSellerAnchorPlan(fromAddress: string, network: BitcoinNetwo
   }
 
   const anchor = confirmedUtxos[0];
-  const sealTargetSats = Math.floor(priceSats) + anchor.value;
+  const sealTargetSats = Math.floor(priceSats) + anchor.value + ID_LISTING_ANCHOR_SEAL_FEE_SATS;
   const fillerUtxos: MempoolUtxo[] = [];
   let totalSats = anchor.value;
 
@@ -4816,7 +4817,7 @@ async function signSellerAnchorAuthorization({
 
   const totalInputSats = anchorUtxo.value + sealFundingUtxos.reduce((total, utxo) => total + utxo.value, 0);
   const sellerOutputSats = Math.floor(priceSats) + anchorUtxo.value;
-  const changeSats = totalInputSats - sellerOutputSats;
+  const changeSats = totalInputSats - sellerOutputSats - ID_LISTING_ANCHOR_SEAL_FEE_SATS;
   if (changeSats < 0) {
     throw new Error("Seller anchor seal does not have enough temporary wallet input value.");
   }

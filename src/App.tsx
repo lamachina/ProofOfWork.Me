@@ -4356,8 +4356,6 @@ export default function App() {
     if (selectedRecord.id !== managedIdName) {
       setManagedIdName(selectedRecord.id);
     }
-
-    setIdUpdateReceiveAddress((current) => current || selectedRecord.receiveAddress);
   }, [managedIdName, ownerControlledIds]);
 
   useEffect(() => {
@@ -6399,9 +6397,8 @@ export default function App() {
             canUpdate={canUpdateId}
             setFeeRate={setFeeRate}
             setManagedIdName={(id) => {
-              const record = ownerControlledIds.find((ownedId) => ownedId.id === id);
               setManagedIdName(id);
-              setIdUpdateReceiveAddress(record?.receiveAddress ?? "");
+              setIdUpdateReceiveAddress("");
               setIdTransferOwnerAddress("");
               setIdTransferReceiveAddress("");
             }}

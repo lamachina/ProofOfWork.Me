@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<rect width="1600" height="900" fill="#f8fafc"/>
+<text x="130" y="54" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="39" font-weight="800" fill="#0f172a">Agent Adoption Growth Inputs</text>
+<text x="130" y="87" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" fill="#475569">Multiples from current baseline: nodes, BTC/USD, and PowIDs, log scale</text>
+<line x1="130" y1="116" x2="178" y2="116" stroke="#0f766e" stroke-width="6" stroke-linecap="round"/><text x="192" y="123" font-size="21" fill="#0f172a">Nodes multiple</text>
+<line x1="460" y1="116" x2="508" y2="116" stroke="#c2410c" stroke-width="6" stroke-linecap="round"/><text x="522" y="123" font-size="21" fill="#0f172a">BTC/USD multiple</text>
+<line x1="790" y1="116" x2="838" y2="116" stroke="#7c3aed" stroke-width="6" stroke-linecap="round"/><text x="852" y="123" font-size="21" fill="#0f172a">PowID multiple</text>
+<rect x="130" y="150" width="1320" height="635" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+<line x1="130" y1="785.0" x2="1450" y2="785.0" stroke="#d7dee8" stroke-width="1"/><text x="112" y="790.0" text-anchor="end" font-size="18" fill="#475569">1e0</text>
+<line x1="130" y1="694.3" x2="1450" y2="694.3" stroke="#d7dee8" stroke-width="1"/><text x="112" y="699.3" text-anchor="end" font-size="18" fill="#475569">1e1</text>
+<line x1="130" y1="603.6" x2="1450" y2="603.6" stroke="#d7dee8" stroke-width="1"/><text x="112" y="608.6" text-anchor="end" font-size="18" fill="#475569">1e2</text>
+<line x1="130" y1="512.9" x2="1450" y2="512.9" stroke="#d7dee8" stroke-width="1"/><text x="112" y="517.9" text-anchor="end" font-size="18" fill="#475569">1e3</text>
+<line x1="130" y1="422.1" x2="1450" y2="422.1" stroke="#d7dee8" stroke-width="1"/><text x="112" y="427.1" text-anchor="end" font-size="18" fill="#475569">1e4</text>
+<line x1="130" y1="331.4" x2="1450" y2="331.4" stroke="#d7dee8" stroke-width="1"/><text x="112" y="336.4" text-anchor="end" font-size="18" fill="#475569">1e5</text>
+<line x1="130" y1="240.7" x2="1450" y2="240.7" stroke="#d7dee8" stroke-width="1"/><text x="112" y="245.7" text-anchor="end" font-size="18" fill="#475569">1e6</text>
+<line x1="130" y1="150.0" x2="1450" y2="150.0" stroke="#d7dee8" stroke-width="1"/><text x="112" y="155.0" text-anchor="end" font-size="18" fill="#475569">1e7</text>
+<line x1="130.0" y1="150" x2="130.0" y2="785" stroke="#edf2f7" stroke-width="1"/><text x="130.0" y="829" text-anchor="middle" font-size="20" fill="#334155">6 months</text>
+<line x1="350.0" y1="150" x2="350.0" y2="785" stroke="#edf2f7" stroke-width="1"/><text x="350.0" y="829" text-anchor="middle" font-size="20" fill="#334155">12 months</text>
+<line x1="570.0" y1="150" x2="570.0" y2="785" stroke="#edf2f7" stroke-width="1"/><text x="570.0" y="829" text-anchor="middle" font-size="20" fill="#334155">24 months</text>
+<line x1="790.0" y1="150" x2="790.0" y2="785" stroke="#edf2f7" stroke-width="1"/><text x="790.0" y="829" text-anchor="middle" font-size="20" fill="#334155">5 years</text>
+<line x1="1010.0" y1="150" x2="1010.0" y2="785" stroke="#edf2f7" stroke-width="1"/><text x="1010.0" y="829" text-anchor="middle" font-size="20" fill="#334155">10 years</text>
+<line x1="1230.0" y1="150" x2="1230.0" y2="785" stroke="#edf2f7" stroke-width="1"/><text x="1230.0" y="829" text-anchor="middle" font-size="20" fill="#334155">25 years</text>
+<line x1="1450.0" y1="150" x2="1450.0" y2="785" stroke="#edf2f7" stroke-width="1"/><text x="1450.0" y="829" text-anchor="middle" font-size="20" fill="#334155">50 years</text>
+<line x1="130" y1="150" x2="130" y2="785" stroke="#334155" stroke-width="2"/>
+<line x1="130" y1="785" x2="1450" y2="785" stroke="#334155" stroke-width="2"/>
+<text x="130" y="872" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="18" fill="#64748b">Source: output/bitcoin-computer-agent-adoption-model.md</text>
+<text x="1450" y="872" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="18" fill="#64748b">Y-axis: multiple on log scale</text>
+<path d="M 130.0 780.6 L 350.0 776.2 L 570.0 767.4 L 790.0 741.0 L 1010.0 697.1 L 1230.0 565.2 L 1450.0 345.4" fill="none" stroke="#0f766e" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="130.0" cy="780.6" r="5" fill="#0f766e" stroke="#ffffff" stroke-width="2"/>
+<circle cx="350.0" cy="776.2" r="5" fill="#0f766e" stroke="#ffffff" stroke-width="2"/>
+<circle cx="570.0" cy="767.4" r="5" fill="#0f766e" stroke="#ffffff" stroke-width="2"/>
+<circle cx="790.0" cy="741.0" r="5" fill="#0f766e" stroke="#ffffff" stroke-width="2"/>
+<circle cx="1010.0" cy="697.1" r="5" fill="#0f766e" stroke="#ffffff" stroke-width="2"/>
+<circle cx="1230.0" cy="565.2" r="5" fill="#0f766e" stroke="#ffffff" stroke-width="2"/>
+<circle cx="1450.0" cy="345.4" r="5" fill="#0f766e" stroke="#ffffff" stroke-width="2"/>
+<path d="M 130.0 779.8 L 350.0 774.7 L 570.0 764.3 L 790.0 733.3 L 1010.0 681.6 L 1230.0 526.6 L 1450.0 268.2" fill="none" stroke="#c2410c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="130.0" cy="779.8" r="5" fill="#c2410c" stroke="#ffffff" stroke-width="2"/>
+<circle cx="350.0" cy="774.7" r="5" fill="#c2410c" stroke="#ffffff" stroke-width="2"/>
+<circle cx="570.0" cy="764.3" r="5" fill="#c2410c" stroke="#ffffff" stroke-width="2"/>
+<circle cx="790.0" cy="733.3" r="5" fill="#c2410c" stroke="#ffffff" stroke-width="2"/>
+<circle cx="1010.0" cy="681.6" r="5" fill="#c2410c" stroke="#ffffff" stroke-width="2"/>
+<circle cx="1230.0" cy="526.6" r="5" fill="#c2410c" stroke="#ffffff" stroke-width="2"/>
+<circle cx="1450.0" cy="268.2" r="5" fill="#c2410c" stroke="#ffffff" stroke-width="2"/>
+<path d="M 130.0 679.5 L 350.0 647.8 L 570.0 611.7 L 790.0 569.4 L 1010.0 514.1 L 1230.0 377.6 L 1450.0 153.6" fill="none" stroke="#7c3aed" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="130.0" cy="679.5" r="5" fill="#7c3aed" stroke="#ffffff" stroke-width="2"/>
+<circle cx="350.0" cy="647.8" r="5" fill="#7c3aed" stroke="#ffffff" stroke-width="2"/>
+<circle cx="570.0" cy="611.7" r="5" fill="#7c3aed" stroke="#ffffff" stroke-width="2"/>
+<circle cx="790.0" cy="569.4" r="5" fill="#7c3aed" stroke="#ffffff" stroke-width="2"/>
+<circle cx="1010.0" cy="514.1" r="5" fill="#7c3aed" stroke="#ffffff" stroke-width="2"/>
+<circle cx="1230.0" cy="377.6" r="5" fill="#7c3aed" stroke="#ffffff" stroke-width="2"/>
+<circle cx="1450.0" cy="153.6" r="5" fill="#7c3aed" stroke="#ffffff" stroke-width="2"/>
+</svg>

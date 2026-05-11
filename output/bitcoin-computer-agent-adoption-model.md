@@ -234,6 +234,27 @@ bitcoin_computer_value_sats =
 
 The BTC column is a sats-denominated valuation converted into BTC as a unit of account. It is not a claim that those sats are locked in the protocol.
 
+## Visuals
+
+PNG files are upload-ready. SVG files are source-quality versions.
+
+The y-axis uses log scale because the success-case model spans many orders of magnitude across 50 years.
+
+![Agent adoption growth inputs](bitcoin-computer-agent-growth-inputs-line.png)
+
+![Bitcoin Computer value in sats](bitcoin-computer-agent-value-sats-line.png)
+
+![Bitcoin Computer value in BTC](bitcoin-computer-agent-value-btc-line.png)
+
+![Bitcoin Computer value in USD](bitcoin-computer-agent-value-usd-line.png)
+
+SVG versions:
+
+- [Agent adoption growth inputs](bitcoin-computer-agent-growth-inputs-line.svg)
+- [Bitcoin Computer value in sats](bitcoin-computer-agent-value-sats-line.svg)
+- [Bitcoin Computer value in BTC](bitcoin-computer-agent-value-btc-line.svg)
+- [Bitcoin Computer value in USD](bitcoin-computer-agent-value-usd-line.svg)
+
 ## Horizon Summary
 
 This table shows the baseline fee case and the deep fee-collapse case.

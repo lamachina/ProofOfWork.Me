@@ -1,0 +1,111 @@
+{
+  "generatedAt": "2026-05-11T17:50:33.960Z",
+  "registryIndexedAt": "2026-05-11T17:50:33.192Z",
+  "network": "livenet",
+  "btcUsd": 80879.34,
+  "registry": {
+    "confirmedIds": 94,
+    "pendingRecords": 16,
+    "pendingChanges": 1,
+    "totalRecordsIncludingPending": 110,
+    "registryTransactionsScanned": 137,
+    "confirmedRegistrationFeeFloorSats": 94000,
+    "pendingRegistrationFeeFloorSats": 16000
+  },
+  "networkEffect": {
+    "metcalfeN2": 8836,
+    "directedPairs": 8742,
+    "undirectedPairs": 4371,
+    "nextConfirmedIdAddsN2Units": 189,
+    "pendingIfAllConfirmN": 110,
+    "pendingIfAllConfirmN2": 12100,
+    "pendingConfirmationAddsN2Units": 3264
+  },
+  "balances": {
+    "uniqueReceiveAddressConfirmedBalanceSats": 2374139,
+    "idWeightedConfirmedBalanceSats": 6416183,
+    "uniqueBalanceDensitySatsPerN2": 268.68933906745133,
+    "idWeightedDensitySatsPerN2": 726.1411272068809,
+    "uniqueReceiveAddressConfirmedBalanceBtc": 0.02374139,
+    "idWeightedConfirmedBalanceBtc": 0.06416183,
+    "uniqueReceiveAddressConfirmedBalanceUsd": 1920.19,
+    "idWeightedConfirmedBalanceUsd": 5189.37
+  },
+  "growth": {
+    "firstConfirmedAt": "2026-05-07T23:58:29.000Z",
+    "latestConfirmedAt": "2026-05-11T17:13:35.000Z",
+    "ageDays": 3.744,
+    "averageConfirmedIdsPerDaySinceFirst": 25.1,
+    "recentConfirmedIdsPerDay": 13,
+    "last12h": 11,
+    "last24h": 13,
+    "last48h": 31,
+    "dailyCountsUtc": [
+      {
+        "date": "2026-05-07",
+        "newConfirmedPowIds": 3,
+        "cumulativePowIds": 3,
+        "networkPotential": 9,
+        "modeledSatsAtCurrentUniqueDensity": 2418
+      },
+      {
+        "date": "2026-05-08",
+        "newConfirmedPowIds": 28,
+        "cumulativePowIds": 31,
+        "networkPotential": 961,
+        "modeledSatsAtCurrentUniqueDensity": 258210
+      },
+      {
+        "date": "2026-05-09",
+        "newConfirmedPowIds": 39,
+        "cumulativePowIds": 70,
+        "networkPotential": 4900,
+        "modeledSatsAtCurrentUniqueDensity": 1316578
+      },
+      {
+        "date": "2026-05-10",
+        "newConfirmedPowIds": 11,
+        "cumulativePowIds": 81,
+        "networkPotential": 6561,
+        "modeledSatsAtCurrentUniqueDensity": 1762871
+      },
+      {
+        "date": "2026-05-11",
+        "newConfirmedPowIds": 13,
+        "cumulativePowIds": 94,
+        "networkPotential": 8836,
+        "modeledSatsAtCurrentUniqueDensity": 2374139
+      }
+    ]
+  },
+  "ownershipAndRouting": {
+    "uniqueOwnerAddresses": 24,
+    "uniqueReceiveAddresses": 26,
+    "ownerEqualsReceiverIds": 91,
+    "ownerReceiverSplitIds": 3,
+    "receiveAddressesWithMultipleIds": 15,
+    "idsOnSharedReceiveAddresses": 83,
+    "singletonReceiveAddresses": 11,
+    "receiveAddressHhi": 0.1272,
+    "effectiveReceiveAddressCount": 7.86,
+    "receiveAddressGini": 0.554,
+    "ownerHhi": 0.1288,
+    "effectiveOwnerCount": 7.76,
+    "ownerGini": 0.5532
+  },
+  "protocolMail": {
+    "uniqueProtocolTxidsTouchingCurrentReceiveAddresses": 12,
+    "confirmedInboxDeliveriesToCurrentReceiveAddresses": 15,
+    "confirmedSentMessagesFromCurrentReceiveAddresses": 12,
+    "uniqueProtocolEdgesTouchingCurrentReceiveAddresses": 15,
+    "totalSatsAcrossUniqueProtocolEdgesTouchingCurrentReceiveAddresses": 10202,
+    "uniqueSenderAddresses": 3,
+    "uniqueRecipientAddresses": 7,
+    "powReceiveAddressToPowReceiveAddressEdges": 12,
+    "uniquePowAddressDirectedPairs": 8,
+    "powAddressDirectedPairDensityPct": 1.2308,
+    "attachmentsTxidsTouchingCurrentReceiveAddresses": 4,
+    "replyTxidsTouchingCurrentReceiveAddresses": 5,
+    "multiRecipientSentTxidsFromCurrentReceiveAddresses": 1
+  }
+}

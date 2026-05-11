@@ -1,0 +1,27 @@
+rank,address,chain_tx_count,mempool_tx_count,total_tx_count,pow_id_count,confirmed_pow_id_count,pending_pow_id_count,pow_ids
+1,bc1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk7whapn,2128,0,2128,1,1,0,machina@proofofwork.me
+2,bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc,1994,3,1997,13,13,0,3@proofofwork.me 4@proofofwork.me 6@proofofwork.me 88@proofofwork.me 9@proofofwork.me ai@proofofwork.me alien@proofofwork.me binance@proofofwork.me cz@proofofwork.me mars@proofofwork.me okx@proofofwork.me satoshi@proofofwork.me 币安@proofofwork.me
+3,bc1qnjvt3am0735heu0ucrg9wzuwe8hmdpwhk07sq8,1197,1,1198,5,5,0,arthur@proofofwork.me cobie@proofofwork.me hal@proofofwork.me jack@proofofwork.me truth@proofofwork.me
+4,bc1px0yfktpunsahqy5rj2cxyhmhcl30ercm0k3r36kn4fcee0s20d5qxtacln,533,0,533,1,1,0,btc@proofofwork.me
+5,bc1q7lzk2xtp6excmqanfmr3hvq5nt0af9g397s2er,457,0,457,1,1,0,1@proofofwork.me
+6,bc1pg4gdlvlxrk5y8dzrk6tp6lq04z7rsv7dhta7x2892g8dkhy6686q7q7l7j,129,1,130,1,1,0,a@proofofwork.me
+7,bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e,117,20,137,1,1,0,registry@proofofwork.me
+8,bc1q029v6c8j5qyls0dvhf6xl6fxvxfl7nmd4dhuja,110,1,111,1,1,0,33@proofofwork.me
+9,bc1pqzyv6m6hhh47y3pxr4uf9ed5q78j8mgg3s02qs3f98htq9gyac4sw7u29z,89,0,89,2,2,0,8@proofofwork.me x@proofofwork.me
+10,bc1qnaffuwh48m79cu493u2r6ngwtzpek06sn20uqq,67,0,67,2,2,0,grok@proofofwork.me zsaiwj@proofofwork.me
+11,bc1qu2hkv95hg6r7kkgsv8htp7ex3ufjrrr29ngue2,42,0,42,1,1,0,0@proofofwork.me
+12,bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc,41,2,43,2,2,0,freedom@proofofwork.me moove@proofofwork.me
+13,bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d,37,0,37,27,27,0,!@proofofwork.me $@proofofwork.me 420@proofofwork.me 5@proofofwork.me 69@proofofwork.me 7@proofofwork.me ?@proofofwork.me anon@proofofwork.me anonymous@proofofwork.me bitmap@proofofwork.me coinbase@proofofwork.me crypto@proofofwork.me degen@proofofwork.me gold@proofofwork.me id@proofofwork.me j@proofofwork.me josh@proofofwork.me meme@proofofwork.me money@proofofwork.me npc@proofofwork.me oracle@proofofwork.me pepe@proofofwork.me robot@proofofwork.me wallet@proofofwork.me wojak@proofofwork.me xbt@proofofwork.me z@proofofwork.me
+14,1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv,31,1,32,2,2,0,applications@proofofwork.me reserve@proofofwork.me
+15,bc1qggw7p5xtcv33uduhttphz24apx35u384ld9twk,19,0,19,1,1,0,100@proofofwork.me
+16,bc1q5tcu3rssms66qth42upe5savm7npqztznclslj,12,0,12,11,11,0,13@proofofwork.me doge@proofofwork.me domo@proofofwork.me first@proofofwork.me nakamoto@proofofwork.me news@proofofwork.me one@proofofwork.me ordi@proofofwork.me ordinal@proofofwork.me proof@proofofwork.me proofofwork@proofofwork.me
+17,bc1p8m24m3ycx2awggnlp4ljh0m8l54985scfwshet9zdg4qtf80udhqkwrx0c,11,0,11,2,2,0,sats@proofofwork.me trump@proofofwork.me
+18,1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH,10,2,12,3,3,0,armyofyouth@proofofwork.me bitcoin@proofofwork.me satoshin@proofofwork.me
+19,bc1p8ddc3s6z09ktchgdxxht8l0tt7gs7jn90w004uw2hrxuue39lp7qlxrd3q,7,0,7,3,3,0,agent@proofofwork.me nft@proofofwork.me pinoratiko@proofofwork.me
+20,bc1pxhs9y9ryqnhm05lyv794f6upzk0mtu2zct5w2hgc2vm3d58pvcqspptre0,6,0,6,3,3,0,hodl@proofofwork.me pow@proofofwork.me soul@proofofwork.me
+21,1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT,4,0,4,1,1,0,testdummy@proofofwork.me
+22,bc1p842ssjzrs4qgrpeqeykjz7s5xr3jeakfc8nguc2kn8lplf8gdyeqtey3lk,4,0,4,3,3,0,10@proofofwork.me 67@proofofwork.me bybit@proofofwork.me
+23,bc1pgr3qfswxtes89rk7l6hhhrf690g2uz9e0254pt7sfswc8w96n26s5v89zk,4,0,4,3,3,0,bet@proofofwork.me bip39@proofofwork.me bip@proofofwork.me
+24,bc1pfw9ekm8z4gsqq7846fykmp68du2t6v9thxkyl89uvx7japu4d8hslcxf8a,3,0,3,2,2,0,defi@proofofwork.me punk@proofofwork.me
+25,bc1pslhh88wrn9gyvx47p2nev6yu43al3v2mcpqjpez4ecstjxz0hhrsz4ntqs,2,0,2,1,1,0,pk@proofofwork.me
+26,1Bor9jhF1k4D3CocM4iLoaLUqmF1Zty9vv,0,0,0,1,1,0,openagentdevelopmentstandard@proofofwork.me

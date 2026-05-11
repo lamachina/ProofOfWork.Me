@@ -45,6 +45,8 @@ Pending marketplace events are displayed separately from confirmed ownership:
 - new owners/receivers see incoming pending transfers that target their wallet,
 - confirmed registry state remains the only source of truth for active listings and ownership.
 
+Marketplace broadcasts spend confirmed wallet UTXOs only. This prevents the visible fee rate on a new listing, delisting, or purchase from being pulled down by low-fee unconfirmed ancestors in the transaction package. If the wallet only has unconfirmed spendable coins, the UI should ask the user to wait for confirmation before publishing marketplace state.
+
 ## General Asset Trading
 
 The marketplace should be asset-agnostic over time. IDs are the first asset type, but the same shell can trade:

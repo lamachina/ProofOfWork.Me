@@ -22,6 +22,7 @@ const ELECTRUM_PORT = Number(process.env.ELECTRUM_PORT ?? 50001);
 const MAX_REGISTRY_TX_PAGES = Number(process.env.MAX_REGISTRY_TX_PAGES ?? 250);
 const MAX_ADDRESS_TX_PAGES = Number(process.env.MAX_ADDRESS_TX_PAGES ?? 50);
 const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
+const BLOCK_TXID_FETCH_CONCURRENCY = Number(process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4);
 
 const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
@@ -34,6 +35,7 @@ const ID_REGISTRY_ADDRESSES = {
 };
 
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
+const BLOCK_TXID_INDEX_CACHE = new Map();
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
@@ -116,6 +118,36 @@ async function fetchText(url) {
   }
 
   return response.text();
+}
+
+async function fetchBlockTxidIndex(blockHash, network) {
+  if (!/^[0-9a-fA-F]{64}$/u.test(blockHash)) {
+    return new Map();
+  }
+
+  const normalizedHash = blockHash.toLowerCase();
+  const cacheKey = `${network}:${normalizedHash}`;
+  if (!BLOCK_TXID_INDEX_CACHE.has(cacheKey)) {
+    const promise = fetchJson(`${mempoolBase(network)}/api/block/${normalizedHash}/txids`)
+      .then((txids) => {
+        const index = new Map();
+        if (Array.isArray(txids)) {
+          txids.forEach((txid, position) => {
+            if (typeof txid === "string" && /^[0-9a-fA-F]{64}$/u.test(txid)) {
+              index.set(txid.toLowerCase(), position);
+            }
+          });
+        }
+        return index;
+      })
+      .catch((error) => {
+        BLOCK_TXID_INDEX_CACHE.delete(cacheKey);
+        throw error;
+      });
+    BLOCK_TXID_INDEX_CACHE.set(cacheKey, promise);
+  }
+
+  return BLOCK_TXID_INDEX_CACHE.get(cacheKey);
 }
 
 async function fetchAddressTransactionsPage(address, network, path) {
@@ -288,6 +320,60 @@ function transactionConfirmed(tx) {
   return Boolean(tx.status?.confirmed);
 }
 
+function transactionBlockHash(tx) {
+  const blockHash = tx.status?.block_hash;
+  return typeof blockHash === "string" && /^[0-9a-fA-F]{64}$/u.test(blockHash) ? blockHash.toLowerCase() : "";
+}
+
+function transactionBlockHeight(tx) {
+  const height = tx.status?.block_height;
+  return Number.isSafeInteger(height) && height >= 0 ? height : undefined;
+}
+
+function transactionBlockIndex(tx) {
+  const index = tx._powBlockIndex ?? tx.status?.block_index ?? tx.status?.block_tx_index;
+  return Number.isSafeInteger(index) && index >= 0 ? index : undefined;
+}
+
+async function annotateBlockOrder(txs, network) {
+  const blockCounts = new Map();
+  for (const tx of txs) {
+    if (!transactionConfirmed(tx)) {
+      continue;
+    }
+
+    const blockHash = transactionBlockHash(tx);
+    if (blockHash) {
+      blockCounts.set(blockHash, (blockCounts.get(blockHash) ?? 0) + 1);
+    }
+  }
+
+  const blockHashes = [...blockCounts].filter(([, count]) => count > 1).map(([blockHash]) => blockHash);
+
+  if (blockHashes.length === 0) {
+    return txs;
+  }
+
+  const blockIndexes = new Map();
+  await mapWithConcurrency(blockHashes, BLOCK_TXID_FETCH_CONCURRENCY, async (blockHash) => {
+    const index = await fetchBlockTxidIndex(blockHash, network).catch(() => null);
+    if (index) {
+      blockIndexes.set(blockHash, index);
+    }
+  });
+
+  if (blockIndexes.size === 0) {
+    return txs;
+  }
+
+  return txs.map((tx) => {
+    const txid = transactionTxid(tx);
+    const blockHash = transactionBlockHash(tx);
+    const index = blockIndexes.get(blockHash)?.get(txid);
+    return Number.isSafeInteger(index) ? { ...tx, _powBlockIndex: index } : tx;
+  });
+}
+
 function oldestConfirmedTxid(txs) {
   const confirmedTxs = txs.filter(transactionConfirmed);
   return confirmedTxs.length > 0 ? transactionTxid(confirmedTxs[confirmedTxs.length - 1]) : "";
@@ -372,7 +458,8 @@ async function fetchAddressTransactions(address, network, maxPages = MAX_ADDRESS
 }
 
 async function fetchRegistryTransactions(registryAddress, network) {
-  return fetchAddressTransactions(registryAddress, network, MAX_REGISTRY_TX_PAGES);
+  const txs = await fetchAddressTransactions(registryAddress, network, MAX_REGISTRY_TX_PAGES);
+  return annotateBlockOrder(txs, network);
 }
 
 function decodeHex(hex) {
@@ -943,6 +1030,24 @@ function saleAuthorizationExpired(authorization, eventCreatedAt) {
   return Date.parse(eventCreatedAt) > Date.parse(authorization.expiresAt);
 }
 
+function compareRegistryEventOrder(left, right) {
+  if (left.confirmed && right.confirmed) {
+    const leftHeight = Number.isSafeInteger(left.blockHeight) ? left.blockHeight : Number.POSITIVE_INFINITY;
+    const rightHeight = Number.isSafeInteger(right.blockHeight) ? right.blockHeight : Number.POSITIVE_INFINITY;
+    if (leftHeight !== rightHeight) {
+      return leftHeight - rightHeight;
+    }
+
+    const leftIndex = Number.isSafeInteger(left.blockIndex) ? left.blockIndex : Number.POSITIVE_INFINITY;
+    const rightIndex = Number.isSafeInteger(right.blockIndex) ? right.blockIndex : Number.POSITIVE_INFINITY;
+    if (leftIndex !== rightIndex) {
+      return leftIndex - rightIndex;
+    }
+  }
+
+  return Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid);
+}
+
 function parseIdMarketplaceTransferPayload(payload, network) {
   if (!payload.startsWith("buy2:")) {
     return null;
@@ -1103,6 +1208,8 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     const blockTime = typeof tx.status?.block_time === "number" ? tx.status.block_time * 1000 : Date.now();
     const baseEvent = {
       amountSats: amount,
+      blockHeight: transactionBlockHeight(tx),
+      blockIndex: transactionBlockIndex(tx),
       confirmed: transactionConfirmed(tx),
       createdAt: new Date(blockTime).toISOString(),
       inputAddresses: inputAddresses(vin),
@@ -1186,7 +1293,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
 
   const confirmedEvents = events
     .filter((event) => event.confirmed)
-    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid));
+    .sort(compareRegistryEventOrder);
   const pendingRegistrations = events
     .filter((event) => !event.confirmed && event.kind === "register")
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));

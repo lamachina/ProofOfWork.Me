@@ -12,6 +12,7 @@ const REGISTRY_ADDRESS = "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
 const ID_PROTOCOL_PREFIX = "pwid1:";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const MAX_REGISTRY_TX_PAGES = 100;
+const BLOCK_TXID_INDEX_CACHE = new Map();
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -43,6 +44,91 @@ function transactionTxid(tx) {
 
 function transactionConfirmed(tx) {
   return Boolean(tx.status?.confirmed);
+}
+
+function transactionBlockHash(tx) {
+  const blockHash = tx.status?.block_hash;
+  return typeof blockHash === "string" && /^[0-9a-fA-F]{64}$/u.test(blockHash) ? blockHash.toLowerCase() : "";
+}
+
+function transactionBlockHeight(tx) {
+  const height = tx.status?.block_height;
+  return Number.isSafeInteger(height) && height >= 0 ? height : undefined;
+}
+
+function transactionBlockIndex(tx) {
+  const index = tx._powBlockIndex ?? tx.status?.block_index ?? tx.status?.block_tx_index;
+  return Number.isSafeInteger(index) && index >= 0 ? index : undefined;
+}
+
+async function fetchBlockTxidIndex(blockHash) {
+  if (!/^[0-9a-fA-F]{64}$/u.test(blockHash)) {
+    return new Map();
+  }
+
+  const normalizedHash = blockHash.toLowerCase();
+  if (!BLOCK_TXID_INDEX_CACHE.has(normalizedHash)) {
+    const promise = fetchJson(`${MEMPOOL_BASE}/api/block/${normalizedHash}/txids`)
+      .then((txids) => {
+        const index = new Map();
+        if (Array.isArray(txids)) {
+          txids.forEach((txid, position) => {
+            if (typeof txid === "string" && /^[0-9a-fA-F]{64}$/u.test(txid)) {
+              index.set(txid.toLowerCase(), position);
+            }
+          });
+        }
+        return index;
+      })
+      .catch((error) => {
+        BLOCK_TXID_INDEX_CACHE.delete(normalizedHash);
+        throw error;
+      });
+    BLOCK_TXID_INDEX_CACHE.set(normalizedHash, promise);
+  }
+
+  return BLOCK_TXID_INDEX_CACHE.get(normalizedHash);
+}
+
+async function annotateBlockOrder(txs) {
+  const blockCounts = new Map();
+  for (const tx of txs) {
+    if (!transactionConfirmed(tx)) {
+      continue;
+    }
+
+    const blockHash = transactionBlockHash(tx);
+    if (blockHash) {
+      blockCounts.set(blockHash, (blockCounts.get(blockHash) ?? 0) + 1);
+    }
+  }
+
+  const blockHashes = [...blockCounts].filter(([, count]) => count > 1).map(([blockHash]) => blockHash);
+
+  if (blockHashes.length === 0) {
+    return txs;
+  }
+
+  const blockIndexes = new Map();
+  await Promise.all(
+    blockHashes.map(async (blockHash) => {
+      const index = await fetchBlockTxidIndex(blockHash).catch(() => null);
+      if (index) {
+        blockIndexes.set(blockHash, index);
+      }
+    }),
+  );
+
+  if (blockIndexes.size === 0) {
+    return txs;
+  }
+
+  return txs.map((tx) => {
+    const txid = transactionTxid(tx);
+    const blockHash = transactionBlockHash(tx);
+    const index = blockIndexes.get(blockHash)?.get(txid);
+    return Number.isSafeInteger(index) ? { ...tx, _powBlockIndex: index } : tx;
+  });
 }
 
 function oldestConfirmedTxid(txs) {
@@ -102,7 +188,8 @@ async function fetchRegistryTransactions() {
     cursor = oldestConfirmedTxid(nextPage);
   }
 
-  return dedupeTransactions([...chainTxs, ...mempoolTxs, ...recentTxs]);
+  const txs = dedupeTransactions([...chainTxs, ...mempoolTxs, ...recentTxs]);
+  return annotateBlockOrder(txs);
 }
 
 function decodeHex(hex) {
@@ -260,6 +347,18 @@ function txCreatedAt(tx) {
 }
 
 function sortConfirmed(left, right) {
+  const leftHeight = Number.isSafeInteger(left.blockHeight) ? left.blockHeight : Number.POSITIVE_INFINITY;
+  const rightHeight = Number.isSafeInteger(right.blockHeight) ? right.blockHeight : Number.POSITIVE_INFINITY;
+  if (leftHeight !== rightHeight) {
+    return leftHeight - rightHeight;
+  }
+
+  const leftIndex = Number.isSafeInteger(left.blockIndex) ? left.blockIndex : Number.POSITIVE_INFINITY;
+  const rightIndex = Number.isSafeInteger(right.blockIndex) ? right.blockIndex : Number.POSITIVE_INFINITY;
+  if (leftIndex !== rightIndex) {
+    return leftIndex - rightIndex;
+  }
+
   return Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid);
 }
 
@@ -298,6 +397,8 @@ function extractAuditAttempts(txs) {
     const confirmed = transactionConfirmed(tx);
     const createdAt = txCreatedAt(tx);
     const payerInputAddresses = inputAddresses(vin);
+    const blockHeight = transactionBlockHeight(tx);
+    const blockIndex = transactionBlockIndex(tx);
 
     if (!txid || amountSats < ID_REGISTRATION_PRICE_SATS) {
       return [];
@@ -311,6 +412,8 @@ function extractAuditAttempts(txs) {
       return [
         {
           amountSats,
+          blockHeight,
+          blockIndex,
           classification: "invalid",
           confirmed,
           createdAt,
@@ -330,6 +433,8 @@ function extractAuditAttempts(txs) {
       return [
         {
           amountSats,
+          blockHeight,
+          blockIndex,
           classification: "invalid",
           confirmed,
           createdAt,
@@ -347,6 +452,8 @@ function extractAuditAttempts(txs) {
     return [
       {
         amountSats,
+        blockHeight,
+        blockIndex,
         classification: "valid",
         confirmed,
         createdAt,

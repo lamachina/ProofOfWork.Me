@@ -1781,6 +1781,18 @@ input[readonly] {
   grid-template-columns: 1fr 1fr;
 }
 
+.fee-control {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fee-control-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .fee-presets {
   display: grid;
   gap: 8px;
@@ -2042,6 +2054,7 @@ pre {
 .landing-brand span,
 .landing-choice p,
 .landing-protocol p,
+.landing-testimonial p,
 .landing-video-copy p {
   color: var(--text-muted);
   font-size: 0.88rem;
@@ -2186,7 +2199,8 @@ pre {
 
 .landing-stats div,
 .landing-choice,
-.landing-protocol {
+.landing-protocol,
+.landing-testimonial {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -2212,6 +2226,34 @@ pre {
 .landing-stats .secondary {
   align-self: stretch;
   justify-content: center;
+}
+
+.landing-testimonial {
+  align-items: center;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 18px;
+}
+
+.landing-testimonial > div:nth-child(2) {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.landing-testimonial blockquote {
+  color: var(--text);
+  font-size: clamp(1.2rem, 2.4vw, 2rem);
+  font-weight: 830;
+  letter-spacing: 0;
+  line-height: 1.16;
+  margin: 0;
+  max-width: 920px;
+}
+
+.landing-testimonial strong {
+  color: var(--text);
 }
 
 .landing-choice-grid {
@@ -2511,9 +2553,11 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .landing-protocol {
+  .landing-protocol,
+  .landing-testimonial {
     align-items: stretch;
     display: grid;
+    grid-template-columns: 1fr;
   }
 
   .id-launch-topbar {
@@ -2613,6 +2657,7 @@ pre {
   }
 
   .compose-grid,
+  .fee-control-grid,
   .fee-presets,
   .attachment-card,
   .desktop-search,

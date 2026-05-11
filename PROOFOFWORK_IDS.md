@@ -182,6 +182,7 @@ Rules:
 - Registry scans must paginate full confirmed address history and merge mempool transactions before applying first-confirmed-wins. Reading only the first mempool.space address page can hide older confirmed winners and make duplicates look available or pending.
 - Production registry reads should go through the ProofOfWork OP_RETURN API. The API reads confirmed state from the ProofOfWork node/indexer stack and may merge a pending mempool fallback for unconfirmed visibility.
 - Registration broadcasts must re-check the full registry immediately before building/signing the PSBT.
+- Every ProofOfWork.Me broadcast path should use confirmed wallet UTXOs only, including mail/files, registration, receiver update, transfer, listing, delisting, and marketplace purchase broadcasts. This keeps the chosen fee rate aligned with the transaction's effective package fee and avoids low-fee unconfirmed ancestors trapping user actions in mempool.
 - Owner and receive address are separate fields.
 - PGP public key data is optional and base64url encoded in the registration payload.
 - After broadcast, the app can open a prefilled X post that includes the ID and registry tx link as optional social proof.

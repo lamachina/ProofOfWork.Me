@@ -32,6 +32,7 @@ Production app roles:
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `marketplace.proofofwork.me` is the standalone ProofOfWork ID listing and buyer-funded transfer app.
+- The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
 
 Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, and Marketplace. Public social links should include X, YouTube, GitHub, and Discord.
 
@@ -150,6 +151,7 @@ Current production behavior:
 - For pending visibility, the API merges the local node/indexer view with `PENDING_MEMPOOL_BASE`, which currently defaults to public `https://mempool.space`.
 - Confirmed records remain canonical; pending records are visible but not final.
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
+- ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which mempool.space reports as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
 
@@ -157,6 +159,7 @@ Important launch invariant:
 
 ```text
 Confirmed history is canonical. Pending mempool visibility is best-effort.
+Every app-created broadcast spends confirmed inputs only.
 ```
 
 ## OP_RETURN Protocol

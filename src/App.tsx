@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as bitcoin from "bitcoinjs-lib";
 import { Buffer } from "buffer";
 import {
@@ -16,6 +16,7 @@ import {
   LogOut,
   Mail,
   MessageCircle,
+  MessageSquareQuote,
   Monitor,
   Moon,
   Paperclip,
@@ -290,7 +291,13 @@ type PowIdSaleAuthorization = PowIdSaleAuthorizationDraft & {
   signature?: string;
 };
 
-type PowIdEvent =
+type PowIdChainOrder = {
+  blockHeight?: number;
+  blockIndex?: number;
+};
+
+type PowIdEvent = PowIdChainOrder &
+  (
   | {
       amountSats: number;
       confirmed: boolean;
@@ -365,7 +372,8 @@ type PowIdEvent =
       listingId: string;
       network: BitcoinNetwork;
       txid: string;
-    };
+    }
+  );
 
 type RecipientResolution = {
   displayRecipient: string;
@@ -481,10 +489,13 @@ const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
+const LANDING_TESTIMONIAL_TXID = "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
+const LANDING_TESTIMONIAL_TX_URL = `https://mempool.space/tx/${LANDING_TESTIMONIAL_TXID}`;
 const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "").trim().replace(/\/+$/u, "");
 const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_REGISTRY_TX_PAGES = 100;
+const BLOCK_TXID_INDEX_CACHE = new Map<string, Promise<Map<string, number>>>();
 const PROTOCOL_PREFIX = "pwm1:";
 
 // Canonical Phase 1 ProofOfWork ID registry.
@@ -850,6 +861,44 @@ async function fetchProofApiJson<T>(path: string, network: BitcoinNetwork): Prom
   }
 
   return response.json() as Promise<T>;
+}
+
+async function fetchBlockTxidIndex(blockHash: string, network: BitcoinNetwork): Promise<Map<string, number>> {
+  if (!/^[0-9a-fA-F]{64}$/u.test(blockHash)) {
+    return new Map();
+  }
+
+  const normalizedHash = blockHash.toLowerCase();
+  const cacheKey = `${network}:${normalizedHash}`;
+  if (!BLOCK_TXID_INDEX_CACHE.has(cacheKey)) {
+    const promise = fetch(`${mempoolBase(network)}/api/block/${normalizedHash}/txids`, {
+      headers: { Accept: "application/json" },
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`mempool.space returned ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((txids) => {
+        const index = new Map<string, number>();
+        if (Array.isArray(txids)) {
+          txids.forEach((txid, position) => {
+            if (typeof txid === "string" && /^[0-9a-fA-F]{64}$/u.test(txid)) {
+              index.set(txid.toLowerCase(), position);
+            }
+          });
+        }
+        return index;
+      })
+      .catch((error) => {
+        BLOCK_TXID_INDEX_CACHE.delete(cacheKey);
+        throw error;
+      });
+    BLOCK_TXID_INDEX_CACHE.set(cacheKey, promise);
+  }
+
+  return BLOCK_TXID_INDEX_CACHE.get(cacheKey)!;
 }
 
 function xVerificationUrl(record: PowIdRecord) {
@@ -1970,6 +2019,24 @@ function saleAuthorizationExpired(authorization: PowIdSaleAuthorization, eventCr
   }
 
   return Date.parse(eventCreatedAt) > Date.parse(authorization.expiresAt);
+}
+
+function compareRegistryEventOrder(left: PowIdEvent, right: PowIdEvent) {
+  if (left.confirmed && right.confirmed) {
+    const leftHeight = typeof left.blockHeight === "number" && Number.isSafeInteger(left.blockHeight) ? left.blockHeight : Number.POSITIVE_INFINITY;
+    const rightHeight = typeof right.blockHeight === "number" && Number.isSafeInteger(right.blockHeight) ? right.blockHeight : Number.POSITIVE_INFINITY;
+    if (leftHeight !== rightHeight) {
+      return leftHeight - rightHeight;
+    }
+
+    const leftIndex = typeof left.blockIndex === "number" && Number.isSafeInteger(left.blockIndex) ? left.blockIndex : Number.POSITIVE_INFINITY;
+    const rightIndex = typeof right.blockIndex === "number" && Number.isSafeInteger(right.blockIndex) ? right.blockIndex : Number.POSITIVE_INFINITY;
+    if (leftIndex !== rightIndex) {
+      return leftIndex - rightIndex;
+    }
+  }
+
+  return Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid);
 }
 
 function buildIdMarketplaceTransferPayload(authorization: PowIdSaleAuthorization, ownerAddress: string, receiveAddress: string) {
@@ -3133,6 +3200,65 @@ function transactionConfirmed(tx: Record<string, unknown>) {
   return Boolean(status?.confirmed);
 }
 
+function transactionBlockHash(tx: Record<string, unknown>) {
+  const status = tx.status as Record<string, unknown> | undefined;
+  const blockHash = status?.block_hash;
+  return typeof blockHash === "string" && /^[0-9a-fA-F]{64}$/u.test(blockHash) ? blockHash.toLowerCase() : "";
+}
+
+function transactionBlockHeight(tx: Record<string, unknown>) {
+  const status = tx.status as Record<string, unknown> | undefined;
+  const height = status?.block_height;
+  return typeof height === "number" && Number.isSafeInteger(height) && height >= 0 ? height : undefined;
+}
+
+function transactionBlockIndex(tx: Record<string, unknown>) {
+  const status = tx.status as Record<string, unknown> | undefined;
+  const index = tx._powBlockIndex ?? status?.block_index ?? status?.block_tx_index;
+  return typeof index === "number" && Number.isSafeInteger(index) && index >= 0 ? index : undefined;
+}
+
+async function annotateBlockOrder(txs: Array<Record<string, unknown>>, targetNetwork: BitcoinNetwork) {
+  const blockCounts = new Map<string, number>();
+  for (const tx of txs) {
+    if (!transactionConfirmed(tx)) {
+      continue;
+    }
+
+    const blockHash = transactionBlockHash(tx);
+    if (blockHash) {
+      blockCounts.set(blockHash, (blockCounts.get(blockHash) ?? 0) + 1);
+    }
+  }
+
+  const blockHashes = [...blockCounts].filter(([, count]) => count > 1).map(([blockHash]) => blockHash);
+
+  if (blockHashes.length === 0) {
+    return txs;
+  }
+
+  const blockIndexes = new Map<string, Map<string, number>>();
+  await Promise.all(
+    blockHashes.map(async (blockHash) => {
+      const index = await fetchBlockTxidIndex(blockHash, targetNetwork).catch(() => null);
+      if (index) {
+        blockIndexes.set(blockHash, index);
+      }
+    }),
+  );
+
+  if (blockIndexes.size === 0) {
+    return txs;
+  }
+
+  return txs.map((tx) => {
+    const txid = transactionTxid(tx);
+    const blockHash = transactionBlockHash(tx);
+    const index = blockIndexes.get(blockHash)?.get(txid);
+    return Number.isSafeInteger(index) ? { ...tx, _powBlockIndex: index } : tx;
+  });
+}
+
 function oldestConfirmedTxid(txs: Array<Record<string, unknown>>) {
   const confirmedTxs = txs.filter(transactionConfirmed);
   return confirmedTxs.length > 0 ? transactionTxid(confirmedTxs[confirmedTxs.length - 1]) : "";
@@ -3190,7 +3316,8 @@ async function fetchRegistryTransactions(registryAddress: string, targetNetwork:
     cursor = oldestConfirmedTxid(nextPage);
   }
 
-  return dedupeTransactions([...chainTxs, ...mempoolTxs, ...recentTxs]);
+  const txs = dedupeTransactions([...chainTxs, ...mempoolTxs, ...recentTxs]);
+  return annotateBlockOrder(txs, targetNetwork);
 }
 
 function inboxMessagesFromTransactions(
@@ -3347,6 +3474,8 @@ function idRegistryStateFromTransactions(
     const blockTime = typeof status?.block_time === "number" ? status.block_time * 1000 : Date.now();
     const baseEvent = {
       amountSats: amount,
+      blockHeight: transactionBlockHeight(tx),
+      blockIndex: transactionBlockIndex(tx),
       confirmed,
       createdAt: new Date(blockTime).toISOString(),
       inputAddresses: transactionInputAddresses(vin),
@@ -3430,7 +3559,7 @@ function idRegistryStateFromTransactions(
 
   const confirmedEvents = events
     .filter((event) => event.confirmed)
-    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid));
+    .sort(compareRegistryEventOrder);
   const pendingRegistrations = events
     .filter((event): event is Extract<PowIdEvent, { kind: "register" }> => !event.confirmed && event.kind === "register")
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
@@ -3935,6 +4064,7 @@ async function buildPaymentPsbt({
   fromAddress,
   network,
   payments,
+  requireConfirmedUtxos = true,
   protocolPayloads,
   toAddress,
 }: {
@@ -3943,6 +4073,7 @@ async function buildPaymentPsbt({
   fromAddress: string;
   network: BitcoinNetwork;
   payments?: PaymentOutputSpec[];
+  requireConfirmedUtxos?: boolean;
   protocolPayloads: string[];
   toAddress?: string;
 }) {
@@ -3971,13 +4102,31 @@ async function buildPaymentPsbt({
     normalizedPayments.reduce((total, payment) => total + outputVbytesForScript(payment.script), 0) +
     opReturnScripts.reduce((total, script) => total + outputVbytesForScript(script), 0);
   const changeOutputVbytes = outputVbytesForScript(changeScript);
-  const utxos = await fetchUtxos(fromAddress, network);
+  const walletUtxos = await fetchUtxos(fromAddress, network);
+  const utxos = requireConfirmedUtxos ? walletUtxos.filter((utxo) => utxo.status?.confirmed) : walletUtxos;
 
-  if (utxos.length === 0) {
+  if (walletUtxos.length === 0) {
     throw new Error(`No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`);
   }
 
-  const selection = selectUtxos(utxos, totalAmountSats, feeRate, fixedOutputVbytes, changeOutputVbytes);
+  if (requireConfirmedUtxos && utxos.length === 0) {
+    throw new Error(
+      `No confirmed UTXOs found for ${shortAddress(fromAddress)}. Wait for wallet funds to confirm before broadcasting.`,
+    );
+  }
+
+  let selection: UtxoSelection;
+  try {
+    selection = selectUtxos(utxos, totalAmountSats, feeRate, fixedOutputVbytes, changeOutputVbytes);
+  } catch (error) {
+    if (requireConfirmedUtxos && walletUtxos.length > utxos.length) {
+      throw new Error(
+        `${errorMessage(error, "Insufficient confirmed funds.")} Only confirmed UTXOs are used for ProofOfWork.Me broadcasts so effective fees do not get dragged down by unconfirmed ancestors.`,
+      );
+    }
+
+    throw error;
+  }
   const selectedWithPreviousTx = await Promise.all(
     selection.selected.map(async (utxo) => {
       const previousTxHex = await fetchTransactionHex(utxo.txid, network);
@@ -5512,6 +5661,7 @@ export default function App() {
         fromAddress: address,
         network,
         protocolPayloads: [idRegistrationPayload],
+        requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
 
@@ -5613,6 +5763,7 @@ export default function App() {
         fromAddress: address,
         network,
         protocolPayloads: [payload],
+        requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
 
@@ -5718,6 +5869,7 @@ export default function App() {
         fromAddress: address,
         network,
         protocolPayloads: [payload],
+        requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
 
@@ -5864,6 +6016,7 @@ export default function App() {
         network,
         payments,
         protocolPayloads: [payload],
+        requireConfirmedUtxos: true,
       });
 
       const txid = await signAndBroadcastPsbt({
@@ -7072,6 +7225,27 @@ function LandingApp({
           </div>
         </section>
 
+        <section className="landing-testimonial" aria-label="On-chain testimonial">
+          <div className="empty-icon" aria-hidden="true">
+            <MessageSquareQuote size={24} />
+          </div>
+          <div>
+            <span className="landing-kicker">On-chain testimonial</span>
+            <blockquote>
+              "Truth above all else. We will not yield to foolish yet powerful tyrants for the true power resides with us. We need only converge on the truth."
+            </blockquote>
+            <p>
+              Published to Bitcoin through ProofOfWork.Me by D.D. Subject: <strong>Freedom and love</strong>.
+            </p>
+          </div>
+          <a className="secondary link-button" href={LANDING_TESTIMONIAL_TX_URL} rel="noreferrer" target="_blank">
+            <span className="button-content">
+              <ArrowUpRight size={16} />
+              <span>View TX</span>
+            </span>
+          </a>
+        </section>
+
         <section className="landing-stats" aria-label="ProofOfWork ID registry stats">
           <div>
             <span>Total IDs</span>
@@ -7375,16 +7549,16 @@ function IdLaunchApp({
                   PGP public key optional
                   <textarea onChange={(event) => setIdPgpKey(event.target.value)} placeholder="Paste an armored public key later when encryption is ready." value={idPgpKey} />
                 </label>
-                <div className="compose-grid">
-                  <label>
-                    Fee sat/vB
-                    <input min={0} onChange={(event) => setFeeRate(Number(event.target.value))} step={0.01} type="number" value={feeRate} />
-                  </label>
-                  <label>
-                    Registry
-                    <input readOnly value={registryAddress} />
-                  </label>
-                </div>
+                <FeeRateControl
+                  feeRate={feeRate}
+                  setFeeRate={setFeeRate}
+                  sidecar={
+                    <label>
+                      Registry
+                      <input readOnly value={registryAddress} />
+                    </label>
+                  }
+                />
               </div>
             </details>
 
@@ -8275,16 +8449,16 @@ function IdsWorkspace({
             <textarea onChange={(event) => setIdPgpKey(event.target.value)} placeholder="Paste an armored public key later when encryption is ready." value={idPgpKey} />
           </label>
 
-          <div className="compose-grid">
-            <label>
-              Fee sat/vB
-              <input min={0} onChange={(event) => setFeeRate(Number(event.target.value))} step={0.01} type="number" value={feeRate} />
-            </label>
-            <label>
-              Registry
-              <input readOnly value={registryAddress || "Not configured"} />
-            </label>
-          </div>
+          <FeeRateControl
+            feeRate={feeRate}
+            setFeeRate={setFeeRate}
+            sidecar={
+              <label>
+                Registry
+                <input readOnly value={registryAddress || "Not configured"} />
+              </label>
+            }
+          />
 
           <div className={registrationBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
             {registrationBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
@@ -8553,22 +8727,27 @@ function MarketplaceListingList({
 function FeeRateControl({
   feeRate,
   setFeeRate,
+  sidecar,
 }: {
   feeRate: number;
   setFeeRate: (value: number) => void;
+  sidecar?: ReactNode;
 }) {
   return (
     <div className="fee-control">
-      <label>
-        Fee sat/vB
-        <input
-          min={0}
-          onChange={(event) => setFeeRate(Number(event.target.value))}
-          step={0.01}
-          type="number"
-          value={feeRate}
-        />
-      </label>
+      <div className={sidecar ? "fee-control-grid" : undefined}>
+        <label>
+          Fee sat/vB
+          <input
+            min={0}
+            onChange={(event) => setFeeRate(Number(event.target.value))}
+            step={0.01}
+            type="number"
+            value={feeRate}
+          />
+        </label>
+        {sidecar}
+      </div>
       <div className="fee-presets" aria-label="Fee presets">
         {[0.1, 0.25, 0.5, 1].map((preset) => (
           <button aria-pressed={feeRate === preset} key={preset} onClick={() => setFeeRate(preset)} type="button">
@@ -9836,24 +10015,7 @@ function ComposePane({
             value={amountSats}
           />
         </label>
-        <label>
-          Fee sat/vB
-          <input
-            min={0}
-            onChange={(event) => setFeeRate(Number(event.target.value))}
-            step={0.01}
-            type="number"
-            value={feeRate}
-          />
-        </label>
-      </div>
-
-      <div className="fee-presets" aria-label="Fee presets">
-        {[0.1, 0.25, 0.5, 1].map((preset) => (
-          <button aria-pressed={feeRate === preset} key={preset} onClick={() => setFeeRate(preset)} type="button">
-            {preset}
-          </button>
-        ))}
+        <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
       </div>
 
       <label className="memo-field">

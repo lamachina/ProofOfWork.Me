@@ -152,7 +152,7 @@ Rules:
 - Receiver updates and transfers must be paid from the current owner address, because the resolver verifies the current owner appears in the transaction inputs.
 - `pwid1:u` changes only the receive address. The owner remains unchanged.
 - `pwid1:t` changes ownership. If the new receive address is omitted, the new owner address also becomes the receive address.
-- App UI may accept a confirmed ProofOfWork ID as a transfer target, but the written `pwid1:t` event must still contain resolved Bitcoin addresses.
+- App UI may accept confirmed ProofOfWork IDs as transfer owner or receive targets, but the written `pwid1:u` and `pwid1:t` events must still contain resolved Bitcoin addresses.
 - `pwid1:list2` publishes a signed sale authorization as an active marketplace listing. The listing txid is the listing ID.
 - `pwid1:delist2` cancels an active listing by listing txid. The transaction must be funded by the current owner.
 - Any confirmed ownership transfer through `pwid1:t` or `pwid1:buy2` automatically invalidates all active listings for that ID.

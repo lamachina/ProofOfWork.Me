@@ -1250,6 +1250,22 @@ function ownerResolutionNote(resolution: PowIdOwnerResolution) {
   return "Raw Bitcoin owner address.";
 }
 
+function receiveResolutionNote(resolution: RecipientResolution) {
+  if (resolution.error) {
+    return resolution.error;
+  }
+
+  if (!resolution.paymentAddress) {
+    return "";
+  }
+
+  if (resolution.isId) {
+    return `${resolution.displayRecipient} resolves to receiver ${shortAddress(resolution.paymentAddress)}.`;
+  }
+
+  return "Raw Bitcoin receive address.";
+}
+
 function explorerNetworkFor(messageNetwork: BitcoinNetwork, activeNetwork: BitcoinNetwork) {
   if (messageNetwork === "livenet" || activeNetwork === "livenet") {
     return messageNetwork;
@@ -4113,16 +4129,24 @@ export default function App() {
     () => ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0],
     [managedIdName, ownerControlledIds],
   );
+  const receiverUpdateResolution = useMemo(
+    () => resolveRecipientInput(idUpdateReceiveAddress, network, idRegistry, registryAddress),
+    [idRegistry, idUpdateReceiveAddress, network, registryAddress],
+  );
   const idReceiverUpdatePayload = useMemo(
-    () => (managedIdRecord && idUpdateReceiveAddress.trim() ? buildIdReceiverUpdatePayload(managedIdRecord.id, idUpdateReceiveAddress.trim()) : ""),
-    [idUpdateReceiveAddress, managedIdRecord],
+    () => (managedIdRecord && receiverUpdateResolution.paymentAddress ? buildIdReceiverUpdatePayload(managedIdRecord.id, receiverUpdateResolution.paymentAddress) : ""),
+    [managedIdRecord, receiverUpdateResolution.paymentAddress],
   );
   const transferOwnerResolution = useMemo(
     () => resolvePowIdOwnerInput(idTransferOwnerAddress, network, idRegistry, registryAddress),
     [idRegistry, idTransferOwnerAddress, network, registryAddress],
   );
   const transferReceiveAddress = idTransferReceiveAddress.trim();
-  const effectiveTransferReceiveAddress = transferReceiveAddress || transferOwnerResolution.receiveAddress;
+  const transferReceiveResolution = useMemo(
+    () => (transferReceiveAddress ? resolveRecipientInput(transferReceiveAddress, network, idRegistry, registryAddress) : undefined),
+    [idRegistry, network, registryAddress, transferReceiveAddress],
+  );
+  const effectiveTransferReceiveAddress = transferReceiveResolution ? transferReceiveResolution.paymentAddress : transferOwnerResolution.receiveAddress;
   const transferPayloadReceiveAddress =
     effectiveTransferReceiveAddress && effectiveTransferReceiveAddress !== transferOwnerResolution.ownerAddress
       ? effectiveTransferReceiveAddress
@@ -4190,8 +4214,9 @@ export default function App() {
         registryAddress &&
         managedIdRecord &&
         idReceiverUpdatePayload &&
-        isValidBitcoinAddress(idUpdateReceiveAddress.trim(), network) &&
-        idUpdateReceiveAddress.trim() !== managedIdRecord.receiveAddress,
+        !receiverUpdateResolution.error &&
+        isValidBitcoinAddress(receiverUpdateResolution.paymentAddress, network) &&
+        receiverUpdateResolution.paymentAddress !== managedIdRecord.receiveAddress,
     ) &&
     idReceiverUpdateBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
@@ -4202,6 +4227,7 @@ export default function App() {
         managedIdRecord &&
         idTransferPayload &&
         !transferOwnerResolution.error &&
+        !transferReceiveResolution?.error &&
         isValidBitcoinAddress(transferOwnerResolution.ownerAddress, network) &&
         isValidBitcoinAddress(effectiveTransferReceiveAddress, network) &&
         (transferOwnerResolution.ownerAddress !== managedIdRecord.ownerAddress || effectiveTransferReceiveAddress !== managedIdRecord.receiveAddress),
@@ -5680,9 +5706,25 @@ export default function App() {
       return;
     }
 
-    const receiveAddress = idUpdateReceiveAddress.trim();
-    if (!isValidBitcoinAddress(receiveAddress, network)) {
-      setStatus({ tone: "bad", text: "New receive address is not valid for the selected network." });
+    const receiveInput = idUpdateReceiveAddress.trim();
+    if (!receiveInput) {
+      setStatus({ tone: "bad", text: "Enter a new receive address or confirmed ProofOfWork ID." });
+      return;
+    }
+
+    let latestRegistry = idRegistry;
+    let resolvedReceive = resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress);
+    if (!isValidBitcoinAddress(receiveInput, network)) {
+      const latestState = await fetchIdRegistryState(network);
+      latestRegistry = latestState.records;
+      setIdRegistry(latestState.records);
+      setIdListings(latestState.listings);
+      resolvedReceive = resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress);
+    }
+
+    const receiveAddress = resolvedReceive.paymentAddress;
+    if (resolvedReceive.error || !isValidBitcoinAddress(receiveAddress, network)) {
+      setStatus({ tone: "bad", text: resolvedReceive.error || "New receive address is not valid for the selected network." });
       return;
     }
 
@@ -5707,12 +5749,31 @@ export default function App() {
       return;
     }
 
-    const ownerAddress = transferOwnerResolution.ownerAddress;
-    const receiveAddress = idTransferReceiveAddress.trim();
-    const effectiveReceiveAddress = receiveAddress || transferOwnerResolution.receiveAddress;
+    const receiveInput = idTransferReceiveAddress.trim();
 
-    if (transferOwnerResolution.error || !ownerAddress || !isValidBitcoinAddress(ownerAddress, network)) {
-      setStatus({ tone: "bad", text: transferOwnerResolution.error || "New owner is not valid for the selected network." });
+    let latestRegistry = idRegistry;
+    let resolvedOwner = transferOwnerResolution;
+    let resolvedReceive = receiveInput ? resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress) : undefined;
+    if (!isValidBitcoinAddress(idTransferOwnerAddress.trim(), network) || (receiveInput && !isValidBitcoinAddress(receiveInput, network))) {
+      const latestState = await fetchIdRegistryState(network);
+      latestRegistry = latestState.records;
+      setIdRegistry(latestState.records);
+      setIdListings(latestState.listings);
+      resolvedOwner = resolvePowIdOwnerInput(idTransferOwnerAddress, network, latestRegistry, registryAddress);
+      resolvedReceive = receiveInput ? resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress) : undefined;
+    }
+
+    const latestOwnerAddress = resolvedOwner.ownerAddress;
+    const effectiveReceiveAddress = resolvedReceive ? resolvedReceive.paymentAddress : resolvedOwner.receiveAddress;
+    const payloadReceiveAddress = effectiveReceiveAddress && effectiveReceiveAddress !== latestOwnerAddress ? effectiveReceiveAddress : "";
+
+    if (resolvedOwner.error || !latestOwnerAddress || !isValidBitcoinAddress(latestOwnerAddress, network)) {
+      setStatus({ tone: "bad", text: resolvedOwner.error || "New owner is not valid for the selected network." });
+      return;
+    }
+
+    if (resolvedReceive?.error) {
+      setStatus({ tone: "bad", text: resolvedReceive.error });
       return;
     }
 
@@ -5721,7 +5782,7 @@ export default function App() {
       return;
     }
 
-    if (ownerAddress === managedIdRecord.ownerAddress && effectiveReceiveAddress === managedIdRecord.receiveAddress) {
+    if (latestOwnerAddress === managedIdRecord.ownerAddress && effectiveReceiveAddress === managedIdRecord.receiveAddress) {
       setStatus({ tone: "bad", text: "Transfer destination matches the current ID state." });
       return;
     }
@@ -5729,7 +5790,7 @@ export default function App() {
     await broadcastIdMutation({
       expectedOwner: managedIdRecord.ownerAddress,
       id: managedIdRecord.id,
-      payload: buildIdTransferPayload(managedIdRecord.id, ownerAddress, transferPayloadReceiveAddress),
+      payload: buildIdTransferPayload(managedIdRecord.id, latestOwnerAddress, payloadReceiveAddress),
       successText: `Transfer for ${managedIdRecord.id}@proofofwork.me`,
     });
 
@@ -7922,8 +7983,12 @@ function IdsWorkspace({
   const ownedIds = ownedPowIds(registryRecords, address);
   const ownerControlledIds = registryRecords.filter((record) => record.network === network && record.confirmed && record.ownerAddress === address);
   const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
+  const receiverUpdateResolution = resolveRecipientInput(idUpdateReceiveAddress, network, registryRecords, registryAddress);
+  const receiverUpdateNote = idUpdateReceiveAddress.trim() ? receiveResolutionNote(receiverUpdateResolution) : "";
   const transferTargetResolution = resolvePowIdOwnerInput(idTransferOwnerAddress, network, registryRecords, registryAddress);
   const transferTargetNote = idTransferOwnerAddress.trim() ? ownerResolutionNote(transferTargetResolution) : "";
+  const transferReceiveResolution = idTransferReceiveAddress.trim() ? resolveRecipientInput(idTransferReceiveAddress, network, registryRecords, registryAddress) : undefined;
+  const transferReceiveNote = transferReceiveResolution ? receiveResolutionNote(transferReceiveResolution) : "";
 
   return (
     <section className="ids-workspace">
@@ -8044,9 +8109,10 @@ function IdsWorkspace({
 
               <form className="id-action-form" onSubmit={submitUpdate}>
                 <label>
-                  New receive address
+                  New receive address or ID
                   <input autoComplete="off" onChange={(event) => setIdUpdateReceiveAddress(event.target.value)} spellCheck={false} value={idUpdateReceiveAddress} />
                 </label>
+                {receiverUpdateNote ? <p className={receiverUpdateResolution.error ? "field-note bad" : "field-note good"}>{receiverUpdateNote}</p> : null}
                 <div className={idReceiverUpdateBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
                   {idReceiverUpdateBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
                 </div>
@@ -8065,7 +8131,7 @@ function IdsWorkspace({
                 </label>
                 {transferTargetNote ? <p className={transferTargetResolution.error ? "field-note bad" : "field-note good"}>{transferTargetNote}</p> : null}
                 <label>
-                  New receive address optional
+                  New receive address or ID optional
                   <input
                     autoComplete="off"
                     onChange={(event) => setIdTransferReceiveAddress(event.target.value)}
@@ -8074,6 +8140,7 @@ function IdsWorkspace({
                     value={idTransferReceiveAddress}
                   />
                 </label>
+                {transferReceiveNote ? <p className={transferReceiveResolution?.error ? "field-note bad" : "field-note good"}>{transferReceiveNote}</p> : null}
                 <div className={idTransferBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
                   {idTransferBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
                 </div>

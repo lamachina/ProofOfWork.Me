@@ -107,6 +107,7 @@ Launch invariants for future developers/agents:
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
+- Lets ID management receive fields accept confirmed ProofOfWork IDs, resolving them to raw Bitcoin receive addresses before writing registry events.
 - Lets current ID owners publish on-chain marketplace listings, delist them, and execute buyer-funded ID transfers.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
@@ -215,6 +216,7 @@ pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-
 ```
 
 `pwid1:r2` registrations require a 1,000 sat registry payment. `pwid1:u` and `pwid1:t` require a 546 sat mutation payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
+The UI may accept confirmed ProofOfWork IDs in owner/receive fields, but `pwid1:u` and `pwid1:t` always write resolved Bitcoin addresses on-chain.
 `pwid1:list2` publishes an on-chain marketplace listing for a signed `pwid-sale-v1` sale authorization. `pwid1:delist2` cancels a listing by txid. Both require a 546 sat mutation payment and must be spent from the current owner address. Any confirmed ownership transfer invalidates active listings for that ID.
 `pwid1:buy2` is the buyer-funded marketplace path: the buyer funds both the 546 sat mutation payment and the signed seller payment in one transaction. The resolver accepts it only if the current owner signature, seller payment, optional buyer lock, optional receive-address lock, and current ownership all match.
 

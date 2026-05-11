@@ -109,6 +109,7 @@ Launch invariants for future developers/agents:
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
 - Lets ID management receive fields accept confirmed ProofOfWork IDs, resolving them to raw Bitcoin receive addresses before writing registry events.
 - Lets current ID owners publish on-chain marketplace listings, delist them, and execute buyer-funded ID transfers.
+- Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
@@ -148,6 +149,7 @@ Current production behavior:
 - Unconfirmed transactions are mempool gossip, not global truth.
 - For pending visibility, the API merges the local node/indexer view with `PENDING_MEMPOOL_BASE`, which currently defaults to public `https://mempool.space`.
 - Confirmed records remain canonical; pending records are visible but not final.
+- Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
 
@@ -219,6 +221,7 @@ pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-
 The UI may accept confirmed ProofOfWork IDs in owner/receive fields, but `pwid1:u` and `pwid1:t` always write resolved Bitcoin addresses on-chain.
 `pwid1:list2` publishes an on-chain marketplace listing for a signed `pwid-sale-v1` sale authorization. `pwid1:delist2` cancels a listing by txid. Both require a 546 sat mutation payment and must be spent from the current owner address. Any confirmed ownership transfer invalidates active listings for that ID.
 `pwid1:buy2` is the buyer-funded marketplace path: the buyer funds both the 546 sat mutation payment and the signed seller payment in one transaction. The resolver accepts it only if the current owner signature, seller payment, optional buyer lock, optional receive-address lock, and current ownership all match.
+Pending `pwid1:u`, `pwid1:t`, `pwid1:list2`, `pwid1:delist2`, and `pwid1:buy2` events are exposed as in-flight changes for touched wallets. They do not change canonical owner/receiver routing until confirmed.
 
 ## Run
 

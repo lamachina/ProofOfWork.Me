@@ -1290,6 +1290,132 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
   }
 
   const accepted = [...records.values()];
+  const pendingEvents = events
+    .filter((event) => !event.confirmed && event.kind !== "register")
+    .flatMap((event) => {
+      if (event.kind === "delist") {
+        const listing = listings.get(event.listingId);
+        const current = listing ? records.get(listing.id) : undefined;
+        if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress)) {
+          return [];
+        }
+
+        return [
+          {
+            amountSats: event.amountSats,
+            createdAt: event.createdAt,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+            id: listing.id,
+            inputAddresses: event.inputAddresses,
+            kind: "delist",
+            listingId: event.listingId,
+            network: event.network,
+            sellerAddress: listing.sellerAddress,
+            txid: event.txid,
+          },
+        ];
+      }
+
+      const current = records.get(event.id);
+      if (!current) {
+        return [];
+      }
+
+      if (event.kind === "marketTransfer") {
+        if (
+          current.ownerAddress !== event.sellerAddress ||
+          event.sellerPaymentSats < event.priceSats ||
+          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+          !saleAuthorizationVerified(event.saleAuthorization)
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            amountSats: event.amountSats,
+            createdAt: event.createdAt,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+            id: event.id,
+            inputAddresses: event.inputAddresses,
+            kind: "marketTransfer",
+            network: event.network,
+            ownerAddress: event.ownerAddress,
+            priceSats: event.priceSats,
+            receiveAddress: event.receiveAddress,
+            sellerAddress: event.sellerAddress,
+            txid: event.txid,
+          },
+        ];
+      }
+
+      if (event.kind === "list") {
+        if (
+          current.ownerAddress !== event.sellerAddress ||
+          !event.inputAddresses.includes(current.ownerAddress) ||
+          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+          !saleAuthorizationVerified(event.saleAuthorization)
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            amountSats: event.amountSats,
+            createdAt: event.createdAt,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+            id: event.id,
+            inputAddresses: event.inputAddresses,
+            kind: "list",
+            network: event.network,
+            priceSats: event.priceSats,
+            sellerAddress: event.sellerAddress,
+            txid: event.txid,
+          },
+        ];
+      }
+
+      if (!event.inputAddresses.includes(current.ownerAddress)) {
+        return [];
+      }
+
+      if (event.kind === "update") {
+        return [
+          {
+            amountSats: event.amountSats,
+            createdAt: event.createdAt,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+            id: event.id,
+            inputAddresses: event.inputAddresses,
+            kind: "update",
+            network: event.network,
+            receiveAddress: event.receiveAddress,
+            txid: event.txid,
+          },
+        ];
+      }
+
+      return [
+        {
+          amountSats: event.amountSats,
+          createdAt: event.createdAt,
+          currentOwnerAddress: current.ownerAddress,
+          currentReceiveAddress: current.receiveAddress,
+          id: event.id,
+          inputAddresses: event.inputAddresses,
+          kind: "transfer",
+          network: event.network,
+          ownerAddress: event.ownerAddress,
+          receiveAddress: event.receiveAddress,
+          txid: event.txid,
+        },
+      ];
+    })
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
 
   for (const event of pendingRegistrations) {
     if (!records.has(event.id)) {
@@ -1309,6 +1435,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
 
   return {
     listings: [...listings.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid)),
+    pendingEvents,
     records: accepted,
   };
 }
@@ -1418,19 +1545,23 @@ async function registryPayload(network) {
   }
 
   const txs = await fetchRegistryTransactions(registryAddress, network);
-  const { listings, records } = idRegistryStateFromTransactions(txs, registryAddress, network);
+  const { listings, pendingEvents, records } = idRegistryStateFromTransactions(txs, registryAddress, network);
   const confirmed = records.filter((record) => record.confirmed).length;
+  const pendingRecords = records.length - confirmed;
 
   return {
     indexedAt: new Date().toISOString(),
     listings,
     network,
+    pendingEvents,
     records,
     registryAddress,
     source: mempoolBase(network),
     stats: {
       confirmed,
-      pending: records.length - confirmed,
+      pending: pendingRecords + pendingEvents.length,
+      pendingChanges: pendingEvents.length,
+      pendingRecords,
       total: records.length,
       transactions: txs.length,
     },

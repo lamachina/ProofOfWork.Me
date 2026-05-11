@@ -21,6 +21,7 @@ Do not change these without an explicit migration plan:
 - Resolver rule: first confirmed valid registration wins
 - Casing rule: IDs are case-insensitive forever
 - Pending rule: pending IDs are visible but not final, and mail must not route to them
+- Pending mutation rule: pending receiver updates, transfers, listings, delistings, and buyer-funded transfers are visible to touched wallets as in-flight events, but do not alter canonical routing until confirmed
 - Verification rule: X verification actions appear only for IDs owned by or routed to the connected wallet
 
 Implementation anchors in `src/App.tsx`:
@@ -60,6 +61,7 @@ They are not traditional DNS records. They are on-chain mail IDs resolved by the
 - Future messages resolve to the current receiver.
 - The app resolves IDs by scanning registry history and applying valid events in chain order.
 - All registry mutations use the same canonical registry address and pay the mutation fee.
+- Pending registry mutations are shown as incoming/outgoing status for affected wallets so senders and receivers can see ID changes in transit.
 
 ## ID Model
 
@@ -173,6 +175,7 @@ Rules:
 - First confirmed valid registration wins.
 - Pending registrations can be displayed, but are not final.
 - Pending transfers/receiver updates are not applied to canonical routing until confirmed.
+- Pending `u`, `t`, `list2`, `delist2`, and `buy2` events should be exposed separately from confirmed records. The sender/current owner sees outgoing events; the new owner or new receiver sees incoming events; marketplace participants see listing, delisting, and purchase events that touch their wallet.
 - The compose flow must not route mail to a pending ID. IDs are sendable only after a confirmed registry record resolves to a receive address.
 - Public Desktop search follows the same confirmed-only ID resolver rule.
 - Duplicate confirmed registrations are ignored by the resolver.

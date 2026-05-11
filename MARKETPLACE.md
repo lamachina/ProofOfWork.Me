@@ -38,6 +38,13 @@ Automatic invalidation rules:
 - Expired sale authorizations are ignored by the resolver.
 - Pending listings and delistings are visible mempool intent only; confirmed history is canonical.
 
+Pending marketplace events are displayed separately from confirmed ownership:
+
+- sellers see pending listings and delistings they funded,
+- buyers see pending buyer-funded transfers they broadcast,
+- new owners/receivers see incoming pending transfers that target their wallet,
+- confirmed registry state remains the only source of truth for active listings and ownership.
+
 ## General Asset Trading
 
 The marketplace should be asset-agnostic over time. IDs are the first asset type, but the same shell can trade:

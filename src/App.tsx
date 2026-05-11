@@ -242,6 +242,23 @@ type PowIdRecord = {
   createdAt: string;
 };
 
+type PowIdPendingEvent = {
+  amountSats: number;
+  createdAt: string;
+  currentOwnerAddress?: string;
+  currentReceiveAddress?: string;
+  id?: string;
+  inputAddresses: string[];
+  kind: "update" | "transfer" | "marketTransfer" | "list" | "delist";
+  listingId?: string;
+  network: BitcoinNetwork;
+  ownerAddress?: string;
+  priceSats?: number;
+  receiveAddress?: string;
+  sellerAddress?: string;
+  txid: string;
+};
+
 type PowIdListing = {
   amountSats: number;
   buyerAddress?: string;
@@ -426,6 +443,7 @@ type PaymentOutputSpec = {
 
 type PowRegistryApiResponse = {
   listings?: PowIdListing[];
+  pendingEvents?: PowIdPendingEvent[];
   records?: PowIdRecord[];
 };
 
@@ -997,6 +1015,62 @@ function ownedPowIds(records: PowIdRecord[], ownerOrReceiverAddress: string) {
   }
 
   return records.filter((record) => record.ownerAddress === ownerOrReceiverAddress || record.receiveAddress === ownerOrReceiverAddress);
+}
+
+function pendingIdEventTouchesAddress(event: PowIdPendingEvent, targetAddress: string) {
+  if (!targetAddress) {
+    return false;
+  }
+
+  return [
+    event.currentOwnerAddress,
+    event.currentReceiveAddress,
+    event.ownerAddress,
+    event.receiveAddress,
+    event.sellerAddress,
+    ...event.inputAddresses,
+  ].includes(targetAddress);
+}
+
+function pendingIdEventDirection(event: PowIdPendingEvent, targetAddress: string) {
+  if (!targetAddress) {
+    return "Pending";
+  }
+
+  if ((event.kind === "transfer" || event.kind === "marketTransfer") && (event.ownerAddress === targetAddress || event.receiveAddress === targetAddress)) {
+    return "Incoming";
+  }
+
+  if (event.kind === "update" && event.receiveAddress === targetAddress && event.currentOwnerAddress !== targetAddress && !event.inputAddresses.includes(targetAddress)) {
+    return "Incoming";
+  }
+
+  if (event.currentOwnerAddress === targetAddress || event.sellerAddress === targetAddress || event.inputAddresses.includes(targetAddress)) {
+    return "Outgoing";
+  }
+
+  if (event.currentReceiveAddress === targetAddress) {
+    return "Routing";
+  }
+
+  return "Pending";
+}
+
+function pendingIdEventLabel(event: PowIdPendingEvent, targetAddress: string) {
+  const direction = pendingIdEventDirection(event, targetAddress);
+  if (event.kind === "update") {
+    return `${direction} receiver update`;
+  }
+
+  if (event.kind === "list") {
+    return `${direction} listing`;
+  }
+
+  if (event.kind === "delist") {
+    return `${direction} delisting`;
+  }
+
+  return `${direction} ID transfer`;
 }
 
 function resolveRecipientInput(
@@ -3224,7 +3298,7 @@ function idRegistryStateFromTransactions(
   txs: Array<Record<string, unknown>>,
   registryAddress: string,
   targetNetwork: BitcoinNetwork,
-): { listings: PowIdListing[]; records: PowIdRecord[] } {
+): { listings: PowIdListing[]; pendingEvents: PowIdPendingEvent[]; records: PowIdRecord[] } {
   const events = txs.flatMap((tx): PowIdEvent[] => {
     const vin = Array.isArray(tx.vin) ? (tx.vin as Array<Record<string, unknown>>) : [];
     const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
@@ -3463,6 +3537,133 @@ function idRegistryStateFromTransactions(
   }
 
   const accepted = [...records.values()];
+  const pendingEvents = events
+    .filter((event) => !event.confirmed && event.kind !== "register")
+    .flatMap((event): PowIdPendingEvent[] => {
+      if (event.kind === "delist") {
+        const listing = listings.get(event.listingId);
+        const current = listing ? records.get(listing.id) : undefined;
+        if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress)) {
+          return [];
+        }
+
+        return [
+          {
+            amountSats: event.amountSats,
+            createdAt: event.createdAt,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+            id: listing.id,
+            inputAddresses: event.inputAddresses,
+            kind: "delist",
+            listingId: event.listingId,
+            network: event.network,
+            sellerAddress: listing.sellerAddress,
+            txid: event.txid,
+          },
+        ];
+      }
+
+      const current = records.get(event.id);
+      if (!current) {
+        return [];
+      }
+
+      if (event.kind === "marketTransfer") {
+        if (
+          current.ownerAddress !== event.sellerAddress ||
+          event.sellerPaymentSats < event.priceSats ||
+          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+          !saleAuthorizationVerified(event.saleAuthorization)
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            amountSats: event.amountSats,
+            createdAt: event.createdAt,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+            id: event.id,
+            inputAddresses: event.inputAddresses,
+            kind: "marketTransfer",
+            network: event.network,
+            ownerAddress: event.ownerAddress,
+            priceSats: event.priceSats,
+            receiveAddress: event.receiveAddress,
+            sellerAddress: event.sellerAddress,
+            txid: event.txid,
+          },
+        ];
+      }
+
+      if (event.kind === "list") {
+        if (
+          current.ownerAddress !== event.sellerAddress ||
+          !event.inputAddresses.includes(current.ownerAddress) ||
+          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+          !saleAuthorizationCanBroadcast(event.saleAuthorization) ||
+          !saleAuthorizationVerified(event.saleAuthorization)
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            amountSats: event.amountSats,
+            createdAt: event.createdAt,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+            id: event.id,
+            inputAddresses: event.inputAddresses,
+            kind: "list",
+            network: event.network,
+            priceSats: event.priceSats,
+            sellerAddress: event.sellerAddress,
+            txid: event.txid,
+          },
+        ];
+      }
+
+      if (!event.inputAddresses.includes(current.ownerAddress)) {
+        return [];
+      }
+
+      if (event.kind === "update") {
+        return [
+          {
+            amountSats: event.amountSats,
+            createdAt: event.createdAt,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+            id: event.id,
+            inputAddresses: event.inputAddresses,
+            kind: "update",
+            network: event.network,
+            receiveAddress: event.receiveAddress,
+            txid: event.txid,
+          },
+        ];
+      }
+
+      return [
+        {
+          amountSats: event.amountSats,
+          createdAt: event.createdAt,
+          currentOwnerAddress: current.ownerAddress,
+          currentReceiveAddress: current.receiveAddress,
+          id: event.id,
+          inputAddresses: event.inputAddresses,
+          kind: "transfer",
+          network: event.network,
+          ownerAddress: event.ownerAddress,
+          receiveAddress: event.receiveAddress,
+          txid: event.txid,
+        },
+      ];
+    })
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
 
   for (const event of pendingRegistrations) {
     if (!records.has(event.id)) {
@@ -3482,6 +3683,7 @@ function idRegistryStateFromTransactions(
 
   return {
     listings: [...listings.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid)),
+    pendingEvents,
     records: accepted,
   };
 }
@@ -3506,16 +3708,17 @@ async function fetchIdRegistry(targetNetwork: BitcoinNetwork): Promise<PowIdReco
   return (await fetchIdRegistryState(targetNetwork)).records;
 }
 
-async function fetchIdRegistryState(targetNetwork: BitcoinNetwork): Promise<{ listings: PowIdListing[]; records: PowIdRecord[] }> {
+async function fetchIdRegistryState(targetNetwork: BitcoinNetwork): Promise<{ listings: PowIdListing[]; pendingEvents: PowIdPendingEvent[]; records: PowIdRecord[] }> {
   const registryAddress = registryAddressForNetwork(targetNetwork);
   if (!registryAddress) {
-    return { listings: [], records: [] };
+    return { listings: [], pendingEvents: [], records: [] };
   }
 
   if (POW_API_BASE) {
     const payload = await fetchProofApiJson<PowRegistryApiResponse>("/api/v1/registry", targetNetwork);
     return {
       listings: Array.isArray(payload.listings) ? payload.listings : [],
+      pendingEvents: Array.isArray(payload.pendingEvents) ? payload.pendingEvents : [],
       records: Array.isArray(payload.records) ? payload.records : [],
     };
   }
@@ -3918,6 +4121,7 @@ export default function App() {
   const [chainSent, setChainSent] = useState<SentMessage[]>([]);
   const [idRegistry, setIdRegistry] = useState<PowIdRecord[]>([]);
   const [idListings, setIdListings] = useState<PowIdListing[]>([]);
+  const [idPendingEvents, setIdPendingEvents] = useState<PowIdPendingEvent[]>([]);
   const [lastRegisteredId, setLastRegisteredId] = useState<PowIdRecord | undefined>();
   const [idName, setIdName] = useState("");
   const [idReceiveAddress, setIdReceiveAddress] = useState("");
@@ -4112,6 +4316,11 @@ export default function App() {
   const ownedIdCount = useMemo(() => ownedPowIds(idRegistry, address).length, [address, idRegistry]);
   const confirmedIdCount = useMemo(() => idRegistry.filter((record) => record.confirmed).length, [idRegistry]);
   const pendingIdCount = idRegistry.length - confirmedIdCount;
+  const pendingIdEventCount = useMemo(() => idPendingEvents.filter((event) => event.network === network).length, [idPendingEvents, network]);
+  const walletPendingIdEvents = useMemo(
+    () => idPendingEvents.filter((event) => event.network === network && pendingIdEventTouchesAddress(event, address)),
+    [address, idPendingEvents, network],
+  );
   const existingIdRegistration = useMemo(
     () => idRegistry.find((record) => record.network === network && record.id === normalizedIdName),
     [idRegistry, network, normalizedIdName],
@@ -5189,6 +5398,7 @@ export default function App() {
     if (!registryAddress) {
       setIdRegistry([]);
       setIdListings([]);
+      setIdPendingEvents([]);
       if (!silent) {
         setStatus({ tone: "idle", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
       }
@@ -5204,10 +5414,12 @@ export default function App() {
       const state = await fetchIdRegistryState(network);
       setIdRegistry(state.records);
       setIdListings(state.listings);
+      setIdPendingEvents(state.pendingEvents);
       if (!silent) {
         const confirmed = state.records.filter((record) => record.confirmed).length;
         const pending = state.records.length - confirmed;
-        setStatus({ tone: "good", text: `ID registry loaded. ${confirmed} confirmed, ${pending} pending.` });
+        const pendingChanges = state.pendingEvents.length;
+        setStatus({ tone: "good", text: `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${pendingChanges} in flight.` });
       }
     } catch (error) {
       setStatus({ tone: "bad", text: errorMessage(error, "ID registry scan failed.") });
@@ -5451,6 +5663,7 @@ export default function App() {
     const latestState = await fetchIdRegistryState(network);
     setIdRegistry(latestState.records);
     setIdListings(latestState.listings);
+    setIdPendingEvents(latestState.pendingEvents);
     const latestRecord = latestState.records.find((record) => record.network === network && record.id === managedIdRecord.id && record.confirmed);
 
     if (!latestRecord) {
@@ -5638,6 +5851,7 @@ export default function App() {
       const latestState = await fetchIdRegistryState(network);
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
+      setIdPendingEvents(latestState.pendingEvents);
       const latestRecord = latestState.records.find((record) => record.network === network && record.id === authorization.id && record.confirmed);
 
       if (!latestRecord) {
@@ -5717,6 +5931,7 @@ export default function App() {
       latestRegistry = latestState.records;
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
+      setIdPendingEvents(latestState.pendingEvents);
       resolvedReceive = resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress);
     }
 
@@ -5757,6 +5972,7 @@ export default function App() {
       latestRegistry = latestState.records;
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
+      setIdPendingEvents(latestState.pendingEvents);
       resolvedOwner = resolvePowIdOwnerInput(idTransferOwnerAddress, network, latestRegistry, registryAddress);
       resolvedReceive = receiveInput ? resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress) : undefined;
     }
@@ -6051,6 +6267,7 @@ export default function App() {
         idSaleReceiveAddress={idSaleReceiveAddress}
         managedIdName={managedIdRecord?.id ?? ""}
         publishListing={publishIdListing}
+        pendingEvents={idPendingEvents.filter((event) => event.network === "livenet")}
         registryAddress={registryAddressForNetwork("livenet")}
         registryListings={idListings.filter((listing) => listing.network === "livenet")}
         registryRecords={idRegistry.filter((record) => record.network === "livenet")}
@@ -6317,7 +6534,7 @@ export default function App() {
                 <AtSign size={17} />
                 <span>IDs</span>
               </span>
-              <strong>{ownedIdCount}</strong>
+              <strong>{ownedIdCount + walletPendingIdEvents.length}</strong>
             </button>
             <button aria-current={activeFolder === "marketplace"} onClick={() => openFolder("marketplace")} type="button">
               <span className="folder-label">
@@ -6338,7 +6555,8 @@ export default function App() {
                 <span>Registry Network</span>
                 <strong>{idRegistry.length.toLocaleString()}</strong>
                 <small>
-                  {confirmedIdCount.toLocaleString()} confirmed · {pendingIdCount.toLocaleString()} pending
+                  {confirmedIdCount.toLocaleString()} confirmed · {pendingIdCount.toLocaleString()} pending IDs
+                  {pendingIdEventCount ? ` · ${pendingIdEventCount.toLocaleString()} changes` : ""}
                 </small>
               </div>
             ) : null}
@@ -6389,6 +6607,7 @@ export default function App() {
             idReceiverUpdateBytes={idReceiverUpdateBytes}
             managedIdName={managedIdRecord?.id ?? ""}
             network={network}
+            pendingEvents={idPendingEvents}
             registryAddress={registryAddress}
             registryRecords={idRegistry}
             registrationBytes={idRegistrationBytes}
@@ -6432,6 +6651,7 @@ export default function App() {
             idSaleReceiveAddress={idSaleReceiveAddress}
             managedIdName={managedIdName}
             network={network}
+            pendingEvents={idPendingEvents}
             publishListing={publishIdListing}
             registryAddress={registryAddress}
             registryListings={idListings}
@@ -7317,6 +7537,7 @@ function MarketplaceApp({
   idSalePriceSats,
   idSaleReceiveAddress,
   managedIdName,
+  pendingEvents,
   publishListing,
   registryAddress,
   registryListings,
@@ -7354,6 +7575,7 @@ function MarketplaceApp({
   idSalePriceSats: number;
   idSaleReceiveAddress: string;
   managedIdName: string;
+  pendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
   registryAddress: string;
   registryListings: PowIdListing[];
@@ -7377,6 +7599,7 @@ function MarketplaceApp({
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const ownerControlledIds = confirmedRecords.filter((record) => record.ownerAddress === address);
   const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
+  const walletPendingEvents = pendingEvents.filter((event) => pendingIdEventTouchesAddress(event, address));
 
   return (
     <main className="id-launch-app marketplace-app">
@@ -7549,6 +7772,23 @@ function MarketplaceApp({
             onUse={useListing}
           />
 
+          <section className="id-card">
+            <div className="id-card-head">
+              <div className="empty-icon" aria-hidden="true">
+                <Clock size={24} />
+              </div>
+              <div>
+                <h3>Pending Transfers</h3>
+                <p>Listings, purchases, and transfers touching your wallet stay here until confirmation.</p>
+              </div>
+            </div>
+            <PendingIdEventList
+              address={address}
+              events={walletPendingEvents}
+              empty={address ? "No pending marketplace transfers for this wallet." : "Connect a wallet to see pending marketplace transfers."}
+            />
+          </section>
+
           <section className="id-card ids-registry-card">
             <div className="id-card-head">
               <div className="empty-icon" aria-hidden="true">
@@ -7586,6 +7826,7 @@ function MarketplaceWorkspace({
   idSaleReceiveAddress,
   managedIdName,
   network,
+  pendingEvents,
   publishListing,
   registryAddress,
   registryListings,
@@ -7618,6 +7859,7 @@ function MarketplaceWorkspace({
   idSaleReceiveAddress: string;
   managedIdName: string;
   network: BitcoinNetwork;
+  pendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
   registryAddress: string;
   registryListings: PowIdListing[];
@@ -7638,6 +7880,7 @@ function MarketplaceWorkspace({
   const pendingRecords = registryRecords.filter((record) => record.network === network && !record.confirmed);
   const ownerControlledIds = confirmedRecords.filter((record) => record.ownerAddress === address);
   const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
+  const walletPendingEvents = pendingEvents.filter((event) => event.network === network && pendingIdEventTouchesAddress(event, address));
 
   return (
     <section className="ids-workspace">
@@ -7739,6 +7982,23 @@ function MarketplaceWorkspace({
           onDelist={delistListing}
           onUse={useListing}
         />
+
+        <section className="id-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Clock size={24} />
+            </div>
+            <div>
+              <h3>Pending Transfers</h3>
+              <p>Listings, purchases, and transfers touching your wallet stay here until confirmation.</p>
+            </div>
+          </div>
+          <PendingIdEventList
+            address={address}
+            events={walletPendingEvents}
+            empty={address ? "No pending marketplace transfers for this wallet." : "Connect a wallet to see pending marketplace transfers."}
+          />
+        </section>
 
         <section className="id-card ids-registry-card">
           <div className="id-card-head">
@@ -7936,6 +8196,7 @@ function IdsWorkspace({
   idUpdateReceiveAddress,
   managedIdName,
   network,
+  pendingEvents,
   registryAddress,
   registryRecords,
   registrationBytes,
@@ -7971,6 +8232,7 @@ function IdsWorkspace({
   idUpdateReceiveAddress: string;
   managedIdName: string;
   network: BitcoinNetwork;
+  pendingEvents: PowIdPendingEvent[];
   registryAddress: string;
   registryRecords: PowIdRecord[];
   registrationBytes: number;
@@ -7995,6 +8257,7 @@ function IdsWorkspace({
   const idError = powIdError(normalizedId);
   const ownedIds = ownedPowIds(registryRecords, address);
   const ownerControlledIds = registryRecords.filter((record) => record.network === network && record.confirmed && record.ownerAddress === address);
+  const walletPendingEvents = pendingEvents.filter((event) => event.network === network && pendingIdEventTouchesAddress(event, address));
   const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
   const receiverUpdateResolution = resolveRecipientInput(idUpdateReceiveAddress, network, registryRecords, registryAddress);
   const receiverUpdateNote = idUpdateReceiveAddress.trim() ? receiveResolutionNote(receiverUpdateResolution) : "";
@@ -8209,6 +8472,23 @@ function IdsWorkspace({
             </div>
           </div>
           <IdRecordList records={ownedIds} allowVerification contacts={contacts} empty="No IDs for this wallet yet." onAddContact={onAddContact} />
+        </section>
+
+        <section className="id-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Clock size={24} />
+            </div>
+            <div>
+              <h3>Pending IDs</h3>
+              <p>Incoming and outgoing ID transfers appear here until they confirm.</p>
+            </div>
+          </div>
+          <PendingIdEventList
+            address={address}
+            events={walletPendingEvents}
+            empty={address ? "No in-flight ID transfers for this wallet." : "Connect a wallet to see pending ID transfers."}
+          />
         </section>
 
         <section className="id-card ids-registry-card">
@@ -8546,6 +8826,59 @@ function IdMarketplaceCard({
         </form>
       </div>
     </section>
+  );
+}
+
+function PendingIdEventList({
+  address,
+  empty,
+  events,
+}: {
+  address: string;
+  empty: string;
+  events: PowIdPendingEvent[];
+}) {
+  if (events.length === 0) {
+    return <p className="field-note">{empty}</p>;
+  }
+
+  return (
+    <div className="id-record-list">
+      {events.map((event) => (
+        <article className="id-record" key={`${event.network}-${event.txid}-${event.kind}`}>
+          <div>
+            <strong>{event.id ? `${event.id}@proofofwork.me` : "Registry event"}</strong>
+            <span>{pendingIdEventLabel(event, address)} · {event.amountSats.toLocaleString()} sats</span>
+          </div>
+          <dl>
+            <div>
+              <dt>Current Owner</dt>
+              <dd>{event.currentOwnerAddress ? shortAddress(event.currentOwnerAddress) : "Unknown"}</dd>
+            </div>
+            <div>
+              <dt>New Owner</dt>
+              <dd>{event.ownerAddress ? shortAddress(event.ownerAddress) : event.kind === "update" ? "No change" : "Unknown"}</dd>
+            </div>
+            <div>
+              <dt>Receives</dt>
+              <dd>{event.receiveAddress ? shortAddress(event.receiveAddress) : event.currentReceiveAddress ? shortAddress(event.currentReceiveAddress) : "Unknown"}</dd>
+            </div>
+            <div>
+              <dt>TX</dt>
+              <dd>{shortAddress(event.txid)}</dd>
+            </div>
+          </dl>
+          <div className="id-record-actions">
+            <a className="secondary small link-button" href={mempoolTxUrl(event.txid, event.network)} rel="noreferrer" target="_blank">
+              <span className="button-content">
+                <ArrowUpRight size={15} />
+                <span>View TX</span>
+              </span>
+            </a>
+          </div>
+        </article>
+      ))}
+    </div>
   );
 }
 

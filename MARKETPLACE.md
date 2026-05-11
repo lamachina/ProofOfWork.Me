@@ -9,16 +9,16 @@
 
 ## Current ID Marketplace Model
 
-The marketplace flow uses on-chain listings backed by seller-signed sale authorizations:
+The marketplace flow uses on-chain listings backed by owner-funded OP_RETURN sale terms:
 
 1. The current ID owner chooses an owned confirmed ID.
-2. The owner signs a listing authorization with price, optional buyer lock, optional receive-address lock, nonce, and optional expiry.
-3. The owner publishes that authorization in a `pwid1:list2` registry transaction that pays the 546 sat mutation fee.
+2. The owner enters sale terms with price, optional buyer lock, optional receive-address lock, nonce, and optional expiry.
+3. The owner publishes those terms in a `pwid1:list2` registry transaction that pays the 546 sat mutation fee.
 4. The listing txid becomes the listing ID.
 5. A buyer can use the listing to fund the seller payment plus the 546 sat registry transfer in one `pwid1:buy2` transaction.
-6. The indexer accepts the transfer only if the seller is still the current owner and the signature/terms validate.
+6. The indexer accepts the transfer only if the seller is still the current owner and the buy terms match an active listing.
 
-The app should publish listings on-chain. Manual/private sale JSON is not part of the normal marketplace UI because the canonical marketplace book is the on-chain `list2` event stream.
+This follows the same core OP_RETURN asset pattern as WhiteNode's Universal docs: protocol state lives in OP_RETURN, and the standard Bitcoin transaction inputs/outputs authorize and route the operation. Manual/private sale JSON is not part of the normal marketplace UI because the canonical marketplace book is the on-chain `list2` event stream.
 
 ## Delistings
 

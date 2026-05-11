@@ -219,8 +219,8 @@ pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-
 
 `pwid1:r2` registrations require a 1,000 sat registry payment. `pwid1:u` and `pwid1:t` require a 546 sat mutation payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
 The UI may accept confirmed ProofOfWork IDs in owner/receive fields, but `pwid1:u` and `pwid1:t` always write resolved Bitcoin addresses on-chain.
-`pwid1:list2` publishes an on-chain marketplace listing for a signed `pwid-sale-v1` sale authorization. `pwid1:delist2` cancels a listing by txid. Both require a 546 sat mutation payment and must be spent from the current owner address. Any confirmed ownership transfer invalidates active listings for that ID.
-`pwid1:buy2` is the buyer-funded marketplace path: the buyer funds both the 546 sat mutation payment and the signed seller payment in one transaction. The resolver accepts it only if the current owner signature, seller payment, optional buyer lock, optional receive-address lock, and current ownership all match.
+`pwid1:list2` publishes on-chain marketplace terms as a `pwid-sale-v1` JSON object. The listing transaction itself is the seller authorization because it must be spent from the current owner address. `pwid1:delist2` cancels a listing by txid. Both require a 546 sat mutation payment. Any confirmed ownership transfer invalidates active listings for that ID.
+`pwid1:buy2` is the buyer-funded marketplace path: the buyer funds both the 546 sat mutation payment and the seller payment in one transaction. The resolver accepts it only if the sale terms match an active on-chain listing, or a legacy seller signature verifies, and seller payment, optional buyer lock, optional receive-address lock, and current ownership all match.
 Pending `pwid1:u`, `pwid1:t`, `pwid1:list2`, `pwid1:delist2`, and `pwid1:buy2` events are exposed as in-flight changes for touched wallets. They do not change canonical owner/receiver routing until confirmed.
 
 ## Run

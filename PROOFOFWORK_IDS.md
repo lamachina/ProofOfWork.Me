@@ -57,7 +57,7 @@ They are not traditional DNS records. They are on-chain mail IDs resolved by the
 - Registration requires a 1,000 sat payment to the canonical registry address.
 - Receiver updates, transfers, listings, delistings, and buyer-funded marketplace transfers require a 546 sat mutation payment to the same canonical registry address.
 - Transfers update the current owner/receiver.
-- Marketplace listings publish seller-signed sale terms on-chain, while buyer-funded transfers execute those terms.
+- Marketplace listings publish sale terms on-chain from the current owner's wallet, while buyer-funded transfers execute those terms.
 - Future messages resolve to the current receiver.
 - The app resolves IDs by scanning registry history and applying valid events in chain order.
 - All registry mutations use the same canonical registry address and pay the mutation fee.
@@ -155,15 +155,15 @@ Rules:
 - `pwid1:u` changes only the receive address. The owner remains unchanged.
 - `pwid1:t` changes ownership. If the new receive address is omitted, the new owner address also becomes the receive address.
 - App UI may accept confirmed ProofOfWork IDs as transfer owner or receive targets, but the written `pwid1:u` and `pwid1:t` events must still contain resolved Bitcoin addresses.
-- `pwid1:list2` publishes a signed sale authorization as an active marketplace listing. The listing txid is the listing ID.
+- `pwid1:list2` publishes sale terms as an active marketplace listing. The listing txid is the listing ID, and the seller authorization is the owner-funded listing transaction itself.
 - `pwid1:delist2` cancels an active listing by listing txid. The transaction must be funded by the current owner.
 - Any confirmed ownership transfer through `pwid1:t` or `pwid1:buy2` automatically invalidates all active listings for that ID.
-- `pwid1:buy2` changes ownership using an off-chain signed sale authorization from the current owner. The buyer can fund the transaction, so the seller does not need spendable sats.
-- A `buy2` transaction must pay the 546 sat mutation fee before the ID OP_RETURN and must also pay the signed sale price to the current owner before the ID OP_RETURN.
+- `pwid1:buy2` changes ownership using active on-chain sale terms from a current-owner `list2` transaction. The buyer can fund the transaction, so the seller does not need spendable sats after listing.
+- A `buy2` transaction must pay the 546 sat mutation fee before the ID OP_RETURN and must also pay the listed sale price to the current owner before the ID OP_RETURN.
 - A `buy2` sale authorization uses JSON version `pwid-sale-v1` and is base64url encoded inside the OP_RETURN payload.
-- The sale authorization signs canonical text with the ID, seller address, price, optional buyer lock, optional receive-address lock, nonce, and optional expiry.
-- The resolver applies `buy2` only when the signature verifies for the current owner, the current owner still matches the seller, and the buyer/receiver constraints match the event.
-- Sale authorizations are off-chain bearer objects. Anyone holding an open authorization can execute it by paying the signed price and mutation fee.
+- The sale terms include the ID, seller address, price, optional buyer lock, optional receive-address lock, nonce, and optional expiry.
+- The resolver applies `buy2` only when the sale terms match an active on-chain listing, or a legacy seller signature verifies, the current owner still matches the seller, and the buyer/receiver constraints match the event.
+- Sale terms are public on-chain listing objects. Anyone can execute an open listing by paying the listed price and mutation fee.
 - IDs are case-insensitive forever. `User`, `user`, and `USER` all resolve to `user`.
 - The app normalizes IDs to lowercase for writing, display, lookup, and first-claim comparisons.
 - There is no arbitrary app-level ID length or character whitelist.
@@ -228,7 +228,7 @@ Rules to preserve:
 - `u`, `t`, `k`, `list2`, `delist2`, and `accept` are valid only from the current owner.
 - `u`, `t`, `list2`, `delist2`, and `buy2` require at least `546` sats to the registry address.
 - `u`, `t`, `list2`, `delist2`, and `buy2` are live registry events.
-- `buy2` is valid only with a current-owner sale authorization and matching seller payment.
+- `buy2` is valid only with matching active on-chain sale terms, or a legacy current-owner signature, and matching seller payment.
 - `buy2` is valid only against current ownership; marketplace UIs should prefer active `list2` listings.
 - Marketplace events should be verifiable from chain history.
 - The resolver should expose both current owner and current receiver.

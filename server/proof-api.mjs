@@ -874,7 +874,7 @@ function parseSaleAuthorizationJson(value, network) {
     throw new Error("Sale receive address is invalid.");
   }
 
-  if (!Number.isSafeInteger(priceSats) || priceSats < 0 || !nonce || nonce.length > 160 || !signature) {
+  if (!Number.isSafeInteger(priceSats) || priceSats < 0 || !nonce || nonce.length > 160) {
     throw new Error("Sale authorization terms are invalid.");
   }
 
@@ -901,6 +901,10 @@ function saleAuthorizationMessageDraft(authorization) {
 }
 
 function saleAuthorizationVerified(authorization) {
+  if (!authorization.signature) {
+    return false;
+  }
+
   try {
     return Verifier.verifySignature(
       authorization.sellerAddress,
@@ -910,6 +914,25 @@ function saleAuthorizationVerified(authorization) {
   } catch {
     return false;
   }
+}
+
+function saleAuthorizationTermsMatch(left, right) {
+  return JSON.stringify(saleAuthorizationDraft(left)) === JSON.stringify(saleAuthorizationDraft(right));
+}
+
+function findMatchingActiveListing(listings, authorization, currentOwnerAddress) {
+  for (const listing of listings.values()) {
+    if (
+      listing.id === authorization.id &&
+      listing.sellerAddress === authorization.sellerAddress &&
+      listing.sellerAddress === currentOwnerAddress &&
+      saleAuthorizationTermsMatch(listing.saleAuthorization, authorization)
+    ) {
+      return listing;
+    }
+  }
+
+  return undefined;
 }
 
 function saleAuthorizationExpired(authorization, eventCreatedAt) {
@@ -1214,11 +1237,12 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     }
 
     if (event.kind === "marketTransfer") {
+      const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
       if (
         current.ownerAddress !== event.sellerAddress ||
         event.sellerPaymentSats < event.priceSats ||
         saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-        !saleAuthorizationVerified(event.saleAuthorization)
+        (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
       ) {
         continue;
       }
@@ -1239,8 +1263,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       if (
         current.ownerAddress !== event.sellerAddress ||
         !event.inputAddresses.includes(current.ownerAddress) ||
-        saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-        !saleAuthorizationVerified(event.saleAuthorization)
+        saleAuthorizationExpired(event.saleAuthorization, event.createdAt)
       ) {
         continue;
       }
@@ -1323,11 +1346,12 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       }
 
       if (event.kind === "marketTransfer") {
+        const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
         if (
           current.ownerAddress !== event.sellerAddress ||
           event.sellerPaymentSats < event.priceSats ||
           saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-          !saleAuthorizationVerified(event.saleAuthorization)
+          (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
         ) {
           return [];
         }
@@ -1355,8 +1379,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         if (
           current.ownerAddress !== event.sellerAddress ||
           !event.inputAddresses.includes(current.ownerAddress) ||
-          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-          !saleAuthorizationVerified(event.saleAuthorization)
+          saleAuthorizationExpired(event.saleAuthorization, event.createdAt)
         ) {
           return [];
         }

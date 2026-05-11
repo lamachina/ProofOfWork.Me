@@ -287,7 +287,7 @@ type PowIdSaleAuthorizationDraft = {
 };
 
 type PowIdSaleAuthorization = PowIdSaleAuthorizationDraft & {
-  signature: string;
+  signature?: string;
 };
 
 type PowIdEvent =
@@ -1911,10 +1911,6 @@ function parseSaleAuthorizationText(value: string, targetNetwork: BitcoinNetwork
     throw new Error("Sale authorization expiry is not a valid date.");
   }
 
-  if (!signature) {
-    throw new Error("Sale authorization signature is missing.");
-  }
-
   return {
     ...saleAuthorizationDraft({
       buyerAddress,
@@ -1934,13 +1930,38 @@ function parseSaleAuthorizationJson(value: string, targetNetwork: BitcoinNetwork
 }
 
 function saleAuthorizationCanBroadcast(authorization: PowIdSaleAuthorization) {
-  return Boolean(authorization.signature.trim());
+  return authorization.version === ID_SALE_AUTH_VERSION && Boolean(authorization.id && authorization.nonce);
 }
 
 function saleAuthorizationVerified(_authorization: PowIdSaleAuthorization) {
   // Browser builds intentionally do not bundle the Node-oriented BIP322 verifier.
   // The production API/indexer performs canonical buy2 signature verification.
   return false;
+}
+
+function saleAuthorizationTermsMatch(left: PowIdSaleAuthorization, right: PowIdSaleAuthorization) {
+  const leftTerms = saleAuthorizationDraft(left);
+  const rightTerms = saleAuthorizationDraft(right);
+  return JSON.stringify(leftTerms) === JSON.stringify(rightTerms);
+}
+
+function findMatchingActiveListing(
+  listings: Map<string, PowIdListing>,
+  authorization: PowIdSaleAuthorization,
+  currentOwnerAddress: string,
+) {
+  for (const listing of listings.values()) {
+    if (
+      listing.id === authorization.id &&
+      listing.sellerAddress === authorization.sellerAddress &&
+      listing.sellerAddress === currentOwnerAddress &&
+      saleAuthorizationTermsMatch(listing.saleAuthorization, authorization)
+    ) {
+      return listing;
+    }
+  }
+
+  return undefined;
 }
 
 function saleAuthorizationExpired(authorization: PowIdSaleAuthorization, eventCreatedAt: string) {
@@ -3460,11 +3481,12 @@ function idRegistryStateFromTransactions(
     }
 
     if (event.kind === "marketTransfer") {
+      const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
       if (
         current.ownerAddress !== event.sellerAddress ||
         event.sellerPaymentSats < event.priceSats ||
         saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-        !saleAuthorizationVerified(event.saleAuthorization)
+        (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
       ) {
         continue;
       }
@@ -3485,9 +3507,7 @@ function idRegistryStateFromTransactions(
       if (
         current.ownerAddress !== event.sellerAddress ||
         !event.inputAddresses.includes(current.ownerAddress) ||
-        saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-        !saleAuthorizationCanBroadcast(event.saleAuthorization) ||
-        !saleAuthorizationVerified(event.saleAuthorization)
+        saleAuthorizationExpired(event.saleAuthorization, event.createdAt)
       ) {
         continue;
       }
@@ -3570,11 +3590,12 @@ function idRegistryStateFromTransactions(
       }
 
       if (event.kind === "marketTransfer") {
+        const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
         if (
           current.ownerAddress !== event.sellerAddress ||
           event.sellerPaymentSats < event.priceSats ||
           saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-          !saleAuthorizationVerified(event.saleAuthorization)
+          (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
         ) {
           return [];
         }
@@ -3602,9 +3623,7 @@ function idRegistryStateFromTransactions(
         if (
           current.ownerAddress !== event.sellerAddress ||
           !event.inputAddresses.includes(current.ownerAddress) ||
-          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-          !saleAuthorizationCanBroadcast(event.saleAuthorization) ||
-          !saleAuthorizationVerified(event.saleAuthorization)
+          saleAuthorizationExpired(event.saleAuthorization, event.createdAt)
         ) {
           return [];
         }
@@ -5613,28 +5632,6 @@ export default function App() {
     }
   }
 
-  async function signSaleAuthorization(wallet: UnisatWallet, draft: PowIdSaleAuthorizationDraft) {
-    if (!wallet.signMessage) {
-      throw new Error("UniSat signMessage is not available. Update UniSat and try again.");
-    }
-
-    const message = saleAuthorizationMessage(draft);
-    let lastError: unknown;
-
-    for (const signatureType of ["bip322-simple", "ecdsa", ""] as const) {
-      try {
-        const signature = signatureType ? await wallet.signMessage(message, signatureType) : await wallet.signMessage(message);
-        return { ...draft, signature };
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    throw lastError instanceof Error
-      ? lastError
-      : new Error("Wallet could not sign the sale authorization.");
-  }
-
   async function prepareIdSaleAuthorization() {
     if (!window.unisat) {
       throw new Error("Connect UniSat first.");
@@ -5688,8 +5685,7 @@ export default function App() {
       sellerAddress: latestRecord.ownerAddress,
     });
 
-    setStatus({ tone: "idle", text: `Signing listing terms for ${latestRecord.id}@proofofwork.me...` });
-    return signSaleAuthorization(window.unisat, draft);
+    return { ...draft, signature: "" };
   }
 
   async function publishIdListing() {
@@ -5708,7 +5704,7 @@ export default function App() {
 
     try {
       const authorization = await prepareIdSaleAuthorization();
-      setStatus({ tone: "idle", text: `Listing terms signed. Approve the on-chain listing transaction in UniSat...` });
+      setStatus({ tone: "idle", text: `Listing terms ready. Approve the on-chain listing transaction in UniSat...` });
       const payload = buildIdListingPayload(authorization);
       if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
         setStatus({ tone: "bad", text: "ID listing OP_RETURN is over 100 KB." });
@@ -5792,7 +5788,7 @@ export default function App() {
     const effectiveReceiveAddress = receiveAddress || ownerAddress;
 
     if (!saleAuthorizationCanBroadcast(authorization)) {
-      setStatus({ tone: "bad", text: "Listing authorization signature is missing." });
+      setStatus({ tone: "bad", text: "Select an active on-chain listing first." });
       return;
     }
 
@@ -7704,7 +7700,7 @@ function MarketplaceApp({
                     </div>
                   </dl>
                 ) : null}
-                <p className="field-note">The published listing includes signed sale terms. Delisting costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and transfers invalidate old listings.</p>
+                <p className="field-note">The published listing includes on-chain sale terms. Delisting costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and transfers invalidate old listings.</p>
               </>
             )}
           </section>
@@ -7908,7 +7904,7 @@ function MarketplaceWorkspace({
                 </dl>
               ) : null}
               <p className="field-note">
-                The published listing includes signed sale terms. Delisting costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and transfers invalidate old listings.
+                The published listing includes on-chain sale terms. Delisting costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and transfers invalidate old listings.
               </p>
             </>
           )}
@@ -8697,7 +8693,7 @@ function IdMarketplaceCard({
             <button className="primary" disabled={!canCreateSaleAuthorization} onClick={publishListing} type="button">
               <span className="button-content">
                 <Send size={15} />
-                <span>{busy ? "Publishing" : "Sign + Publish On-Chain"}</span>
+                <span>{busy ? "Publishing" : "Publish On-Chain"}</span>
               </span>
             </button>
           </div>

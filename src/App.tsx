@@ -8369,7 +8369,7 @@ function IdMarketplaceCard({
 
       <div className="id-market-grid">
         <div className="id-action-form">
-          <h4>Create listing authorization</h4>
+          <h4>Publish on-chain listing</h4>
           <p className="field-note">
             {managedId
               ? `Selling ${managedId.id}@proofofwork.me from ${shortAddress(managedId.ownerAddress)}.`
@@ -8412,33 +8412,28 @@ function IdMarketplaceCard({
                 <span>{busy ? "Publishing" : "Publish Listing"}</span>
               </span>
             </button>
-            <button className="secondary small" disabled={!canCreateSaleAuthorization} onClick={createSaleAuthorization} type="button">
-              <span className="button-content">
-                <FilePenLine size={15} />
-                <span>Sign Only</span>
-              </span>
-            </button>
           </div>
+          <details className="id-advanced marketplace-manual-auth">
+            <summary>Advanced manual authorization</summary>
+            <div className="id-advanced-content">
+              <p className="field-note">Creates signed sale JSON without publishing a listing. Useful only for private/manual transfers.</p>
+              <button className="secondary small" disabled={!canCreateSaleAuthorization} onClick={createSaleAuthorization} type="button">
+                <span className="button-content">
+                  <FilePenLine size={15} />
+                  <span>Sign Only</span>
+                </span>
+              </button>
+            </div>
+          </details>
         </div>
 
         <form className="id-action-form" onSubmit={submitPurchase}>
-          <h4>Buy with authorization</h4>
-          <label>
-            Listing authorization JSON
-            <textarea
-              onChange={(event) => setIdSaleAuthorization(event.target.value)}
-              placeholder="Paste signed listing authorization here."
-              spellCheck={false}
-              value={idSaleAuthorization}
-            />
-          </label>
-          {idSaleAuthorization ? (
-            <p className={saleIsReady ? "field-note good" : "field-note bad"}>
-              {saleIsReady && parsedSale
-                ? `${parsedSale.id}@proofofwork.me listing terms loaded for ${parsedSale.priceSats.toLocaleString()} sats.`
-                : "Listing authorization is not ready yet."}
-            </p>
-          ) : null}
+          <h4>{parsedSale ? `Buy ${parsedSale.id}@proofofwork.me` : "Buy selected listing"}</h4>
+          <p className={parsedSale && saleIsReady ? "field-note good" : "field-note"}>
+            {parsedSale && saleIsReady
+              ? `Selected on-chain listing terms: ${parsedSale.priceSats.toLocaleString()} sats.`
+              : "Choose an active on-chain listing, then confirm the new owner and receive address."}
+          </p>
           <div className="compose-grid">
             <label>
               New owner
@@ -8458,6 +8453,29 @@ function IdMarketplaceCard({
           <div className={idPurchaseBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
             {idPurchaseBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
           </div>
+          <details className="id-advanced marketplace-manual-auth">
+            <summary>Advanced manual authorization</summary>
+            <div className="id-advanced-content">
+              <label>
+                Listing authorization JSON
+                <textarea
+                  onChange={(event) => setIdSaleAuthorization(event.target.value)}
+                  placeholder="Paste signed listing authorization here."
+                  spellCheck={false}
+                  value={idSaleAuthorization}
+                />
+              </label>
+              {idSaleAuthorization ? (
+                <p className={saleIsReady ? "field-note good" : "field-note bad"}>
+                  {saleIsReady && parsedSale
+                    ? `${parsedSale.id}@proofofwork.me listing terms loaded for ${parsedSale.priceSats.toLocaleString()} sats.`
+                    : "Listing authorization is not ready yet."}
+                </p>
+              ) : (
+                <p className="field-note">The normal marketplace flow fills this from an active on-chain listing.</p>
+              )}
+            </div>
+          </details>
           <div className="id-record-actions">
             {idSaleAuthorization ? (
               <button className="secondary small" onClick={() => void navigator.clipboard?.writeText(idSaleAuthorization)} type="button">

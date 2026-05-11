@@ -18,7 +18,7 @@ The marketplace flow uses on-chain listings backed by seller-signed sale authori
 5. A buyer can use the listing to fund the seller payment plus the 546 sat registry transfer in one `pwid1:buy2` transaction.
 6. The indexer accepts the transfer only if the seller is still the current owner and the signature/terms validate.
 
-The app can still produce a "Sign Only" authorization for manual sharing, but the canonical marketplace book is the on-chain `list2` event stream.
+The app should publish listings on-chain. Manual/private sale JSON is not part of the normal marketplace UI because the canonical marketplace book is the on-chain `list2` event stream.
 
 ## Delistings
 

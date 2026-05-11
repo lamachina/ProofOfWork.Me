@@ -5645,7 +5645,7 @@ export default function App() {
     }
 
     if (managedIdRecord.ownerAddress !== address) {
-      throw new Error("Only the current owner can create a listing authorization.");
+      throw new Error("Only the current owner can publish an on-chain listing.");
     }
 
     if (!Number.isSafeInteger(salePriceSats) || salePriceSats < 0) {
@@ -5688,31 +5688,8 @@ export default function App() {
       sellerAddress: latestRecord.ownerAddress,
     });
 
-    setStatus({ tone: "idle", text: `Signing listing authorization for ${latestRecord.id}@proofofwork.me...` });
+    setStatus({ tone: "idle", text: `Signing listing terms for ${latestRecord.id}@proofofwork.me...` });
     return signSaleAuthorization(window.unisat, draft);
-  }
-
-  async function createIdSaleAuthorization() {
-    if (!window.unisat) {
-      setStatus({ tone: "bad", text: "Connect UniSat first." });
-      return;
-    }
-
-    setBusy(true);
-    setStatus({ tone: "idle", text: `Checking current owner for ${managedIdRecord?.id ?? "ID"}...` });
-
-    try {
-      const authorization = await prepareIdSaleAuthorization();
-      setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
-      setStatus({
-        tone: "good",
-        text: `Listing authorization ready. Buyer pays ${salePriceSats.toLocaleString()} sats to seller plus ${ID_MUTATION_PRICE_SATS.toLocaleString()} sats to registry.`,
-      });
-    } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Listing authorization failed.") });
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function publishIdListing() {
@@ -5731,6 +5708,7 @@ export default function App() {
 
     try {
       const authorization = await prepareIdSaleAuthorization();
+      setStatus({ tone: "idle", text: `Listing terms signed. Approve the on-chain listing transaction in UniSat...` });
       const payload = buildIdListingPayload(authorization);
       if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
         setStatus({ tone: "bad", text: "ID listing OP_RETURN is over 100 KB." });
@@ -5845,7 +5823,7 @@ export default function App() {
     }
 
     setBusy(true);
-    setStatus({ tone: "idle", text: `Checking ${authorization.id}@proofofwork.me listing authorization...` });
+    setStatus({ tone: "idle", text: `Checking ${authorization.id}@proofofwork.me listing terms...` });
 
     try {
       const latestState = await fetchIdRegistryState(network);
@@ -6253,7 +6231,6 @@ export default function App() {
         canCreateSaleAuthorization={canCreateSaleAuthorization}
         canPurchaseId={canPurchaseId}
         connectWallet={connectWallet}
-        createSaleAuthorization={createIdSaleAuthorization}
         delistListing={delistIdListing}
         disconnectWallet={disconnectWallet}
         feeRate={feeRate}
@@ -6273,7 +6250,6 @@ export default function App() {
         registryRecords={idRegistry.filter((record) => record.network === "livenet")}
         setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
         setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
-        setIdSaleAuthorization={setIdSaleAuthorization}
         setIdSaleBuyerAddress={setIdSaleBuyerAddress}
         setIdSalePriceSats={setIdSalePriceSats}
         setIdSaleReceiveAddress={setIdSaleReceiveAddress}
@@ -6639,7 +6615,6 @@ export default function App() {
             busy={busy}
             canCreateSaleAuthorization={canCreateSaleAuthorization}
             canPurchaseId={canPurchaseId}
-            createSaleAuthorization={createIdSaleAuthorization}
             delistListing={delistIdListing}
             feeRate={feeRate}
             idPurchaseBytes={idPurchaseBytes}
@@ -6658,7 +6633,6 @@ export default function App() {
             registryRecords={idRegistry}
             setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
             setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
-            setIdSaleAuthorization={setIdSaleAuthorization}
             setIdSaleBuyerAddress={setIdSaleBuyerAddress}
             setIdSalePriceSats={setIdSalePriceSats}
             setIdSaleReceiveAddress={setIdSaleReceiveAddress}
@@ -7524,7 +7498,6 @@ function MarketplaceApp({
   canCreateSaleAuthorization,
   canPurchaseId,
   connectWallet,
-  createSaleAuthorization,
   delistListing,
   disconnectWallet,
   feeRate,
@@ -7544,7 +7517,6 @@ function MarketplaceApp({
   registryRecords,
   setIdPurchaseOwnerAddress,
   setIdPurchaseReceiveAddress,
-  setIdSaleAuthorization,
   setIdSaleBuyerAddress,
   setIdSalePriceSats,
   setIdSaleReceiveAddress,
@@ -7562,7 +7534,6 @@ function MarketplaceApp({
   canCreateSaleAuthorization: boolean;
   canPurchaseId: boolean;
   connectWallet: () => void;
-  createSaleAuthorization: () => void;
   delistListing: (listing: PowIdListing) => void;
   disconnectWallet: () => void;
   feeRate: number;
@@ -7582,7 +7553,6 @@ function MarketplaceApp({
   registryRecords: PowIdRecord[];
   setIdPurchaseOwnerAddress: (value: string) => void;
   setIdPurchaseReceiveAddress: (value: string) => void;
-  setIdSaleAuthorization: (value: string) => void;
   setIdSaleBuyerAddress: (value: string) => void;
   setIdSalePriceSats: (value: number) => void;
   setIdSaleReceiveAddress: (value: string) => void;
@@ -7671,7 +7641,7 @@ function MarketplaceApp({
             <span className="id-launch-kicker">ProofOfWork ID marketplace</span>
             <h2>Transfer Bitcoin-native names.</h2>
             <p>
-              Sellers create signed listing authorizations. Buyers fund the seller payment plus the
+              Sellers publish on-chain listings. Buyers fund the seller payment plus the
               {` ${ID_MUTATION_PRICE_SATS.toLocaleString()} `}sat registry transfer in one Bitcoin transaction.
             </p>
           </div>
@@ -7743,7 +7713,6 @@ function MarketplaceApp({
             busy={busy}
             canCreateSaleAuthorization={canCreateSaleAuthorization}
             canPurchaseId={canPurchaseId}
-            createSaleAuthorization={createSaleAuthorization}
             feeRate={feeRate}
             idPurchaseBytes={idPurchaseBytes}
             idPurchaseOwnerAddress={idPurchaseOwnerAddress}
@@ -7757,7 +7726,6 @@ function MarketplaceApp({
             publishListing={publishListing}
             setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
             setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
-            setIdSaleAuthorization={setIdSaleAuthorization}
             setIdSaleBuyerAddress={setIdSaleBuyerAddress}
             setIdSalePriceSats={setIdSalePriceSats}
             setIdSaleReceiveAddress={setIdSaleReceiveAddress}
@@ -7814,7 +7782,6 @@ function MarketplaceWorkspace({
   busy,
   canCreateSaleAuthorization,
   canPurchaseId,
-  createSaleAuthorization,
   delistListing,
   feeRate,
   idPurchaseBytes,
@@ -7833,7 +7800,6 @@ function MarketplaceWorkspace({
   registryRecords,
   setIdPurchaseOwnerAddress,
   setIdPurchaseReceiveAddress,
-  setIdSaleAuthorization,
   setIdSaleBuyerAddress,
   setIdSalePriceSats,
   setIdSaleReceiveAddress,
@@ -7847,7 +7813,6 @@ function MarketplaceWorkspace({
   busy: boolean;
   canCreateSaleAuthorization: boolean;
   canPurchaseId: boolean;
-  createSaleAuthorization: () => void;
   delistListing: (listing: PowIdListing) => void;
   feeRate: number;
   idPurchaseBytes: number;
@@ -7866,7 +7831,6 @@ function MarketplaceWorkspace({
   registryRecords: PowIdRecord[];
   setIdPurchaseOwnerAddress: (value: string) => void;
   setIdPurchaseReceiveAddress: (value: string) => void;
-  setIdSaleAuthorization: (value: string) => void;
   setIdSaleBuyerAddress: (value: string) => void;
   setIdSalePriceSats: (value: number) => void;
   setIdSaleReceiveAddress: (value: string) => void;
@@ -7954,7 +7918,6 @@ function MarketplaceWorkspace({
           busy={busy}
           canCreateSaleAuthorization={canCreateSaleAuthorization}
           canPurchaseId={canPurchaseId}
-          createSaleAuthorization={createSaleAuthorization}
           feeRate={feeRate}
           idPurchaseBytes={idPurchaseBytes}
           idPurchaseOwnerAddress={idPurchaseOwnerAddress}
@@ -7968,7 +7931,6 @@ function MarketplaceWorkspace({
           publishListing={publishListing}
           setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
           setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
-          setIdSaleAuthorization={setIdSaleAuthorization}
           setIdSaleBuyerAddress={setIdSaleBuyerAddress}
           setIdSalePriceSats={setIdSalePriceSats}
           setIdSaleReceiveAddress={setIdSaleReceiveAddress}
@@ -8566,7 +8528,7 @@ function MarketplaceListingList({
                 <button className="primary small" onClick={() => onUse(listing)} type="button">
                   <span className="button-content">
                     <Send size={15} />
-                    <span>Use Listing</span>
+                    <span>Select Listing</span>
                   </span>
                 </button>
                 {address && listing.sellerAddress === address ? (
@@ -8626,7 +8588,6 @@ function IdMarketplaceCard({
   busy,
   canCreateSaleAuthorization,
   canPurchaseId,
-  createSaleAuthorization,
   feeRate,
   idPurchaseBytes,
   idPurchaseOwnerAddress,
@@ -8640,7 +8601,6 @@ function IdMarketplaceCard({
   publishListing,
   setIdPurchaseOwnerAddress,
   setIdPurchaseReceiveAddress,
-  setIdSaleAuthorization,
   setIdSaleBuyerAddress,
   setIdSalePriceSats,
   setIdSaleReceiveAddress,
@@ -8650,7 +8610,6 @@ function IdMarketplaceCard({
   busy: boolean;
   canCreateSaleAuthorization: boolean;
   canPurchaseId: boolean;
-  createSaleAuthorization: () => void;
   feeRate: number;
   idPurchaseBytes: number;
   idPurchaseOwnerAddress: string;
@@ -8664,7 +8623,6 @@ function IdMarketplaceCard({
   publishListing: () => void;
   setIdPurchaseOwnerAddress: (value: string) => void;
   setIdPurchaseReceiveAddress: (value: string) => void;
-  setIdSaleAuthorization: (value: string) => void;
   setIdSaleBuyerAddress: (value: string) => void;
   setIdSalePriceSats: (value: number) => void;
   setIdSaleReceiveAddress: (value: string) => void;
@@ -8692,7 +8650,7 @@ function IdMarketplaceCard({
         </div>
         <div>
           <h3>Marketplace Transfer</h3>
-          <p>Seller signs a listing authorization. Buyer funds seller payment plus the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
+          <p>Listings are published on-chain. Buyers fund seller payment plus the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
         </div>
       </div>
 
@@ -8701,7 +8659,7 @@ function IdMarketplaceCard({
           <h4>Publish on-chain listing</h4>
           <p className="field-note">
             {managedId
-              ? `Selling ${managedId.id}@proofofwork.me from ${shortAddress(managedId.ownerAddress)}.`
+              ? `Listing ${managedId.id}@proofofwork.me from ${shortAddress(managedId.ownerAddress)}.`
               : "Select an owned confirmed ID above first."}
           </p>
           <label>
@@ -8739,30 +8697,18 @@ function IdMarketplaceCard({
             <button className="primary" disabled={!canCreateSaleAuthorization} onClick={publishListing} type="button">
               <span className="button-content">
                 <Send size={15} />
-                <span>{busy ? "Publishing" : "Publish Listing"}</span>
+                <span>{busy ? "Publishing" : "Sign + Publish On-Chain"}</span>
               </span>
             </button>
           </div>
-          <details className="id-advanced marketplace-manual-auth">
-            <summary>Advanced manual authorization</summary>
-            <div className="id-advanced-content">
-              <p className="field-note">Creates signed sale JSON without publishing a listing. Useful only for private/manual transfers.</p>
-              <button className="secondary small" disabled={!canCreateSaleAuthorization} onClick={createSaleAuthorization} type="button">
-                <span className="button-content">
-                  <FilePenLine size={15} />
-                  <span>Sign Only</span>
-                </span>
-              </button>
-            </div>
-          </details>
         </div>
 
         <form className="id-action-form" onSubmit={submitPurchase}>
-          <h4>{parsedSale ? `Buy ${parsedSale.id}@proofofwork.me` : "Buy selected listing"}</h4>
+          <h4>{parsedSale ? `Buy ${parsedSale.id}@proofofwork.me` : "Select an on-chain listing"}</h4>
           <p className={parsedSale && saleIsReady ? "field-note good" : "field-note"}>
             {parsedSale && saleIsReady
-              ? `Selected on-chain listing terms: ${parsedSale.priceSats.toLocaleString()} sats.`
-              : "Choose an active on-chain listing, then confirm the new owner and receive address."}
+              ? `Selected listing price: ${parsedSale.priceSats.toLocaleString()} sats.`
+              : "Choose an active listing below. The purchase form fills from that on-chain listing."}
           </p>
           <div className="compose-grid">
             <label>
@@ -8784,42 +8730,11 @@ function IdMarketplaceCard({
             {idPurchaseBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
           </div>
           <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
-          <details className="id-advanced marketplace-manual-auth">
-            <summary>Advanced manual authorization</summary>
-            <div className="id-advanced-content">
-              <label>
-                Listing authorization JSON
-                <textarea
-                  onChange={(event) => setIdSaleAuthorization(event.target.value)}
-                  placeholder="Paste signed listing authorization here."
-                  spellCheck={false}
-                  value={idSaleAuthorization}
-                />
-              </label>
-              {idSaleAuthorization ? (
-                <p className={saleIsReady ? "field-note good" : "field-note bad"}>
-                  {saleIsReady && parsedSale
-                    ? `${parsedSale.id}@proofofwork.me listing terms loaded for ${parsedSale.priceSats.toLocaleString()} sats.`
-                    : "Listing authorization is not ready yet."}
-                </p>
-              ) : (
-                <p className="field-note">The normal marketplace flow fills this from an active on-chain listing.</p>
-              )}
-            </div>
-          </details>
           <div className="id-record-actions">
-            {idSaleAuthorization ? (
-              <button className="secondary small" onClick={() => void navigator.clipboard?.writeText(idSaleAuthorization)} type="button">
-                <span className="button-content">
-                  <Copy size={15} />
-                  <span>Copy</span>
-                </span>
-              </button>
-            ) : null}
             <button className="primary" disabled={!canPurchaseId} type="submit">
               <span className="button-content">
                 <Send size={15} />
-                <span>Buy / Transfer</span>
+                <span>{busy ? "Buying" : "Buy Listing On-Chain"}</span>
               </span>
             </button>
           </div>

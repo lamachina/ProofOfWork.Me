@@ -215,16 +215,16 @@ ID owners can mutate confirmed IDs through the same canonical registry address:
 ```text
 pwid1:u:<id-base64url>:<receive-address>
 pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>
-pwid1:list2:<sale-authorization-json-base64url>
-pwid1:delist2:<listing-txid>
-pwid1:buy2:<sale-authorization-json-base64url>:<new-owner-address>:<new-receive-address?>
+pwid1:list3:<sale-authorization-json-base64url>
+pwid1:delist3:<listing-txid>
+pwid1:buy3:<listing-txid>:<new-owner-address>:<new-receive-address?>
 ```
 
 `pwid1:r2` registrations require a 1,000 sat registry payment. `pwid1:u` and `pwid1:t` require a 546 sat mutation payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
 The UI may accept confirmed ProofOfWork IDs in owner/receive fields, but `pwid1:u` and `pwid1:t` always write resolved Bitcoin addresses on-chain.
-`pwid1:list2` publishes on-chain marketplace terms as a `pwid-sale-v1` JSON object. The listing transaction itself is the seller authorization because it must be spent from the current owner address. `pwid1:delist2` cancels a listing by txid. Both require a 546 sat mutation payment. Any confirmed ownership transfer invalidates active listings for that ID.
-`pwid1:buy2` is the buyer-funded marketplace path: the buyer funds both the 546 sat mutation payment and the seller payment in one transaction. The resolver accepts it only if the sale terms match an active on-chain listing, or a legacy seller signature verifies, and seller payment, optional buyer lock, optional receive-address lock, and current ownership all match.
-Pending `pwid1:u`, `pwid1:t`, `pwid1:list2`, `pwid1:delist2`, and `pwid1:buy2` events are exposed as in-flight changes for touched wallets. They do not change canonical owner/receiver routing until confirmed.
+`pwid1:list3` publishes on-chain marketplace terms as a `pwid-sale-v2` JSON object and creates a 546 sat P2WSH listing anchor in the same transaction. `pwid1:buy3` must spend that anchor, pay the seller price plus anchor refund, and pay the 546 sat mutation fee before the ID OP_RETURN. Because every valid buyer spends the same anchor outpoint, competing purchases conflict at the Bitcoin UTXO layer instead of both paying.
+`pwid1:delist3` cancels a listing by txid and spends the same anchor back to the seller. Historical `list2`/`buy2`/`delist2` events remain readable for replay, but new marketplace writes use `list3`/`buy3`/`delist3`.
+Pending `pwid1:u`, `pwid1:t`, `pwid1:list3`, `pwid1:delist3`, and `pwid1:buy3` events are exposed as in-flight changes for touched wallets. They do not change canonical owner/receiver routing until confirmed.
 
 ## Run
 

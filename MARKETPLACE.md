@@ -9,32 +9,32 @@
 
 ## Current ID Marketplace Model
 
-The marketplace flow uses on-chain listings backed by owner-funded OP_RETURN sale terms:
+The marketplace flow uses on-chain listings backed by owner-funded OP_RETURN sale terms and a spendable Bitcoin anchor:
 
 1. The current ID owner chooses an owned confirmed ID.
 2. The owner enters sale terms with price, optional buyer lock, optional receive-address lock, nonce, and optional expiry.
-3. The owner publishes those terms in a `pwid1:list2` registry transaction that pays the 546 sat mutation fee.
+3. The owner publishes those terms in a `pwid1:list3` registry transaction that pays the 546 sat mutation fee and creates a 546 sat P2WSH listing anchor.
 4. The listing txid becomes the listing ID.
-5. A buyer can use the listing to fund the seller payment plus the 546 sat registry transfer in one `pwid1:buy2` transaction.
-6. The indexer accepts the transfer only if the seller is still the current owner and the buy terms match an active listing.
+5. A buyer can use the listing to fund the seller payment, refund the anchor, pay the 546 sat registry transfer, and spend the anchor in one `pwid1:buy3` transaction.
+6. The indexer accepts the transfer only if the seller is still the current owner, the buy references an active listing, the transaction spends the listing anchor, and the buyer/receiver constraints match.
 
-This follows the same core OP_RETURN asset pattern as WhiteNode's Universal docs: protocol state lives in OP_RETURN, and the standard Bitcoin transaction inputs/outputs authorize and route the operation. Manual/private sale JSON is not part of the normal marketplace UI because the canonical marketplace book is the on-chain `list2` event stream.
+The listing anchor is the scarce settlement point. Competing buyers must spend the same outpoint, so only one purchase can confirm. Historical `list2`/`buy2`/`delist2` events remain readable for replay, but new marketplace writes use `list3`/`buy3`/`delist3`.
 
 ## Delistings
 
 Delistings are also on-chain registry events:
 
 ```text
-pwid1:list2:<sale-authorization-json-base64url>
-pwid1:delist2:<listing-id>
+pwid1:list3:<sale-authorization-json-base64url>
+pwid1:delist3:<listing-id>
 ```
 
-Both pay the 546 sat mutation fee to the canonical registry address. A `delist2` transaction must be funded by the current owner and cancels the listing by txid.
+Both pay the 546 sat mutation fee to the canonical registry address. A `delist3` transaction must be funded by the current owner, spend the listing anchor, and cancels the listing by txid.
 
 Automatic invalidation rules:
 
 - Any confirmed `pwid1:t` ownership transfer cancels all active listings for that ID.
-- Any valid confirmed `pwid1:buy2` marketplace transfer cancels all active listings for that ID.
+- Any valid confirmed `pwid1:buy3` marketplace transfer cancels all active listings for that ID.
 - Expired sale authorizations are ignored by the resolver.
 - Pending listings and delistings are visible mempool intent only; confirmed history is canonical.
 
@@ -67,7 +67,7 @@ The future-facing design is a universal asset envelope:
   "locator": "pwid:bitcoin",
   "owner": "bc1...",
   "metadataHash": "sha256...",
-  "transferMethod": "pwid1:buy2"
+  "transferMethod": "pwid1:buy3"
 }
 ```
 

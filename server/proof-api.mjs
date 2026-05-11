@@ -28,7 +28,10 @@ const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
-const ID_SALE_AUTH_VERSION = "pwid-sale-v1";
+const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
+const ID_SALE_AUTH_VERSION = "pwid-sale-v2";
+const ID_LISTING_ANCHOR_TYPE = "p2wsh-op-true-v1";
+const ID_LISTING_ANCHOR_VALUE_SATS = 546;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const ID_REGISTRY_ADDRESSES = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
@@ -179,6 +182,24 @@ function isValidBitcoinAddress(address, network) {
   } catch {
     return false;
   }
+}
+
+function marketplaceAnchorWitnessScript() {
+  return bitcoin.script.compile([bitcoin.opcodes.OP_TRUE]);
+}
+
+function marketplaceAnchorScriptPubKey() {
+  const payment = bitcoin.payments.p2wsh({
+    redeem: {
+      output: marketplaceAnchorWitnessScript(),
+    },
+  });
+
+  if (!payment.output) {
+    throw new Error("Could not build marketplace listing anchor script.");
+  }
+
+  return Buffer.from(payment.output).toString("hex");
 }
 
 function scriptHashForAddress(address, network) {
@@ -738,6 +759,14 @@ function inputAddresses(vin) {
     .filter((address) => typeof address === "string" && address.length > 0);
 }
 
+function spentOutpoints(vin) {
+  return vin.flatMap((input) => {
+    const txid = typeof input?.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(input.txid) ? input.txid.toLowerCase() : "";
+    const vout = Number.isSafeInteger(input?.vout) && input.vout >= 0 ? input.vout : -1;
+    return txid && vout >= 0 ? [{ txid, vout }] : [];
+  });
+}
+
 function senderAddress(vin, targetAddress) {
   const addresses = inputAddresses(vin);
   return addresses.find((inputAddress) => inputAddress !== targetAddress) ?? addresses[0] ?? "Unknown";
@@ -761,6 +790,26 @@ function registryPaymentAmount(vout, registryAddress) {
 
 function idEventMinimumPaymentSats(kind) {
   return kind === "register" ? ID_REGISTRATION_PRICE_SATS : ID_MUTATION_PRICE_SATS;
+}
+
+function paymentOutputsBeforeIdProtocol(vout) {
+  const protocolIndex = firstIdProtocolOutputIndex(vout);
+  return vout.flatMap((output, index) => {
+    if (
+      typeof output.scriptpubkey_address !== "string" ||
+      typeof output.value !== "number" ||
+      output.value <= 0 ||
+      (protocolIndex !== -1 && index >= protocolIndex)
+    ) {
+      return [];
+    }
+
+    return [{ address: output.scriptpubkey_address, amountSats: output.value }];
+  });
+}
+
+function paymentAmountFromSnapshots(outputs, address) {
+  return outputs.reduce((total, output) => total + (output.address === address ? output.amountSats : 0), 0);
 }
 
 function paymentAmountBeforeIdProtocol(vout, address) {
@@ -907,8 +956,21 @@ function parseIdTransferPayload(payload, network) {
   };
 }
 
-function saleAuthorizationDraft({ buyerAddress, expiresAt, id, nonce, priceSats, receiveAddress, sellerAddress }) {
-  return {
+function saleAuthorizationDraft({
+  anchorScriptPubKey,
+  anchorType,
+  anchorValueSats,
+  anchorVout,
+  buyerAddress,
+  expiresAt,
+  id,
+  nonce,
+  priceSats,
+  receiveAddress,
+  sellerAddress,
+  version = ID_SALE_AUTH_VERSION,
+}) {
+  const draft = {
     buyerAddress: buyerAddress?.trim() || undefined,
     expiresAt: expiresAt?.trim() || undefined,
     id: normalizePowId(id),
@@ -916,12 +978,21 @@ function saleAuthorizationDraft({ buyerAddress, expiresAt, id, nonce, priceSats,
     priceSats: Math.floor(priceSats),
     receiveAddress: receiveAddress?.trim() || undefined,
     sellerAddress: sellerAddress.trim(),
-    version: ID_SALE_AUTH_VERSION,
+    version,
   };
+
+  if (version === ID_SALE_AUTH_VERSION) {
+    draft.anchorScriptPubKey = anchorScriptPubKey?.trim().toLowerCase() || marketplaceAnchorScriptPubKey();
+    draft.anchorType = anchorType?.trim() || ID_LISTING_ANCHOR_TYPE;
+    draft.anchorValueSats = Number.isSafeInteger(anchorValueSats) ? Math.floor(anchorValueSats) : ID_LISTING_ANCHOR_VALUE_SATS;
+    draft.anchorVout = Number.isSafeInteger(anchorVout) ? Math.floor(anchorVout) : 2;
+  }
+
+  return draft;
 }
 
 function saleAuthorizationMessage(authorization) {
-  return [
+  const lines = [
     "ProofOfWork.Me ID Sale",
     `version:${authorization.version}`,
     `id:${normalizePowId(authorization.id)}@proofofwork.me`,
@@ -931,7 +1002,18 @@ function saleAuthorizationMessage(authorization) {
     `receiver:${authorization.receiveAddress || "*"}`,
     `nonce:${authorization.nonce}`,
     `expiresAt:${authorization.expiresAt || ""}`,
-  ].join("\n");
+  ];
+
+  if (authorization.version === ID_SALE_AUTH_VERSION) {
+    lines.push(
+      `anchorType:${authorization.anchorType || ""}`,
+      `anchorVout:${authorization.anchorVout ?? ""}`,
+      `anchorValueSats:${authorization.anchorValueSats ?? ""}`,
+      `anchorScriptPubKey:${authorization.anchorScriptPubKey || ""}`,
+    );
+  }
+
+  return lines.join("\n");
 }
 
 function parseSaleAuthorizationJson(value, network) {
@@ -948,8 +1030,13 @@ function parseSaleAuthorizationJson(value, network) {
   const nonce = typeof parsed.nonce === "string" ? parsed.nonce.trim() : "";
   const expiresAt = typeof parsed.expiresAt === "string" ? parsed.expiresAt.trim() : "";
   const priceSats = typeof parsed.priceSats === "number" ? Math.floor(parsed.priceSats) : Number.NaN;
+  const version = parsed.version === ID_SALE_AUTH_VERSION_LEGACY ? ID_SALE_AUTH_VERSION_LEGACY : parsed.version === ID_SALE_AUTH_VERSION ? ID_SALE_AUTH_VERSION : "";
+  const anchorType = typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
+  const anchorScriptPubKey = typeof parsed.anchorScriptPubKey === "string" ? parsed.anchorScriptPubKey.trim().toLowerCase() : "";
+  const anchorVout = typeof parsed.anchorVout === "number" ? Math.floor(parsed.anchorVout) : Number.NaN;
+  const anchorValueSats = typeof parsed.anchorValueSats === "number" ? Math.floor(parsed.anchorValueSats) : Number.NaN;
 
-  if (parsed.version !== ID_SALE_AUTH_VERSION || !id || !isValidBitcoinAddress(sellerAddress, network)) {
+  if (!version || !id || !isValidBitcoinAddress(sellerAddress, network)) {
     throw new Error("Sale authorization is invalid.");
   }
 
@@ -969,8 +1056,25 @@ function parseSaleAuthorizationJson(value, network) {
     throw new Error("Sale authorization expiry is invalid.");
   }
 
+  if (version === ID_SALE_AUTH_VERSION) {
+    if (
+      anchorType !== ID_LISTING_ANCHOR_TYPE ||
+      !Number.isSafeInteger(anchorVout) ||
+      anchorVout < 0 ||
+      !Number.isSafeInteger(anchorValueSats) ||
+      anchorValueSats < 546 ||
+      anchorScriptPubKey !== marketplaceAnchorScriptPubKey()
+    ) {
+      throw new Error("Sale authorization anchor is invalid.");
+    }
+  }
+
   return {
     ...saleAuthorizationDraft({
+      anchorScriptPubKey,
+      anchorType,
+      anchorValueSats,
+      anchorVout,
       buyerAddress,
       expiresAt,
       id,
@@ -978,6 +1082,7 @@ function parseSaleAuthorizationJson(value, network) {
       priceSats,
       receiveAddress,
       sellerAddress,
+      version,
     }),
     signature,
   };
@@ -988,7 +1093,7 @@ function saleAuthorizationMessageDraft(authorization) {
 }
 
 function saleAuthorizationVerified(authorization) {
-  if (!authorization.signature) {
+  if (authorization.version !== ID_SALE_AUTH_VERSION_LEGACY || !authorization.signature) {
     return false;
   }
 
@@ -1010,6 +1115,7 @@ function saleAuthorizationTermsMatch(left, right) {
 function findMatchingActiveListing(listings, authorization, currentOwnerAddress) {
   for (const listing of listings.values()) {
     if (
+      listing.listingVersion !== "list3" &&
       listing.id === authorization.id &&
       listing.sellerAddress === authorization.sellerAddress &&
       listing.sellerAddress === currentOwnerAddress &&
@@ -1020,6 +1126,44 @@ function findMatchingActiveListing(listings, authorization, currentOwnerAddress)
   }
 
   return undefined;
+}
+
+function saleAuthorizationHasAnchor(authorization) {
+  return (
+    authorization?.version === ID_SALE_AUTH_VERSION &&
+    authorization.anchorType === ID_LISTING_ANCHOR_TYPE &&
+    typeof authorization.anchorScriptPubKey === "string" &&
+    /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey) &&
+    Number.isSafeInteger(authorization.anchorVout) &&
+    Number.isSafeInteger(authorization.anchorValueSats) &&
+    authorization.anchorValueSats >= 546
+  );
+}
+
+function spendsListingAnchor(spent, listing) {
+  if (!saleAuthorizationHasAnchor(listing?.saleAuthorization)) {
+    return false;
+  }
+
+  return spent.some((outpoint) => outpoint.txid === listing.listingId && outpoint.vout === listing.saleAuthorization.anchorVout);
+}
+
+function sellerPaymentRequiredSats(listing) {
+  const anchorValue = saleAuthorizationHasAnchor(listing?.saleAuthorization) ? listing.saleAuthorization.anchorValueSats : 0;
+  return listing.priceSats + anchorValue;
+}
+
+function listingAnchorIsPresent(vout, authorization) {
+  if (!saleAuthorizationHasAnchor(authorization)) {
+    return false;
+  }
+
+  const output = vout[authorization.anchorVout];
+  return (
+    output?.scriptpubkey === authorization.anchorScriptPubKey &&
+    typeof output.value === "number" &&
+    output.value === authorization.anchorValueSats
+  );
 }
 
 function saleAuthorizationExpired(authorization, eventCreatedAt) {
@@ -1049,11 +1193,30 @@ function compareRegistryEventOrder(left, right) {
 }
 
 function parseIdMarketplaceTransferPayload(payload, network) {
+  const parts = payload.split(":");
+  if (payload.startsWith("buy3:")) {
+    if (parts.length < 3 || parts.length > 4 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
+      return null;
+    }
+
+    const [, listingId, owner, receiver] = parts;
+    const receiveAddress = receiver?.trim() || owner;
+    if (!isValidBitcoinAddress(owner, network) || !isValidBitcoinAddress(receiveAddress, network)) {
+      return null;
+    }
+
+    return {
+      listingId: listingId.toLowerCase(),
+      ownerAddress: owner,
+      receiveAddress,
+      transferVersion: "buy3",
+    };
+  }
+
   if (!payload.startsWith("buy2:")) {
     return null;
   }
 
-  const parts = payload.split(":");
   if (parts.length < 3 || parts.length > 4) {
     return null;
   }
@@ -1086,11 +1249,13 @@ function parseIdMarketplaceTransferPayload(payload, network) {
     receiveAddress,
     saleAuthorization: authorization,
     sellerAddress: authorization.sellerAddress,
+    transferVersion: "buy2",
   };
 }
 
 function parseIdListingPayload(payload, network) {
-  if (!payload.startsWith("list2:")) {
+  const listingVersion = payload.startsWith("list3:") ? "list3" : payload.startsWith("list2:") ? "list2" : "";
+  if (!listingVersion) {
     return null;
   }
 
@@ -1109,6 +1274,7 @@ function parseIdListingPayload(payload, network) {
 
   return {
     id: authorization.id,
+    listingVersion,
     priceSats: authorization.priceSats,
     saleAuthorization: authorization,
     sellerAddress: authorization.sellerAddress,
@@ -1116,7 +1282,8 @@ function parseIdListingPayload(payload, network) {
 }
 
 function parseIdDelistingPayload(payload) {
-  if (!payload.startsWith("delist2:")) {
+  const delistingVersion = payload.startsWith("delist3:") ? "delist3" : payload.startsWith("delist2:") ? "delist2" : "";
+  if (!delistingVersion) {
     return null;
   }
 
@@ -1126,6 +1293,7 @@ function parseIdDelistingPayload(payload) {
   }
 
   return {
+    delistingVersion,
     listingId: parts[1].toLowerCase(),
   };
 }
@@ -1216,6 +1384,8 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       network,
       txid,
     };
+    const eventSpentOutpoints = spentOutpoints(vin);
+    const eventPaymentOutputs = paymentOutputsBeforeIdProtocol(vout);
 
     if (eventMessage.kind === "register") {
       return [
@@ -1247,12 +1417,15 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           ...baseEvent,
           id: eventMessage.id,
           kind: "marketTransfer",
+          listingId: eventMessage.listingId,
           ownerAddress: eventMessage.ownerAddress,
+          paymentOutputs: eventPaymentOutputs,
           priceSats: eventMessage.priceSats,
           receiveAddress: eventMessage.receiveAddress,
           saleAuthorization: eventMessage.saleAuthorization,
           sellerAddress: eventMessage.sellerAddress,
-          sellerPaymentSats: paymentAmountBeforeIdProtocol(vout, eventMessage.sellerAddress),
+          spentOutpoints: eventSpentOutpoints,
+          transferVersion: eventMessage.transferVersion,
         },
       ];
     }
@@ -1263,6 +1436,8 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           ...baseEvent,
           id: eventMessage.id,
           kind: "list",
+          listingAnchorPresent: listingAnchorIsPresent(vout, eventMessage.saleAuthorization),
+          listingVersion: eventMessage.listingVersion,
           priceSats: eventMessage.priceSats,
           saleAuthorization: eventMessage.saleAuthorization,
           sellerAddress: eventMessage.sellerAddress,
@@ -1274,8 +1449,10 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       return [
         {
           ...baseEvent,
+          delistingVersion: eventMessage.delistingVersion,
           kind: "delist",
           listingId: eventMessage.listingId,
+          spentOutpoints: eventSpentOutpoints,
         },
       ];
     }
@@ -1332,8 +1509,69 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     if (event.kind === "delist") {
       const listing = listings.get(event.listingId);
       const current = listing ? records.get(listing.id) : undefined;
-      if (listing && current && event.inputAddresses.includes(current.ownerAddress)) {
+      const anchorOk = event.delistingVersion === "delist2" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
+      if (listing && current && event.inputAddresses.includes(current.ownerAddress) && anchorOk) {
         listings.delete(event.listingId);
+      }
+      continue;
+    }
+
+    if (event.kind === "marketTransfer") {
+      if (event.transferVersion === "buy3") {
+        const listing = event.listingId ? listings.get(event.listingId) : undefined;
+        const current = listing ? records.get(listing.id) : undefined;
+        const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
+        if (
+          !listing ||
+          !current ||
+          listing.listingVersion !== "list3" ||
+          current.ownerAddress !== listing.sellerAddress ||
+          !spendsListingAnchor(event.spentOutpoints, listing) ||
+          sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
+          saleAuthorizationExpired(listing.saleAuthorization, event.createdAt) ||
+          (listing.buyerAddress && listing.buyerAddress !== event.ownerAddress) ||
+          (listing.receiveAddress && listing.receiveAddress !== event.receiveAddress)
+        ) {
+          continue;
+        }
+
+        records.set(listing.id, {
+          ...current,
+          amountSats: event.amountSats,
+          createdAt: event.createdAt,
+          ownerAddress: event.ownerAddress,
+          receiveAddress: event.receiveAddress,
+          txid: event.txid,
+        });
+        invalidateListingsForId(listing.id);
+        continue;
+      }
+
+      if (event.id && event.saleAuthorization && event.sellerAddress && typeof event.priceSats === "number") {
+        const current = records.get(event.id);
+        if (!current) {
+          continue;
+        }
+
+        const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
+        if (
+          current.ownerAddress !== event.sellerAddress ||
+          paymentAmountFromSnapshots(event.paymentOutputs, event.sellerAddress) < event.priceSats ||
+          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+          (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
+        ) {
+          continue;
+        }
+
+        records.set(event.id, {
+          ...current,
+          amountSats: event.amountSats,
+          createdAt: event.createdAt,
+          ownerAddress: event.ownerAddress,
+          receiveAddress: event.receiveAddress,
+          txid: event.txid,
+        });
+        invalidateListingsForId(event.id);
       }
       continue;
     }
@@ -1343,46 +1581,30 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       continue;
     }
 
-    if (event.kind === "marketTransfer") {
-      const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
-      if (
-        current.ownerAddress !== event.sellerAddress ||
-        event.sellerPaymentSats < event.priceSats ||
-        saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-        (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
-      ) {
-        continue;
-      }
-
-      records.set(event.id, {
-        ...current,
-        amountSats: event.amountSats,
-        createdAt: event.createdAt,
-        ownerAddress: event.ownerAddress,
-        receiveAddress: event.receiveAddress,
-        txid: event.txid,
-      });
-      invalidateListingsForId(event.id);
-      continue;
-    }
-
     if (event.kind === "list") {
       if (
         current.ownerAddress !== event.sellerAddress ||
         !event.inputAddresses.includes(current.ownerAddress) ||
-        saleAuthorizationExpired(event.saleAuthorization, event.createdAt)
+        saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+        (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
+        (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
       ) {
         continue;
       }
 
       listings.set(event.txid, {
         amountSats: event.amountSats,
+        anchorScriptPubKey: event.saleAuthorization.anchorScriptPubKey,
+        anchorType: event.saleAuthorization.anchorType,
+        anchorValueSats: event.saleAuthorization.anchorValueSats,
+        anchorVout: event.saleAuthorization.anchorVout,
         buyerAddress: event.saleAuthorization.buyerAddress,
         confirmed: true,
         createdAt: event.createdAt,
         expiresAt: event.saleAuthorization.expiresAt,
         id: event.id,
         listingId: event.txid,
+        listingVersion: event.listingVersion,
         network: event.network,
         priceSats: event.priceSats,
         receiveAddress: event.saleAuthorization.receiveAddress,
@@ -1426,7 +1648,8 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       if (event.kind === "delist") {
         const listing = listings.get(event.listingId);
         const current = listing ? records.get(listing.id) : undefined;
-        if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress)) {
+        const anchorOk = event.delistingVersion === "delist2" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
+        if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress) || !anchorOk) {
           return [];
         }
 
@@ -1447,46 +1670,95 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         ];
       }
 
-      const current = records.get(event.id);
-      if (!current) {
+      if (event.kind === "marketTransfer") {
+        if (event.transferVersion === "buy3") {
+          const listing = event.listingId ? listings.get(event.listingId) : undefined;
+          const current = listing ? records.get(listing.id) : undefined;
+          const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
+          if (
+            !listing ||
+            !current ||
+            listing.listingVersion !== "list3" ||
+            current.ownerAddress !== listing.sellerAddress ||
+            !spendsListingAnchor(event.spentOutpoints, listing) ||
+            sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
+            saleAuthorizationExpired(listing.saleAuthorization, event.createdAt) ||
+            (listing.buyerAddress && listing.buyerAddress !== event.ownerAddress) ||
+            (listing.receiveAddress && listing.receiveAddress !== event.receiveAddress)
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              amountSats: event.amountSats,
+              createdAt: event.createdAt,
+              currentOwnerAddress: current.ownerAddress,
+              currentReceiveAddress: current.receiveAddress,
+              id: listing.id,
+              inputAddresses: event.inputAddresses,
+              kind: "marketTransfer",
+              listingId: listing.listingId,
+              network: event.network,
+              ownerAddress: event.ownerAddress,
+              priceSats: listing.priceSats,
+              receiveAddress: event.receiveAddress,
+              sellerAddress: listing.sellerAddress,
+              txid: event.txid,
+            },
+          ];
+        }
+
+        if (event.id && event.saleAuthorization && event.sellerAddress && typeof event.priceSats === "number") {
+          const current = records.get(event.id);
+          if (!current) {
+            return [];
+          }
+
+          const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
+          if (
+            current.ownerAddress !== event.sellerAddress ||
+            paymentAmountFromSnapshots(event.paymentOutputs, event.sellerAddress) < event.priceSats ||
+            saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+            (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              amountSats: event.amountSats,
+              createdAt: event.createdAt,
+              currentOwnerAddress: current.ownerAddress,
+              currentReceiveAddress: current.receiveAddress,
+              id: event.id,
+              inputAddresses: event.inputAddresses,
+              kind: "marketTransfer",
+              network: event.network,
+              ownerAddress: event.ownerAddress,
+              priceSats: event.priceSats,
+              receiveAddress: event.receiveAddress,
+              sellerAddress: event.sellerAddress,
+              txid: event.txid,
+            },
+          ];
+        }
+
         return [];
       }
 
-      if (event.kind === "marketTransfer") {
-        const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
-        if (
-          current.ownerAddress !== event.sellerAddress ||
-          event.sellerPaymentSats < event.priceSats ||
-          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-          (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
-        ) {
-          return [];
-        }
-
-        return [
-          {
-            amountSats: event.amountSats,
-            createdAt: event.createdAt,
-            currentOwnerAddress: current.ownerAddress,
-            currentReceiveAddress: current.receiveAddress,
-            id: event.id,
-            inputAddresses: event.inputAddresses,
-            kind: "marketTransfer",
-            network: event.network,
-            ownerAddress: event.ownerAddress,
-            priceSats: event.priceSats,
-            receiveAddress: event.receiveAddress,
-            sellerAddress: event.sellerAddress,
-            txid: event.txid,
-          },
-        ];
+      const current = records.get(event.id);
+      if (!current) {
+        return [];
       }
 
       if (event.kind === "list") {
         if (
           current.ownerAddress !== event.sellerAddress ||
           !event.inputAddresses.includes(current.ownerAddress) ||
-          saleAuthorizationExpired(event.saleAuthorization, event.createdAt)
+          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+          (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
+          (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
         ) {
           return [];
         }

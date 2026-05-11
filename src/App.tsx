@@ -260,14 +260,35 @@ type PowIdPendingEvent = {
   txid: string;
 };
 
+type PowIdListingVersion = "list2" | "list3";
+
+type PowIdMarketplaceTransferVersion = "buy2" | "buy3";
+
+type PowIdDelistingVersion = "delist2" | "delist3";
+
+type PowIdSpentOutpoint = {
+  txid: string;
+  vout: number;
+};
+
+type PowIdPaymentSnapshot = {
+  address: string;
+  amountSats: number;
+};
+
 type PowIdListing = {
   amountSats: number;
+  anchorScriptPubKey?: string;
+  anchorType?: string;
+  anchorValueSats?: number;
+  anchorVout?: number;
   buyerAddress?: string;
   confirmed: boolean;
   createdAt: string;
   expiresAt?: string;
   id: string;
   listingId: string;
+  listingVersion?: PowIdListingVersion;
   network: BitcoinNetwork;
   priceSats: number;
   receiveAddress?: string;
@@ -277,6 +298,10 @@ type PowIdListing = {
 };
 
 type PowIdSaleAuthorizationDraft = {
+  anchorScriptPubKey?: string;
+  anchorType?: string;
+  anchorValueSats?: number;
+  anchorVout?: number;
   buyerAddress?: string;
   expiresAt?: string;
   id: string;
@@ -284,7 +309,7 @@ type PowIdSaleAuthorizationDraft = {
   priceSats: number;
   receiveAddress?: string;
   sellerAddress: string;
-  version: "pwid-sale-v1";
+  version: "pwid-sale-v1" | "pwid-sale-v2";
 };
 
 type PowIdSaleAuthorization = PowIdSaleAuthorizationDraft & {
@@ -338,16 +363,19 @@ type PowIdEvent = PowIdChainOrder &
       amountSats: number;
       confirmed: boolean;
       createdAt: string;
-      id: string;
+      id?: string;
       inputAddresses: string[];
       kind: "marketTransfer";
+      listingId?: string;
       network: BitcoinNetwork;
       ownerAddress: string;
-      priceSats: number;
+      paymentOutputs: PowIdPaymentSnapshot[];
+      priceSats?: number;
       receiveAddress: string;
-      saleAuthorization: PowIdSaleAuthorization;
-      sellerAddress: string;
-      sellerPaymentSats: number;
+      saleAuthorization?: PowIdSaleAuthorization;
+      sellerAddress?: string;
+      spentOutpoints: PowIdSpentOutpoint[];
+      transferVersion: PowIdMarketplaceTransferVersion;
       txid: string;
     }
   | {
@@ -357,6 +385,8 @@ type PowIdEvent = PowIdChainOrder &
       id: string;
       inputAddresses: string[];
       kind: "list";
+      listingAnchorPresent: boolean;
+      listingVersion: PowIdListingVersion;
       network: BitcoinNetwork;
       priceSats: number;
       saleAuthorization: PowIdSaleAuthorization;
@@ -367,10 +397,12 @@ type PowIdEvent = PowIdChainOrder &
       amountSats: number;
       confirmed: boolean;
       createdAt: string;
+      delistingVersion: PowIdDelistingVersion;
       inputAddresses: string[];
       kind: "delist";
       listingId: string;
       network: BitcoinNetwork;
+      spentOutpoints: PowIdSpentOutpoint[];
       txid: string;
     }
   );
@@ -445,8 +477,9 @@ type UtxoSelection = {
 };
 
 type PaymentOutputSpec = {
-  address: string;
+  address?: string;
   amountSats: number;
+  script?: Uint8Array;
 };
 
 type PowRegistryApiResponse = {
@@ -504,7 +537,11 @@ const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
-const ID_SALE_AUTH_VERSION = "pwid-sale-v1";
+const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
+const ID_SALE_AUTH_VERSION = "pwid-sale-v2";
+const ID_LISTING_ANCHOR_TYPE = "p2wsh-op-true-v1";
+const ID_LISTING_ANCHOR_VALUE_SATS = 546;
+const ID_LISTING_ANCHOR_VOUT = 2;
 const ID_REGISTRY_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
 };
@@ -946,6 +983,28 @@ function scriptForAddress(address: string, network: BitcoinNetwork, fieldName: s
   } catch {
     throw new Error(`${fieldName} is not a valid ${networkLabel(network)} address.`);
   }
+}
+
+function marketplaceAnchorWitnessScript() {
+  return bitcoin.script.compile([bitcoin.opcodes.OP_TRUE]);
+}
+
+function marketplaceAnchorOutputScript(_network: BitcoinNetwork) {
+  const payment = bitcoin.payments.p2wsh({
+    redeem: {
+      output: marketplaceAnchorWitnessScript(),
+    },
+  });
+
+  if (!payment.output) {
+    throw new Error("Could not build marketplace listing anchor script.");
+  }
+
+  return payment.output;
+}
+
+function marketplaceAnchorScriptPubKey(network: BitcoinNetwork) {
+  return bytesToHex(marketplaceAnchorOutputScript(network));
 }
 
 function isValidBitcoinAddress(address: string, network: BitcoinNetwork) {
@@ -1866,6 +1925,10 @@ function buildIdTransferPayload(id: string, ownerAddress: string, receiveAddress
 }
 
 function saleAuthorizationDraft({
+  anchorScriptPubKey,
+  anchorType,
+  anchorValueSats,
+  anchorVout,
   buyerAddress,
   expiresAt,
   id,
@@ -1873,7 +1936,12 @@ function saleAuthorizationDraft({
   priceSats,
   receiveAddress,
   sellerAddress,
+  version = ID_SALE_AUTH_VERSION,
 }: {
+  anchorScriptPubKey?: string;
+  anchorType?: string;
+  anchorValueSats?: number;
+  anchorVout?: number;
   buyerAddress?: string;
   expiresAt?: string;
   id: string;
@@ -1881,8 +1949,9 @@ function saleAuthorizationDraft({
   priceSats: number;
   receiveAddress?: string;
   sellerAddress: string;
+  version?: PowIdSaleAuthorizationDraft["version"];
 }): PowIdSaleAuthorizationDraft {
-  return {
+  const draft: PowIdSaleAuthorizationDraft = {
     buyerAddress: buyerAddress?.trim() || undefined,
     expiresAt: expiresAt?.trim() || undefined,
     id: normalizePowId(id),
@@ -1890,12 +1959,21 @@ function saleAuthorizationDraft({
     priceSats: Math.floor(priceSats),
     receiveAddress: receiveAddress?.trim() || undefined,
     sellerAddress: sellerAddress.trim(),
-    version: ID_SALE_AUTH_VERSION,
+    version,
   };
+
+  if (version === ID_SALE_AUTH_VERSION) {
+    draft.anchorScriptPubKey = anchorScriptPubKey?.trim().toLowerCase() || marketplaceAnchorScriptPubKey("livenet");
+    draft.anchorType = anchorType?.trim() || ID_LISTING_ANCHOR_TYPE;
+    draft.anchorValueSats = typeof anchorValueSats === "number" && Number.isSafeInteger(anchorValueSats) ? Math.floor(anchorValueSats) : ID_LISTING_ANCHOR_VALUE_SATS;
+    draft.anchorVout = typeof anchorVout === "number" && Number.isSafeInteger(anchorVout) ? Math.floor(anchorVout) : ID_LISTING_ANCHOR_VOUT;
+  }
+
+  return draft;
 }
 
 function saleAuthorizationMessage(authorization: PowIdSaleAuthorizationDraft) {
-  return [
+  const lines = [
     "ProofOfWork.Me ID Sale",
     `version:${authorization.version}`,
     `id:${normalizePowId(authorization.id)}@proofofwork.me`,
@@ -1905,7 +1983,18 @@ function saleAuthorizationMessage(authorization: PowIdSaleAuthorizationDraft) {
     `receiver:${authorization.receiveAddress || "*"}`,
     `nonce:${authorization.nonce}`,
     `expiresAt:${authorization.expiresAt || ""}`,
-  ].join("\n");
+  ];
+
+  if (authorization.version === ID_SALE_AUTH_VERSION) {
+    lines.push(
+      `anchorType:${authorization.anchorType || ""}`,
+      `anchorVout:${authorization.anchorVout ?? ""}`,
+      `anchorValueSats:${authorization.anchorValueSats ?? ""}`,
+      `anchorScriptPubKey:${authorization.anchorScriptPubKey || ""}`,
+    );
+  }
+
+  return lines.join("\n");
 }
 
 function saleAuthorizationWithoutSignature(authorization: PowIdSaleAuthorization): PowIdSaleAuthorizationDraft {
@@ -1926,8 +2015,13 @@ function parseSaleAuthorizationText(value: string, targetNetwork: BitcoinNetwork
   const nonce = typeof parsed.nonce === "string" ? parsed.nonce.trim() : "";
   const expiresAt = typeof parsed.expiresAt === "string" ? parsed.expiresAt.trim() : "";
   const priceSats = typeof parsed.priceSats === "number" ? Math.floor(parsed.priceSats) : Number.NaN;
+  const version = parsed.version === ID_SALE_AUTH_VERSION_LEGACY ? ID_SALE_AUTH_VERSION_LEGACY : parsed.version === ID_SALE_AUTH_VERSION ? ID_SALE_AUTH_VERSION : "";
+  const anchorType = typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
+  const anchorScriptPubKey = typeof parsed.anchorScriptPubKey === "string" ? parsed.anchorScriptPubKey.trim().toLowerCase() : "";
+  const anchorVout = typeof parsed.anchorVout === "number" ? Math.floor(parsed.anchorVout) : Number.NaN;
+  const anchorValueSats = typeof parsed.anchorValueSats === "number" ? Math.floor(parsed.anchorValueSats) : Number.NaN;
 
-  if (parsed.version !== ID_SALE_AUTH_VERSION) {
+  if (!version) {
     throw new Error("Sale authorization version is not supported.");
   }
 
@@ -1960,8 +2054,28 @@ function parseSaleAuthorizationText(value: string, targetNetwork: BitcoinNetwork
     throw new Error("Sale authorization expiry is not a valid date.");
   }
 
+  if (version === ID_SALE_AUTH_VERSION) {
+    if (anchorType !== ID_LISTING_ANCHOR_TYPE) {
+      throw new Error("Listing anchor type is not supported.");
+    }
+
+    if (
+      !Number.isSafeInteger(anchorVout) ||
+      anchorVout < 0 ||
+      !Number.isSafeInteger(anchorValueSats) ||
+      anchorValueSats < DUST_SATS ||
+      anchorScriptPubKey !== marketplaceAnchorScriptPubKey(targetNetwork)
+    ) {
+      throw new Error("Listing anchor is invalid.");
+    }
+  }
+
   return {
     ...saleAuthorizationDraft({
+      anchorScriptPubKey,
+      anchorType,
+      anchorValueSats,
+      anchorVout,
       buyerAddress,
       expiresAt,
       id,
@@ -1969,6 +2083,7 @@ function parseSaleAuthorizationText(value: string, targetNetwork: BitcoinNetwork
       priceSats,
       receiveAddress,
       sellerAddress,
+      version,
     }),
     signature,
   };
@@ -1984,7 +2099,7 @@ function saleAuthorizationCanBroadcast(authorization: PowIdSaleAuthorization) {
 
 function saleAuthorizationVerified(_authorization: PowIdSaleAuthorization) {
   // Browser builds intentionally do not bundle the Node-oriented BIP322 verifier.
-  // The production API/indexer performs canonical buy2 signature verification.
+  // The production API/indexer performs canonical legacy buy2 signature verification.
   return false;
 }
 
@@ -2001,6 +2116,7 @@ function findMatchingActiveListing(
 ) {
   for (const listing of listings.values()) {
     if (
+      listing.listingVersion !== "list3" &&
       listing.id === authorization.id &&
       listing.sellerAddress === authorization.sellerAddress &&
       listing.sellerAddress === currentOwnerAddress &&
@@ -2011,6 +2127,59 @@ function findMatchingActiveListing(
   }
 
   return undefined;
+}
+
+function saleAuthorizationHasAnchor(authorization: PowIdSaleAuthorization): authorization is PowIdSaleAuthorization & {
+  anchorScriptPubKey: string;
+  anchorType: string;
+  anchorValueSats: number;
+  anchorVout: number;
+} {
+  return (
+    authorization.version === ID_SALE_AUTH_VERSION &&
+    authorization.anchorType === ID_LISTING_ANCHOR_TYPE &&
+    typeof authorization.anchorScriptPubKey === "string" &&
+    /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey) &&
+    typeof authorization.anchorVout === "number" &&
+    Number.isSafeInteger(authorization.anchorVout) &&
+    typeof authorization.anchorValueSats === "number" &&
+    Number.isSafeInteger(authorization.anchorValueSats) &&
+    authorization.anchorValueSats >= DUST_SATS
+  );
+}
+
+function listingAnchorOutpoint(listing: PowIdListing) {
+  if (!saleAuthorizationHasAnchor(listing.saleAuthorization)) {
+    return null;
+  }
+
+  return {
+    txid: listing.listingId,
+    vout: listing.saleAuthorization.anchorVout,
+  };
+}
+
+function spendsListingAnchor(spentOutpoints: PowIdSpentOutpoint[], listing: PowIdListing) {
+  const anchor = listingAnchorOutpoint(listing);
+  return Boolean(anchor && spentOutpoints.some((outpoint) => outpoint.txid === anchor.txid && outpoint.vout === anchor.vout));
+}
+
+function sellerPaymentRequiredSats(listing: PowIdListing) {
+  const anchorValue = saleAuthorizationHasAnchor(listing.saleAuthorization) ? listing.saleAuthorization.anchorValueSats : 0;
+  return listing.priceSats + anchorValue;
+}
+
+function listingAnchorIsPresent(vout: Array<Record<string, unknown>>, authorization: PowIdSaleAuthorization) {
+  if (!saleAuthorizationHasAnchor(authorization)) {
+    return false;
+  }
+
+  const output = vout[authorization.anchorVout];
+  return (
+    output?.scriptpubkey === authorization.anchorScriptPubKey &&
+    typeof output.value === "number" &&
+    output.value === authorization.anchorValueSats
+  );
 }
 
 function saleAuthorizationExpired(authorization: PowIdSaleAuthorization, eventCreatedAt: string) {
@@ -2039,17 +2208,17 @@ function compareRegistryEventOrder(left: PowIdEvent, right: PowIdEvent) {
   return Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid);
 }
 
-function buildIdMarketplaceTransferPayload(authorization: PowIdSaleAuthorization, ownerAddress: string, receiveAddress: string) {
+function buildIdMarketplaceTransferPayload(listingId: string, ownerAddress: string, receiveAddress: string) {
   const receiver = receiveAddress.trim();
-  return `${ID_PROTOCOL_PREFIX}buy2:${encodeTextBase64Url(JSON.stringify(authorization))}:${ownerAddress}${receiver ? `:${receiver}` : ""}`;
+  return `${ID_PROTOCOL_PREFIX}buy3:${listingId}:${ownerAddress}${receiver ? `:${receiver}` : ""}`;
 }
 
 function buildIdListingPayload(authorization: PowIdSaleAuthorization) {
-  return `${ID_PROTOCOL_PREFIX}list2:${encodeTextBase64Url(JSON.stringify(authorization))}`;
+  return `${ID_PROTOCOL_PREFIX}list3:${encodeTextBase64Url(JSON.stringify(authorization))}`;
 }
 
-function buildIdDelistingPayload(listingId: string) {
-  return `${ID_PROTOCOL_PREFIX}delist2:${listingId}`;
+function buildIdDelistingPayload(listingId: string, version: PowIdDelistingVersion = "delist3") {
+  return `${ID_PROTOCOL_PREFIX}${version}:${listingId}`;
 }
 
 function protocolOutputScripts(payloads: string[]) {
@@ -2881,6 +3050,14 @@ function transactionInputAddresses(vin: Array<Record<string, unknown>>) {
     .filter(Boolean);
 }
 
+function transactionSpentOutpoints(vin: Array<Record<string, unknown>>): PowIdSpentOutpoint[] {
+  return vin.flatMap((input): PowIdSpentOutpoint[] => {
+    const txid = typeof input.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(input.txid) ? input.txid.toLowerCase() : "";
+    const vout = typeof input.vout === "number" && Number.isSafeInteger(input.vout) && input.vout >= 0 ? input.vout : -1;
+    return txid && vout >= 0 ? [{ txid, vout }] : [];
+  });
+}
+
 function registryPaymentAmount(vout: Array<Record<string, unknown>>, registryAddress: string) {
   const protocolIndex = firstIdProtocolOutputIndex(vout);
   return vout.reduce((total, output, index) => {
@@ -2899,6 +3076,26 @@ function registryPaymentAmount(vout: Array<Record<string, unknown>>, registryAdd
 
 function idEventMinimumPaymentSats(kind: "register" | "update" | "transfer" | "marketTransfer" | "list" | "delist") {
   return kind === "register" ? ID_REGISTRATION_PRICE_SATS : ID_MUTATION_PRICE_SATS;
+}
+
+function paymentOutputsBeforeIdProtocol(vout: Array<Record<string, unknown>>): PowIdPaymentSnapshot[] {
+  const protocolIndex = firstIdProtocolOutputIndex(vout);
+  return vout.flatMap((output, index): PowIdPaymentSnapshot[] => {
+    if (
+      typeof output.scriptpubkey_address !== "string" ||
+      typeof output.value !== "number" ||
+      output.value <= 0 ||
+      (protocolIndex !== -1 && index >= protocolIndex)
+    ) {
+      return [];
+    }
+
+    return [{ address: output.scriptpubkey_address, amountSats: output.value }];
+  });
+}
+
+function paymentAmountFromSnapshots(outputs: PowIdPaymentSnapshot[], address: string) {
+  return outputs.reduce((total, output) => total + (output.address === address ? output.amountSats : 0), 0);
 }
 
 function paymentAmountBeforeIdProtocol(vout: Array<Record<string, unknown>>, address: string) {
@@ -3044,11 +3241,30 @@ function parseIdTransferPayload(payload: string, targetNetwork: BitcoinNetwork) 
 }
 
 function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: BitcoinNetwork) {
+  const parts = payload.split(":");
+  if (payload.startsWith("buy3:")) {
+    if (parts.length < 3 || parts.length > 4 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
+      return null;
+    }
+
+    const [, listingId, owner, receiver] = parts;
+    const receiveAddress = receiver?.trim() || owner;
+    if (!isValidBitcoinAddress(owner, targetNetwork) || !isValidBitcoinAddress(receiveAddress, targetNetwork)) {
+      return null;
+    }
+
+    return {
+      listingId: listingId.toLowerCase(),
+      ownerAddress: owner,
+      receiveAddress,
+      transferVersion: "buy3" as const,
+    };
+  }
+
   if (!payload.startsWith("buy2:")) {
     return null;
   }
 
-  const parts = payload.split(":");
   if (parts.length < 3 || parts.length > 4) {
     return null;
   }
@@ -3081,11 +3297,13 @@ function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: Bitco
     receiveAddress,
     saleAuthorization: authorization,
     sellerAddress: authorization.sellerAddress,
+    transferVersion: "buy2" as const,
   };
 }
 
 function parseIdListingPayload(payload: string, targetNetwork: BitcoinNetwork) {
-  if (!payload.startsWith("list2:")) {
+  const listingVersion: PowIdListingVersion = payload.startsWith("list3:") ? "list3" : payload.startsWith("list2:") ? "list2" : "list2";
+  if (!payload.startsWith("list2:") && !payload.startsWith("list3:")) {
     return null;
   }
 
@@ -3104,6 +3322,7 @@ function parseIdListingPayload(payload: string, targetNetwork: BitcoinNetwork) {
 
   return {
     id: authorization.id,
+    listingVersion,
     priceSats: authorization.priceSats,
     saleAuthorization: authorization,
     sellerAddress: authorization.sellerAddress,
@@ -3111,7 +3330,8 @@ function parseIdListingPayload(payload: string, targetNetwork: BitcoinNetwork) {
 }
 
 function parseIdDelistingPayload(payload: string) {
-  if (!payload.startsWith("delist2:")) {
+  const delistingVersion: PowIdDelistingVersion = payload.startsWith("delist3:") ? "delist3" : payload.startsWith("delist2:") ? "delist2" : "delist2";
+  if (!payload.startsWith("delist2:") && !payload.startsWith("delist3:")) {
     return null;
   }
 
@@ -3121,6 +3341,7 @@ function parseIdDelistingPayload(payload: string) {
   }
 
   return {
+    delistingVersion,
     listingId: parts[1].toLowerCase(),
   };
 }
@@ -3482,6 +3703,8 @@ function idRegistryStateFromTransactions(
       network: targetNetwork,
       txid,
     };
+    const spentOutpoints = transactionSpentOutpoints(vin);
+    const paymentOutputs = paymentOutputsBeforeIdProtocol(vout);
 
     if (eventMessage.kind === "register") {
       return [
@@ -3514,11 +3737,14 @@ function idRegistryStateFromTransactions(
           id: eventMessage.id,
           kind: "marketTransfer",
           ownerAddress: eventMessage.ownerAddress,
+          paymentOutputs,
           priceSats: eventMessage.priceSats,
           receiveAddress: eventMessage.receiveAddress,
           saleAuthorization: eventMessage.saleAuthorization,
           sellerAddress: eventMessage.sellerAddress,
-          sellerPaymentSats: paymentAmountBeforeIdProtocol(vout, eventMessage.sellerAddress),
+          spentOutpoints,
+          transferVersion: eventMessage.transferVersion,
+          listingId: eventMessage.listingId,
         },
       ];
     }
@@ -3529,6 +3755,8 @@ function idRegistryStateFromTransactions(
           ...baseEvent,
           id: eventMessage.id,
           kind: "list",
+          listingAnchorPresent: listingAnchorIsPresent(vout, eventMessage.saleAuthorization),
+          listingVersion: eventMessage.listingVersion,
           priceSats: eventMessage.priceSats,
           saleAuthorization: eventMessage.saleAuthorization,
           sellerAddress: eventMessage.sellerAddress,
@@ -3540,8 +3768,10 @@ function idRegistryStateFromTransactions(
       return [
         {
           ...baseEvent,
+          delistingVersion: eventMessage.delistingVersion,
           kind: "delist",
           listingId: eventMessage.listingId,
+          spentOutpoints,
         },
       ];
     }
@@ -3598,8 +3828,69 @@ function idRegistryStateFromTransactions(
     if (event.kind === "delist") {
       const listing = listings.get(event.listingId);
       const current = listing ? records.get(listing.id) : undefined;
-      if (listing && current && event.inputAddresses.includes(current.ownerAddress)) {
+      const anchorOk = event.delistingVersion === "delist2" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
+      if (listing && current && event.inputAddresses.includes(current.ownerAddress) && anchorOk) {
         listings.delete(event.listingId);
+      }
+      continue;
+    }
+
+    if (event.kind === "marketTransfer") {
+      if (event.transferVersion === "buy3") {
+        const listing = event.listingId ? listings.get(event.listingId) : undefined;
+        const current = listing ? records.get(listing.id) : undefined;
+        const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
+        if (
+          !listing ||
+          !current ||
+          listing.listingVersion !== "list3" ||
+          current.ownerAddress !== listing.sellerAddress ||
+          !spendsListingAnchor(event.spentOutpoints, listing) ||
+          sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
+          saleAuthorizationExpired(listing.saleAuthorization, event.createdAt) ||
+          (listing.buyerAddress && listing.buyerAddress !== event.ownerAddress) ||
+          (listing.receiveAddress && listing.receiveAddress !== event.receiveAddress)
+        ) {
+          continue;
+        }
+
+        records.set(listing.id, {
+          ...current,
+          amountSats: event.amountSats,
+          createdAt: event.createdAt,
+          ownerAddress: event.ownerAddress,
+          receiveAddress: event.receiveAddress,
+          txid: event.txid,
+        });
+        invalidateListingsForId(listing.id);
+        continue;
+      }
+
+      if (event.id && event.saleAuthorization && event.sellerAddress && typeof event.priceSats === "number") {
+        const current = records.get(event.id);
+        if (!current) {
+          continue;
+        }
+
+        const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
+        if (
+          current.ownerAddress !== event.sellerAddress ||
+          paymentAmountFromSnapshots(event.paymentOutputs, event.sellerAddress) < event.priceSats ||
+          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+          (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
+        ) {
+          continue;
+        }
+
+        records.set(event.id, {
+          ...current,
+          amountSats: event.amountSats,
+          createdAt: event.createdAt,
+          ownerAddress: event.ownerAddress,
+          receiveAddress: event.receiveAddress,
+          txid: event.txid,
+        });
+        invalidateListingsForId(event.id);
       }
       continue;
     }
@@ -3609,46 +3900,30 @@ function idRegistryStateFromTransactions(
       continue;
     }
 
-    if (event.kind === "marketTransfer") {
-      const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
-      if (
-        current.ownerAddress !== event.sellerAddress ||
-        event.sellerPaymentSats < event.priceSats ||
-        saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-        (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
-      ) {
-        continue;
-      }
-
-      records.set(event.id, {
-        ...current,
-        amountSats: event.amountSats,
-        createdAt: event.createdAt,
-        ownerAddress: event.ownerAddress,
-        receiveAddress: event.receiveAddress,
-        txid: event.txid,
-      });
-      invalidateListingsForId(event.id);
-      continue;
-    }
-
     if (event.kind === "list") {
       if (
         current.ownerAddress !== event.sellerAddress ||
         !event.inputAddresses.includes(current.ownerAddress) ||
-        saleAuthorizationExpired(event.saleAuthorization, event.createdAt)
+        saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+        (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
+        (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
       ) {
         continue;
       }
 
       listings.set(event.txid, {
         amountSats: event.amountSats,
+        anchorScriptPubKey: event.saleAuthorization.anchorScriptPubKey,
+        anchorType: event.saleAuthorization.anchorType,
+        anchorValueSats: event.saleAuthorization.anchorValueSats,
+        anchorVout: event.saleAuthorization.anchorVout,
         buyerAddress: event.saleAuthorization.buyerAddress,
         confirmed: true,
         createdAt: event.createdAt,
         expiresAt: event.saleAuthorization.expiresAt,
         id: event.id,
         listingId: event.txid,
+        listingVersion: event.listingVersion,
         network: event.network,
         priceSats: event.priceSats,
         receiveAddress: event.saleAuthorization.receiveAddress,
@@ -3692,7 +3967,8 @@ function idRegistryStateFromTransactions(
       if (event.kind === "delist") {
         const listing = listings.get(event.listingId);
         const current = listing ? records.get(listing.id) : undefined;
-        if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress)) {
+        const anchorOk = event.delistingVersion === "delist2" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
+        if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress) || !anchorOk) {
           return [];
         }
 
@@ -3713,46 +3989,95 @@ function idRegistryStateFromTransactions(
         ];
       }
 
-      const current = records.get(event.id);
-      if (!current) {
+      if (event.kind === "marketTransfer") {
+        if (event.transferVersion === "buy3") {
+          const listing = event.listingId ? listings.get(event.listingId) : undefined;
+          const current = listing ? records.get(listing.id) : undefined;
+          const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
+          if (
+            !listing ||
+            !current ||
+            listing.listingVersion !== "list3" ||
+            current.ownerAddress !== listing.sellerAddress ||
+            !spendsListingAnchor(event.spentOutpoints, listing) ||
+            sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
+            saleAuthorizationExpired(listing.saleAuthorization, event.createdAt) ||
+            (listing.buyerAddress && listing.buyerAddress !== event.ownerAddress) ||
+            (listing.receiveAddress && listing.receiveAddress !== event.receiveAddress)
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              amountSats: event.amountSats,
+              createdAt: event.createdAt,
+              currentOwnerAddress: current.ownerAddress,
+              currentReceiveAddress: current.receiveAddress,
+              id: listing.id,
+              inputAddresses: event.inputAddresses,
+              kind: "marketTransfer",
+              listingId: listing.listingId,
+              network: event.network,
+              ownerAddress: event.ownerAddress,
+              priceSats: listing.priceSats,
+              receiveAddress: event.receiveAddress,
+              sellerAddress: listing.sellerAddress,
+              txid: event.txid,
+            },
+          ];
+        }
+
+        if (event.id && event.saleAuthorization && event.sellerAddress && typeof event.priceSats === "number") {
+          const current = records.get(event.id);
+          if (!current) {
+            return [];
+          }
+
+          const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
+          if (
+            current.ownerAddress !== event.sellerAddress ||
+            paymentAmountFromSnapshots(event.paymentOutputs, event.sellerAddress) < event.priceSats ||
+            saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+            (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              amountSats: event.amountSats,
+              createdAt: event.createdAt,
+              currentOwnerAddress: current.ownerAddress,
+              currentReceiveAddress: current.receiveAddress,
+              id: event.id,
+              inputAddresses: event.inputAddresses,
+              kind: "marketTransfer",
+              network: event.network,
+              ownerAddress: event.ownerAddress,
+              priceSats: event.priceSats,
+              receiveAddress: event.receiveAddress,
+              sellerAddress: event.sellerAddress,
+              txid: event.txid,
+            },
+          ];
+        }
+
         return [];
       }
 
-      if (event.kind === "marketTransfer") {
-        const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
-        if (
-          current.ownerAddress !== event.sellerAddress ||
-          event.sellerPaymentSats < event.priceSats ||
-          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-          (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
-        ) {
-          return [];
-        }
-
-        return [
-          {
-            amountSats: event.amountSats,
-            createdAt: event.createdAt,
-            currentOwnerAddress: current.ownerAddress,
-            currentReceiveAddress: current.receiveAddress,
-            id: event.id,
-            inputAddresses: event.inputAddresses,
-            kind: "marketTransfer",
-            network: event.network,
-            ownerAddress: event.ownerAddress,
-            priceSats: event.priceSats,
-            receiveAddress: event.receiveAddress,
-            sellerAddress: event.sellerAddress,
-            txid: event.txid,
-          },
-        ];
+      const current = records.get(event.id);
+      if (!current) {
+        return [];
       }
 
       if (event.kind === "list") {
         if (
           current.ownerAddress !== event.sellerAddress ||
           !event.inputAddresses.includes(current.ownerAddress) ||
-          saleAuthorizationExpired(event.saleAuthorization, event.createdAt)
+          saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
+          (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
+          (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
         ) {
           return [];
         }
@@ -4016,6 +4341,7 @@ function selectUtxos(
   feeRate: number,
   fixedOutputVbytes: number,
   changeOutputVbytes: number,
+  baseInputCount = 0,
 ): UtxoSelection {
   const selected: MempoolUtxo[] = [];
   let selectedValue = 0;
@@ -4024,7 +4350,7 @@ function selectUtxos(
     selected.push(utxo);
     selectedValue += utxo.value;
 
-    const feeWithChange = Math.ceil(estimateTxVbytes(selected.length, fixedOutputVbytes + changeOutputVbytes) * feeRate);
+    const feeWithChange = Math.ceil(estimateTxVbytes(selected.length + baseInputCount, fixedOutputVbytes + changeOutputVbytes) * feeRate);
     const changeWithChange = selectedValue - amountSats - feeWithChange;
     if (changeWithChange >= DUST_SATS) {
       return {
@@ -4034,7 +4360,7 @@ function selectUtxos(
       };
     }
 
-    const feeWithoutChange = Math.ceil(estimateTxVbytes(selected.length, fixedOutputVbytes) * feeRate);
+    const feeWithoutChange = Math.ceil(estimateTxVbytes(selected.length + baseInputCount, fixedOutputVbytes) * feeRate);
     const remainder = selectedValue - amountSats - feeWithoutChange;
     if (remainder >= 0) {
       return {
@@ -4045,7 +4371,7 @@ function selectUtxos(
     }
   }
 
-  const lastInputCount = Math.max(selected.length, 1);
+  const lastInputCount = Math.max(selected.length, 1) + baseInputCount;
   const estimatedFee = Math.ceil(estimateTxVbytes(lastInputCount, fixedOutputVbytes + changeOutputVbytes) * feeRate);
   throw new Error(
     `Insufficient funds. Need about ${(amountSats + estimatedFee).toLocaleString()} sats for amount plus fee.`,
@@ -4064,6 +4390,7 @@ async function buildPaymentPsbt({
   fromAddress,
   network,
   payments,
+  postProtocolPayments,
   requireConfirmedUtxos = true,
   protocolPayloads,
   toAddress,
@@ -4073,6 +4400,7 @@ async function buildPaymentPsbt({
   fromAddress: string;
   network: BitcoinNetwork;
   payments?: PaymentOutputSpec[];
+  postProtocolPayments?: PaymentOutputSpec[];
   requireConfirmedUtxos?: boolean;
   protocolPayloads: string[];
   toAddress?: string;
@@ -4083,24 +4411,38 @@ async function buildPaymentPsbt({
     throw new Error("Add at least one recipient.");
   }
 
-  const normalizedPayments = paymentOutputs.map((payment, index) => {
+  const normalizeOutput = (payment: PaymentOutputSpec, index: number, label: string) => {
     const satoshis = Math.floor(payment.amountSats);
     if (satoshis <= 0) {
       throw new Error("Recipient amount must be greater than zero.");
     }
 
+    if (payment.script) {
+      return {
+        amountSats: satoshis,
+        script: payment.script,
+      };
+    }
+
+    if (!payment.address) {
+      throw new Error(`${label} ${index + 1} is missing an address.`);
+    }
+
     return {
       address: payment.address,
       amountSats: satoshis,
-      script: scriptForAddress(payment.address, network, `Recipient ${index + 1}`),
+      script: scriptForAddress(payment.address, network, `${label} ${index + 1}`),
     };
-  });
-  const totalAmountSats = normalizedPayments.reduce((total, payment) => total + payment.amountSats, 0);
+  };
+  const normalizedPayments = paymentOutputs.map((payment, index) => normalizeOutput(payment, index, "Recipient"));
+  const normalizedPostProtocolPayments = (postProtocolPayments ?? []).map((payment, index) => normalizeOutput(payment, index, "Post-protocol recipient"));
+  const totalAmountSats = [...normalizedPayments, ...normalizedPostProtocolPayments].reduce((total, payment) => total + payment.amountSats, 0);
   const changeScript = scriptForAddress(fromAddress, network, "Connected wallet");
   const opReturnScripts = protocolOutputScripts(protocolPayloads);
   const fixedOutputVbytes =
     normalizedPayments.reduce((total, payment) => total + outputVbytesForScript(payment.script), 0) +
-    opReturnScripts.reduce((total, script) => total + outputVbytesForScript(script), 0);
+    opReturnScripts.reduce((total, script) => total + outputVbytesForScript(script), 0) +
+    normalizedPostProtocolPayments.reduce((total, payment) => total + outputVbytesForScript(payment.script), 0);
   const changeOutputVbytes = outputVbytesForScript(changeScript);
   const walletUtxos = await fetchUtxos(fromAddress, network);
   const utxos = requireConfirmedUtxos ? walletUtxos.filter((utxo) => utxo.status?.confirmed) : walletUtxos;
@@ -4170,6 +4512,244 @@ async function buildPaymentPsbt({
   }
 
   for (const payment of normalizedPayments) {
+    if (payment.address) {
+      psbt.addOutput({
+        address: payment.address,
+        value: BigInt(payment.amountSats),
+      });
+    } else {
+      psbt.addOutput({
+        script: payment.script,
+        value: BigInt(payment.amountSats),
+      });
+    }
+  }
+
+  for (const script of opReturnScripts) {
+    psbt.addOutput({
+      script,
+      value: 0n,
+    });
+  }
+
+  for (const payment of normalizedPostProtocolPayments) {
+    if (payment.address) {
+      psbt.addOutput({
+        address: payment.address,
+        value: BigInt(payment.amountSats),
+      });
+    } else {
+      psbt.addOutput({
+        script: payment.script,
+        value: BigInt(payment.amountSats),
+      });
+    }
+  }
+
+  if (selection.changeSats >= DUST_SATS) {
+    psbt.addOutput({
+      address: fromAddress,
+      value: BigInt(selection.changeSats),
+    });
+  }
+
+  return {
+    changeSats: selection.changeSats,
+    feeSats: selection.feeSats,
+    inputCount: selection.selected.length,
+    outputCount: normalizedPayments.length + opReturnScripts.length + normalizedPostProtocolPayments.length + (selection.changeSats >= DUST_SATS ? 1 : 0),
+    psbtHex: psbt.toHex(),
+  };
+}
+
+function encodeCompactSize(value: number) {
+  if (value < 0xfd) {
+    return Buffer.from([value]);
+  }
+
+  if (value <= 0xffff) {
+    const buffer = Buffer.alloc(3);
+    buffer[0] = 0xfd;
+    buffer.writeUInt16LE(value, 1);
+    return buffer;
+  }
+
+  if (value <= 0xffffffff) {
+    const buffer = Buffer.alloc(5);
+    buffer[0] = 0xfe;
+    buffer.writeUInt32LE(value, 1);
+    return buffer;
+  }
+
+  throw new Error("Witness stack item is too large.");
+}
+
+function witnessStackToScriptWitness(stack: Uint8Array[]) {
+  return Buffer.concat([
+    encodeCompactSize(stack.length),
+    ...stack.flatMap((item) => [encodeCompactSize(item.length), Buffer.from(item)]),
+  ]);
+}
+
+function listingAnchorDetails(listing: PowIdListing, network: BitcoinNetwork) {
+  if (!saleAuthorizationHasAnchor(listing.saleAuthorization)) {
+    throw new Error("This listing does not use a spendable marketplace anchor.");
+  }
+
+  if (listing.saleAuthorization.anchorScriptPubKey !== marketplaceAnchorScriptPubKey(network)) {
+    throw new Error("This listing anchor script does not match the current marketplace protocol.");
+  }
+
+  return {
+    script: marketplaceAnchorOutputScript(network),
+    valueSats: listing.saleAuthorization.anchorValueSats,
+    vout: listing.saleAuthorization.anchorVout,
+    witnessScript: marketplaceAnchorWitnessScript(),
+  };
+}
+
+async function assertListingAnchorUnspent(listing: PowIdListing, network: BitcoinNetwork) {
+  const anchor = listingAnchorDetails(listing, network);
+  const listingTxHex = await fetchTransactionHex(listing.listingId, network);
+  const listingTx = bitcoin.Transaction.fromHex(listingTxHex);
+  const output = listingTx.outs[anchor.vout];
+
+  if (!output || bytesToHex(output.script) !== listing.saleAuthorization.anchorScriptPubKey || Number(output.value) !== anchor.valueSats) {
+    throw new Error("Listing anchor output does not match the on-chain listing transaction.");
+  }
+
+  const outspendResponse = await fetch(`${mempoolBase(network)}/api/tx/${listing.listingId}/outspend/${anchor.vout}`);
+  if (outspendResponse.ok) {
+    const outspend = (await outspendResponse.json()) as Record<string, unknown>;
+    if (outspend.spent) {
+      throw new Error("This listing anchor has already been spent.");
+    }
+  }
+
+  return anchor;
+}
+
+async function buildAnchoredMarketplacePsbt({
+  feeRate,
+  fromAddress,
+  listing,
+  network,
+  payments,
+  protocolPayloads,
+  requireConfirmedUtxos = true,
+}: {
+  feeRate: number;
+  fromAddress: string;
+  listing: PowIdListing;
+  network: BitcoinNetwork;
+  payments: PaymentOutputSpec[];
+  protocolPayloads: string[];
+  requireConfirmedUtxos?: boolean;
+}) {
+  const selectedNetwork = bitcoinNetwork(network);
+  const anchor = await assertListingAnchorUnspent(listing, network);
+  const normalizedPayments = payments.map((payment, index) => {
+    const satoshis = Math.floor(payment.amountSats);
+    if (satoshis <= 0) {
+      throw new Error("Recipient amount must be greater than zero.");
+    }
+
+    if (!payment.address) {
+      throw new Error(`Recipient ${index + 1} is missing an address.`);
+    }
+
+    return {
+      address: payment.address,
+      amountSats: satoshis,
+      script: scriptForAddress(payment.address, network, `Recipient ${index + 1}`),
+    };
+  });
+  const positiveOutputSats = normalizedPayments.reduce((total, payment) => total + payment.amountSats, 0);
+  const walletFundedSats = Math.max(0, positiveOutputSats - anchor.valueSats);
+  const changeScript = scriptForAddress(fromAddress, network, "Connected wallet");
+  const opReturnScripts = protocolOutputScripts(protocolPayloads);
+  const fixedOutputVbytes =
+    normalizedPayments.reduce((total, payment) => total + outputVbytesForScript(payment.script), 0) +
+    opReturnScripts.reduce((total, script) => total + outputVbytesForScript(script), 0);
+  const changeOutputVbytes = outputVbytesForScript(changeScript);
+  const walletUtxos = await fetchUtxos(fromAddress, network);
+  const utxos = requireConfirmedUtxos ? walletUtxos.filter((utxo) => utxo.status?.confirmed) : walletUtxos;
+
+  if (walletUtxos.length === 0) {
+    throw new Error(`No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`);
+  }
+
+  if (requireConfirmedUtxos && utxos.length === 0) {
+    throw new Error(
+      `No confirmed UTXOs found for ${shortAddress(fromAddress)}. Wait for wallet funds to confirm before broadcasting.`,
+    );
+  }
+
+  let selection: UtxoSelection;
+  try {
+    selection = selectUtxos(utxos, walletFundedSats, feeRate, fixedOutputVbytes, changeOutputVbytes, 1);
+  } catch (error) {
+    if (requireConfirmedUtxos && walletUtxos.length > utxos.length) {
+      throw new Error(
+        `${errorMessage(error, "Insufficient confirmed funds.")} Only confirmed UTXOs are used for ProofOfWork.Me broadcasts so effective fees do not get dragged down by unconfirmed ancestors.`,
+      );
+    }
+
+    throw error;
+  }
+
+  const selectedWithPreviousTx = await Promise.all(
+    selection.selected.map(async (utxo) => {
+      const previousTxHex = await fetchTransactionHex(utxo.txid, network);
+      const previousTx = bitcoin.Transaction.fromHex(previousTxHex);
+      const previousOutput = previousTx.outs[utxo.vout];
+
+      if (!previousOutput) {
+        throw new Error(`Previous output ${shortAddress(utxo.txid)}:${utxo.vout} could not be read.`);
+      }
+
+      return {
+        ...utxo,
+        previousTxHex,
+        previousOutput,
+      };
+    }),
+  );
+
+  const psbt = new bitcoin.Psbt({ network: selectedNetwork });
+  psbt.addInput({
+    hash: listing.listingId,
+    index: anchor.vout,
+    witnessScript: anchor.witnessScript,
+    witnessUtxo: {
+      script: anchor.script,
+      value: BigInt(anchor.valueSats),
+    },
+  });
+
+  for (const utxo of selectedWithPreviousTx) {
+    const input = {
+      hash: utxo.txid,
+      index: utxo.vout,
+    };
+
+    if (isNativeWitnessScript(utxo.previousOutput.script)) {
+      psbt.addInput({
+        ...input,
+        witnessUtxo: {
+          script: utxo.previousOutput.script,
+          value: utxo.previousOutput.value,
+        },
+      });
+    } else {
+      psbt.addInput({
+        ...input,
+        nonWitnessUtxo: Buffer.from(utxo.previousTxHex, "hex"),
+      });
+    }
+  }
+
+  for (const payment of normalizedPayments) {
     psbt.addOutput({
       address: payment.address,
       value: BigInt(payment.amountSats),
@@ -4190,12 +4770,18 @@ async function buildPaymentPsbt({
     });
   }
 
+  psbt.finalizeInput(0, () => ({
+    finalScriptWitness: witnessStackToScriptWitness([anchor.witnessScript]),
+  }));
+
   return {
+    anchorInputCount: 1,
     changeSats: selection.changeSats,
     feeSats: selection.feeSats,
-    inputCount: selection.selected.length,
+    inputCount: selection.selected.length + 1,
     outputCount: normalizedPayments.length + opReturnScripts.length + (selection.changeSats >= DUST_SATS ? 1 : 0),
     psbtHex: psbt.toHex(),
+    walletInputIndexes: selection.selected.map((_, index) => index + 1),
   };
 }
 
@@ -4217,11 +4803,15 @@ async function signAndBroadcastPsbt({
   inputCount,
   network,
   psbtHex,
+  signInputIndexes,
+  signingAddress,
   wallet,
 }: {
   inputCount: number;
   network: BitcoinNetwork;
   psbtHex: string;
+  signInputIndexes?: number[];
+  signingAddress?: string;
   wallet: UnisatWallet;
 }) {
   if (!wallet.signPsbt) {
@@ -4229,10 +4819,22 @@ async function signAndBroadcastPsbt({
   }
 
   let signedPsbtHex = "";
+  const requestedSignInputs = signInputIndexes?.map((index) => ({
+    address: signingAddress,
+    index,
+  }));
   try {
-    signedPsbtHex = await wallet.signPsbt(psbtHex, {
-      autoFinalized: true,
-    });
+    signedPsbtHex = await wallet.signPsbt(
+      psbtHex,
+      requestedSignInputs
+        ? {
+            autoFinalized: true,
+            toSignInputs: requestedSignInputs,
+          }
+        : {
+            autoFinalized: true,
+          },
+    );
   } catch (error) {
     const signFailure = errorMessage(error, "");
     if (!/(tosigninput|sign input|matched|current address)/i.test(signFailure)) {
@@ -4246,7 +4848,7 @@ async function signAndBroadcastPsbt({
 
     signedPsbtHex = await wallet.signPsbt(psbtHex, {
       autoFinalized: true,
-      toSignInputs: Array.from({ length: inputCount }, (_, index) => ({
+      toSignInputs: (signInputIndexes ?? Array.from({ length: inputCount }, (_, index) => index)).map((index) => ({
         index,
         publicKey,
       })),
@@ -4302,6 +4904,7 @@ export default function App() {
   const [idSaleBuyerAddress, setIdSaleBuyerAddress] = useState("");
   const [idSaleReceiveAddress, setIdSaleReceiveAddress] = useState("");
   const [idSaleAuthorization, setIdSaleAuthorization] = useState("");
+  const [idSelectedListingId, setIdSelectedListingId] = useState("");
   const [idPurchaseOwnerAddress, setIdPurchaseOwnerAddress] = useState("");
   const [idPurchaseReceiveAddress, setIdPurchaseReceiveAddress] = useState("");
   const [mailPreferences, setMailPreferences] = useState<MailPreferences>(() => loadMailPreferences());
@@ -4547,17 +5150,21 @@ export default function App() {
       return undefined;
     }
   }, [idSaleAuthorization, network]);
+  const selectedMarketplaceListing = useMemo(
+    () => idListings.find((listing) => listing.listingId === idSelectedListingId && listing.network === network),
+    [idListings, idSelectedListingId, network],
+  );
   const idPurchasePayload = useMemo(() => {
-    if (!parsedSaleAuthorization || !idPurchaseOwnerAddress.trim()) {
+    if (!selectedMarketplaceListing || !idPurchaseOwnerAddress.trim()) {
       return "";
     }
 
     try {
-      return buildIdMarketplaceTransferPayload(parsedSaleAuthorization, idPurchaseOwnerAddress.trim(), idPurchaseReceiveAddress.trim());
+      return buildIdMarketplaceTransferPayload(selectedMarketplaceListing.listingId, idPurchaseOwnerAddress.trim(), idPurchaseReceiveAddress.trim());
     } catch {
       return "";
     }
-  }, [idPurchaseOwnerAddress, idPurchaseReceiveAddress, parsedSaleAuthorization]);
+  }, [idPurchaseOwnerAddress, idPurchaseReceiveAddress, selectedMarketplaceListing]);
   const idReceiverUpdateBytes = useMemo(
     () => (idReceiverUpdatePayload ? dataCarrierBytesForPayload(idReceiverUpdatePayload) : 0),
     [idReceiverUpdatePayload],
@@ -4616,6 +5223,8 @@ export default function App() {
       address &&
         registryAddress &&
         parsedSaleAuthorization &&
+        selectedMarketplaceListing &&
+        selectedMarketplaceListing.listingVersion === "list3" &&
         idPurchasePayload &&
         isValidBitcoinAddress(idPurchaseOwnerAddress.trim(), network) &&
         (!purchaseReceiveAddress || isValidBitcoinAddress(purchaseReceiveAddress, network)) &&
@@ -5762,6 +6371,12 @@ export default function App() {
         feeRate,
         fromAddress: address,
         network,
+        postProtocolPayments: [
+          {
+            amountSats: ID_LISTING_ANCHOR_VALUE_SATS,
+            script: marketplaceAnchorOutputScript(network),
+          },
+        ],
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
@@ -5828,12 +6443,17 @@ export default function App() {
     }
 
     const draft = saleAuthorizationDraft({
+      anchorScriptPubKey: marketplaceAnchorScriptPubKey(network),
+      anchorType: ID_LISTING_ANCHOR_TYPE,
+      anchorValueSats: ID_LISTING_ANCHOR_VALUE_SATS,
+      anchorVout: ID_LISTING_ANCHOR_VOUT,
       buyerAddress: saleBuyerAddress,
       id: latestRecord.id,
       nonce: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`,
       priceSats: salePriceSats,
       receiveAddress: saleReceiveAddress,
       sellerAddress: latestRecord.ownerAddress,
+      version: ID_SALE_AUTH_VERSION,
     });
 
     return { ...draft, signature: "" };
@@ -5891,6 +6511,16 @@ export default function App() {
   }
 
   async function delistIdListing(listing: PowIdListing) {
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({ tone: "bad", text: "UniSat signPsbt is not available. Update UniSat and try again." });
+      return;
+    }
+
     if (!registryAddress) {
       setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
       return;
@@ -5901,10 +6531,81 @@ export default function App() {
       return;
     }
 
+    if (listing.listingVersion === "list3") {
+      const payload = buildIdDelistingPayload(listing.listingId, "delist3");
+      if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
+        setStatus({ tone: "bad", text: "ID delisting OP_RETURN is over 100 KB." });
+        return;
+      }
+
+      setBusy(true);
+      setStatus({ tone: "idle", text: `Closing listing anchor for ${listing.id}@proofofwork.me...` });
+
+      try {
+        const latestState = await fetchIdRegistryState(network);
+        setIdRegistry(latestState.records);
+        setIdListings(latestState.listings);
+        setIdPendingEvents(latestState.pendingEvents);
+        const latestListing = latestState.listings.find((item) => item.listingId === listing.listingId && item.network === network);
+        const latestRecord = latestState.records.find((record) => record.network === network && record.id === listing.id && record.confirmed);
+
+        if (!latestListing || latestListing.listingVersion !== "list3") {
+          setStatus({ tone: "bad", text: "This listing is no longer active." });
+          return;
+        }
+
+        if (!latestRecord || latestRecord.ownerAddress !== address) {
+          setStatus({ tone: "bad", text: `${listing.id}@proofofwork.me is no longer owned by this wallet.` });
+          return;
+        }
+
+        const currentNetwork = await getWalletNetwork(window.unisat);
+        if (currentNetwork !== network) {
+          await switchWalletNetwork(window.unisat, network);
+        }
+
+        const paymentPsbt = await buildAnchoredMarketplacePsbt({
+          feeRate,
+          fromAddress: address,
+          listing: latestListing,
+          network,
+          payments: [
+            {
+              address: latestListing.sellerAddress,
+              amountSats: latestListing.anchorValueSats ?? ID_LISTING_ANCHOR_VALUE_SATS,
+            },
+            {
+              address: registryAddress,
+              amountSats: ID_MUTATION_PRICE_SATS,
+            },
+          ],
+          protocolPayloads: [payload],
+          requireConfirmedUtxos: true,
+        });
+
+        const txid = await signAndBroadcastPsbt({
+          inputCount: paymentPsbt.inputCount,
+          network,
+          psbtHex: paymentPsbt.psbtHex,
+          signInputIndexes: paymentPsbt.walletInputIndexes,
+          signingAddress: address,
+          wallet: window.unisat,
+        });
+
+        setStatus({ tone: "good", text: `Delisting for ${listing.id}@proofofwork.me broadcast: ${shortAddress(txid)}.` });
+        await refreshIds(true);
+      } catch (error) {
+        setStatus({ tone: "bad", text: errorMessage(error, "ID delisting failed.") });
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     await broadcastIdMutation({
       expectedOwner: listing.sellerAddress,
       id: listing.id,
-      payload: buildIdDelistingPayload(listing.listingId),
+      payload: buildIdDelistingPayload(listing.listingId, "delist2"),
       successText: `Delisting for ${listing.id}@proofofwork.me`,
     });
   }
@@ -5940,7 +6641,13 @@ export default function App() {
     const effectiveReceiveAddress = receiveAddress || ownerAddress;
 
     if (!saleAuthorizationCanBroadcast(authorization)) {
-      setStatus({ tone: "bad", text: "Select an active on-chain listing first." });
+      setStatus({ tone: "bad", text: "Select an active list3 on-chain listing first." });
+      return;
+    }
+
+    const selectedListing = selectedMarketplaceListing;
+    if (!selectedListing || selectedListing.listingVersion !== "list3") {
+      setStatus({ tone: "bad", text: "Select an active list3 on-chain listing first." });
       return;
     }
 
@@ -5964,7 +6671,7 @@ export default function App() {
       return;
     }
 
-    const payload = buildIdMarketplaceTransferPayload(authorization, ownerAddress, receiveAddress);
+    const payload = buildIdMarketplaceTransferPayload(selectedListing.listingId, ownerAddress, receiveAddress);
     if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
       setStatus({ tone: "bad", text: "ID marketplace transfer OP_RETURN is over 100 KB." });
       return;
@@ -5978,6 +6685,7 @@ export default function App() {
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
+      const latestListing = latestState.listings.find((listing) => listing.network === network && listing.listingId === selectedListing.listingId);
       const latestRecord = latestState.records.find((record) => record.network === network && record.id === authorization.id && record.confirmed);
 
       if (!latestRecord) {
@@ -5985,7 +6693,12 @@ export default function App() {
         return;
       }
 
-      if (latestRecord.ownerAddress !== authorization.sellerAddress) {
+      if (!latestListing || latestListing.listingVersion !== "list3") {
+        setStatus({ tone: "bad", text: "This listing is no longer active." });
+        return;
+      }
+
+      if (latestRecord.ownerAddress !== latestListing.sellerAddress) {
         setStatus({ tone: "bad", text: `${authorization.id}@proofofwork.me is no longer owned by this seller.` });
         return;
       }
@@ -5997,22 +6710,20 @@ export default function App() {
 
       const payments: PaymentOutputSpec[] = [
         {
+          address: latestListing.sellerAddress,
+          amountSats: sellerPaymentRequiredSats(latestListing),
+        },
+        {
           address: registryAddress,
           amountSats: ID_MUTATION_PRICE_SATS,
         },
       ];
 
-      if (authorization.priceSats > 0) {
-        payments.push({
-          address: authorization.sellerAddress,
-          amountSats: authorization.priceSats,
-        });
-      }
-
       setStatus({ tone: "idle", text: `Buying ${authorization.id}@proofofwork.me...` });
-      const paymentPsbt = await buildPaymentPsbt({
+      const paymentPsbt = await buildAnchoredMarketplacePsbt({
         feeRate,
         fromAddress: address,
+        listing: latestListing,
         network,
         payments,
         protocolPayloads: [payload],
@@ -6023,11 +6734,14 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network,
         psbtHex: paymentPsbt.psbtHex,
+        signInputIndexes: paymentPsbt.walletInputIndexes,
+        signingAddress: address,
         wallet: window.unisat,
       });
 
       setStatus({ tone: "good", text: `${authorization.id}@proofofwork.me purchase broadcast: ${shortAddress(txid)}.` });
       setIdSaleAuthorization("");
+      setIdSelectedListingId("");
       setIdPurchaseReceiveAddress("");
       await refreshIds(true);
     } catch (error) {
@@ -6406,6 +7120,7 @@ export default function App() {
         setManagedIdName={(id) => {
           setManagedIdName(id);
           setIdSaleAuthorization("");
+          setIdSelectedListingId("");
         }}
         setTheme={setTheme}
         status={status}
@@ -6413,6 +7128,7 @@ export default function App() {
         theme={theme}
         useListing={(listing) => {
           setIdSaleAuthorization(JSON.stringify(listing.saleAuthorization, null, 2));
+          setIdSelectedListingId(listing.listingId);
           setIdPurchaseOwnerAddress(address);
           setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
         }}
@@ -6786,10 +7502,15 @@ export default function App() {
             setIdSalePriceSats={setIdSalePriceSats}
             setIdSaleReceiveAddress={setIdSaleReceiveAddress}
             setFeeRate={setFeeRate}
-            setManagedIdName={setManagedIdName}
+            setManagedIdName={(id) => {
+              setManagedIdName(id);
+              setIdSaleAuthorization("");
+              setIdSelectedListingId("");
+            }}
             submitPurchase={purchaseId}
             useListing={(listing) => {
               setIdSaleAuthorization(JSON.stringify(listing.saleAuthorization, null, 2));
+              setIdSelectedListingId(listing.listingId);
               setIdPurchaseOwnerAddress(address);
               setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
             }}
@@ -8677,7 +9398,7 @@ function MarketplaceListingList({
               <div>
                 <strong>{listing.id}@proofofwork.me</strong>
                 <span>
-                  {listing.priceSats.toLocaleString()} sats · Listed {formatDate(listing.createdAt)}
+                  {listing.priceSats.toLocaleString()} sats · {listing.listingVersion === "list3" ? "Anchored" : "Legacy"} · Listed {formatDate(listing.createdAt)}
                 </span>
               </div>
               <dl>
@@ -8695,10 +9416,10 @@ function MarketplaceListingList({
                 </div>
               </dl>
               <div className="id-record-actions">
-                <button className="primary small" onClick={() => onUse(listing)} type="button">
+                <button className="primary small" disabled={listing.listingVersion !== "list3"} onClick={() => onUse(listing)} type="button">
                   <span className="button-content">
                     <Send size={15} />
-                    <span>Select Listing</span>
+                    <span>{listing.listingVersion === "list3" ? "Select Listing" : "Legacy"}</span>
                   </span>
                 </button>
                 {address && listing.sellerAddress === address ? (
@@ -8825,7 +9546,7 @@ function IdMarketplaceCard({
         </div>
         <div>
           <h3>Marketplace Transfer</h3>
-          <p>Listings are published on-chain. Buyers fund seller payment plus the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
+          <p>Listings are anchored on-chain. Buyers settle by spending the listing anchor and paying the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
         </div>
       </div>
 

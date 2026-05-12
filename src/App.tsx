@@ -712,6 +712,17 @@ type GrowthActualNetworkValue = {
   totalUsd: number;
 };
 
+type GrowthRealEvent = {
+  amountLabel: string;
+  createdAt: string;
+  detail: string;
+  key: string;
+  kind: string;
+  network: BitcoinNetwork;
+  title: string;
+  txid: string;
+};
+
 const GROWTH_MODEL_START_DATE = "2026-05-11";
 const GROWTH_MODEL_GENERATED_ON = "2026-05-12";
 const GROWTH_MODEL_INPUTS = {
@@ -7726,21 +7737,32 @@ export default function App() {
     try {
       const state = await fetchIdRegistryState(network);
       const shouldLoadComputerLog = activityMode || growthMode || activeFolder === "log";
-      const activity = shouldLoadComputerLog ? await fetchGlobalActivity(network) : state.activity;
+      let activity = state.activity;
+      let activityLoadFailed = false;
+      if (shouldLoadComputerLog) {
+        try {
+          const liveActivity = await fetchGlobalActivity(network);
+          activity = liveActivity.length > 0 ? liveActivity : state.activity;
+        } catch {
+          activityLoadFailed = true;
+        }
+      }
       setIdRegistry(state.records);
       setIdListings(state.listings);
       setIdPendingEvents(state.pendingEvents);
       setIdSales(state.sales);
-      setIdActivity(shouldLoadComputerLog ? (activity.length > 0 ? activity : state.activity) : state.activity);
+      setIdActivity(activity);
 
       if (!silent) {
         const confirmed = state.records.filter((record) => record.confirmed).length;
         const pending = state.records.length - confirmed;
         const pendingChanges = state.pendingEvents.length;
         setStatus({
-          tone: "good",
+          tone: activityLoadFailed ? "idle" : "good",
           text: shouldLoadComputerLog
-            ? `Log loaded. ${activity.length.toLocaleString()} computer action${activity.length === 1 ? "" : "s"} indexed.`
+            ? activityLoadFailed
+              ? `Registry loaded. Log refresh unavailable; using ${activity.length.toLocaleString()} registry action${activity.length === 1 ? "" : "s"}.`
+              : `Log loaded. ${activity.length.toLocaleString()} computer action${activity.length === 1 ? "" : "s"} indexed.`
             : `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${pendingChanges} in flight.`,
         });
       }
@@ -10009,11 +10031,11 @@ function growthActualNetworkValue(
 }
 
 function growthActualValuePoints(records: PowIdRecord[], idActivity: PowActivityItem[], sales: PowIdMarketplaceSale[]): GrowthValuePoint[] {
-  const eventTimes = new Map<number, string>();
+  const eventTimes: Array<{ createdMs: number; label: string }> = [];
   const addEventTime = (createdAt: string, label: string) => {
     const createdMs = Date.parse(createdAt);
     if (Number.isFinite(createdMs) && createdMs >= GROWTH_MODEL_START_MS) {
-      eventTimes.set(createdMs, label);
+      eventTimes.push({ createdMs, label });
     }
   };
 
@@ -10044,7 +10066,7 @@ function growthActualValuePoints(records: PowIdRecord[], idActivity: PowActivity
     years: 0,
   });
 
-  for (const [createdMs, label] of [...eventTimes].sort((left, right) => left[0] - right[0])) {
+  for (const { createdMs, label } of eventTimes.sort((left, right) => left.createdMs - right.createdMs)) {
     const value = growthActualNetworkValue(records, idActivity, sales, createdMs);
     points.push({
       label,
@@ -10096,6 +10118,94 @@ function growthModelValueAtYears(years: number): GrowthValuePoint {
   };
 }
 
+function growthEventTimeLabel(createdAt: string) {
+  const createdMs = Date.parse(createdAt);
+  if (!Number.isFinite(createdMs)) {
+    return "Confirmed";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(createdMs);
+}
+
+function growthActivityKindLabel(kind: PowActivityKind) {
+  if (kind === "id-register" || kind === "id-update" || kind === "id-transfer") {
+    return "ID";
+  }
+
+  if (kind === "id-list" || kind === "id-seal" || kind === "id-delist" || kind === "id-buy") {
+    return "Marketplace";
+  }
+
+  if (kind === "file") {
+    return "Drive";
+  }
+
+  return kind === "reply" ? "Mail reply" : "Mail";
+}
+
+function growthRealEventItems(records: PowIdRecord[], idActivity: PowActivityItem[], sales: PowIdMarketplaceSale[]): GrowthRealEvent[] {
+  const events = new Map<string, GrowthRealEvent>();
+  const setEvent = (event: GrowthRealEvent) => {
+    events.set(event.key, event);
+  };
+
+  for (const record of records) {
+    if (!record.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${record.amountSats.toLocaleString()} sats`,
+      createdAt: record.createdAt,
+      detail: `${record.id}@proofofwork.me joined the confirmed ID graph.`,
+      key: record.txid,
+      kind: "ID",
+      network: record.network,
+      title: "ID registered",
+      txid: record.txid,
+    });
+  }
+
+  for (const item of idActivity) {
+    if (!item.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: item.amountSats ? `${item.amountSats.toLocaleString()} sats` : "Confirmed",
+      createdAt: item.createdAt,
+      detail: item.detail || item.description,
+      key: item.txid,
+      kind: growthActivityKindLabel(item.kind),
+      network: item.network,
+      title: item.id ? `${item.title}: ${item.id}@proofofwork.me` : item.title,
+      txid: item.txid,
+    });
+  }
+
+  for (const sale of publicMarketplaceSales(sales)) {
+    if (!sale.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${sale.priceSats.toLocaleString()} sale sats`,
+      createdAt: sale.createdAt,
+      detail: `${sale.id}@proofofwork.me transferred from ${shortAddress(sale.sellerAddress)} to ${shortAddress(sale.buyerAddress)}.`,
+      key: sale.txid,
+      kind: "Marketplace",
+      network: sale.network,
+      title: "Marketplace sale",
+      txid: sale.txid,
+    });
+  }
+
+  return [...events.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+}
+
 function growthChartPath(points: Array<{ sats: number; years: number }>, xFor: (years: number) => number, yFor: (value: number) => number) {
   return points
     .map((point) => `${xFor(point.years).toFixed(2)},${yFor(point.sats).toFixed(2)}`)
@@ -10128,7 +10238,6 @@ function GrowthLineChart({ actualPoints }: { actualPoints: GrowthValuePoint[] })
   const yTicks = Array.from({ length: Math.floor(logMax) - Math.floor(logMin) + 1 }, (_, index) => 10 ** (Math.floor(logMin) + index))
     .filter((tick) => tick >= yMin && tick <= yMax);
   const xTicks = [0, 1, 2, 5, 10];
-  const currentActual = visibleActualPoints[visibleActualPoints.length - 1];
 
   return (
     <svg className="growth-chart" role="img" viewBox={`0 0 ${width} ${height}`} aria-label="Modeled Bitcoin Computer network value compared with real confirmed network value">
@@ -10157,16 +10266,6 @@ function GrowthLineChart({ actualPoints }: { actualPoints: GrowthValuePoint[] })
       {visibleActualPoints.map((point, index) => (
         <circle className="growth-chart-dot actual" cx={xFor(point.years)} cy={yFor(point.sats)} key={`actual-${point.label}-${index}`} r={index === visibleActualPoints.length - 1 ? 6 : 4} />
       ))}
-      {currentActual ? (
-        <g>
-          <text className="growth-chart-callout actual" x={Math.min(width - 260, xFor(currentActual.years) + 14)} y={Math.max(36, yFor(currentActual.sats) - 12)}>
-            Real: {growthSats(currentActual.sats)} / {growthUsd(currentActual.usd)}
-          </text>
-          <text className="growth-chart-callout model" x={xFor(1) + 12} y={yFor(GROWTH_MODEL_ROWS[1]?.totalSats ?? GROWTH_MODEL_ROWS[0].totalSats) - 12}>
-            Model: {growthSats(GROWTH_MODEL_ROWS[1]?.totalSats ?? GROWTH_MODEL_ROWS[0].totalSats)}
-          </text>
-        </g>
-      ) : null}
     </svg>
   );
 }
@@ -10310,11 +10409,11 @@ function GrowthWorkspace({
   registrySales: PowIdMarketplaceSale[];
   onRefresh: () => void;
 }) {
-  const confirmedRecords = registryRecords.filter((record) => record.confirmed);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const confirmedActivity = idActivity.filter((item) => item.confirmed);
   const actualValue = growthActualNetworkValue(registryRecords, idActivity, registrySales);
   const actualPoints = growthActualValuePoints(registryRecords, idActivity, registrySales);
+  const realEvents = growthRealEventItems(registryRecords, idActivity, registrySales);
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
   const oneYear = GROWTH_MODEL_ROWS.find((row) => row.years === 1) ?? GROWTH_MODEL_ROWS[1];
   const fiveYear = GROWTH_MODEL_ROWS.find((row) => row.years === 5) ?? GROWTH_MODEL_ROWS[3];
@@ -10404,6 +10503,37 @@ function GrowthWorkspace({
         </div>
       </div>
 
+      <section className="growth-explainer-grid" aria-label="Growth model explainer">
+        <article className="growth-explainer-card primary">
+          <span>Plain read</span>
+          <h3>Blue is the success case. Green is Bitcoin history.</h3>
+          <p>
+            The model asks what the Bitcoin Computer can become if IDs, Mail, Drive, and Marketplace compound together. The real line only counts confirmed mainnet records that already exist.
+          </p>
+        </article>
+        <article className="growth-explainer-card">
+          <span>Network value</span>
+          <h3>Everything is valued in sats first.</h3>
+          <p>
+            IDs use n squared network value. Mail, Drive, and Marketplace use confirmed payment flow multiplied by the same value multiple, then translated to USD with the Bitcoin benchmark.
+          </p>
+        </article>
+        <article className="growth-explainer-card">
+          <span>Real events</span>
+          <h3>The green line moves when Bitcoin confirms.</h3>
+          <p>
+            Registrations, messages, replies, file writes, and buyer-funded marketplace sales are pulled from the live registry and log endpoints. Pending mempool events wait until they confirm.
+          </p>
+        </article>
+        <article className="growth-explainer-card">
+          <span>New products</span>
+          <h3>Every product joins the same model.</h3>
+          <p>
+            A product needs real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace cost. That keeps Marketplace beside IDs, Mail, and Drive instead of bolted on.
+          </p>
+        </article>
+      </section>
+
       <section className="growth-chart-card">
         <div className="id-launch-section-head">
           <div>
@@ -10415,7 +10545,53 @@ function GrowthWorkspace({
             <span><i className="actual" /> Real</span>
           </div>
         </div>
+        <div className="growth-chart-value-strip" aria-label="Current chart values">
+          <div>
+            <span><i className="model" /> Modeled now</span>
+            <strong>{growthSats(modelNow.sats)}</strong>
+            <small>{growthUsd(modelNow.usd)} at {elapsedYears.toFixed(2)} years</small>
+          </div>
+          <div>
+            <span><i className="actual" /> Real now</span>
+            <strong>{growthSats(actualValue.totalSats)}</strong>
+            <small>{growthUsd(actualValue.totalUsd)} from confirmed events</small>
+          </div>
+          <div>
+            <span><i className="model" /> 12m model</span>
+            <strong>{growthSats(oneYear.totalSats)}</strong>
+            <small>{growthUsd(oneYear.totalUsdBase)} success path</small>
+          </div>
+        </div>
         <GrowthLineChart actualPoints={actualPoints} />
+      </section>
+
+      <section className="growth-events-card" aria-label="Real confirmed growth events">
+        <div className="id-launch-section-head">
+          <div>
+            <h3>Real growth events</h3>
+            <p>The green line is rebuilt from confirmed Bitcoin events. These are the newest receipts feeding the real network value.</p>
+          </div>
+        </div>
+        {realEvents.length > 0 ? (
+          <div className="growth-event-list">
+            {realEvents.slice(0, 8).map((event) => (
+              <a className="growth-event-item" href={mempoolTxUrl(event.txid, event.network)} key={event.key} rel="noreferrer" target="_blank">
+                <div>
+                  <span className="growth-event-kind">{event.kind}</span>
+                  <strong>{event.title}</strong>
+                  <p>{event.detail}</p>
+                </div>
+                <div className="growth-event-meta">
+                  <span>{event.amountLabel}</span>
+                  <small>{growthEventTimeLabel(event.createdAt)}</small>
+                  <small>{shortAddress(event.txid)}</small>
+                </div>
+              </a>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-copy">No confirmed growth events loaded yet. Refresh chain metrics to pull the latest registry and log state.</p>
+        )}
       </section>
 
       <section className="growth-product-section" aria-label="Growth product metrics">

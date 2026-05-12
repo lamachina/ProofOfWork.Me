@@ -1314,6 +1314,8 @@ select {
 }
 
 .growth-hero p,
+.growth-explainer-card p,
+.growth-events-card p,
 .growth-product-section p,
 .growth-assumption-grid p,
 .growth-model-card p,
@@ -1327,6 +1329,8 @@ select {
 .growth-model-card,
 .growth-chart-card,
 .growth-product-card,
+.growth-explainer-card,
+.growth-events-card,
 .growth-assumption-grid article {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1405,6 +1409,7 @@ select {
 }
 
 .growth-chart-card,
+.growth-events-card,
 .growth-product-section {
   display: grid;
   gap: 14px;
@@ -1413,6 +1418,92 @@ select {
 
 .growth-chart-card {
   padding: 16px;
+}
+
+.growth-explainer-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr));
+}
+
+.growth-explainer-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 16px;
+}
+
+.growth-explainer-card.primary {
+  background:
+    linear-gradient(135deg, rgba(74, 163, 255, 0.14), transparent 46%),
+    var(--surface);
+}
+
+.growth-explainer-card span {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 880;
+  text-transform: uppercase;
+}
+
+.growth-explainer-card h3 {
+  font-size: clamp(1.05rem, 1.8vw, 1.45rem);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.growth-chart-value-strip {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.growth-chart-value-strip div {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.growth-chart-value-strip span {
+  align-items: center;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-size: 0.76rem;
+  font-weight: 820;
+  gap: 7px;
+  text-transform: uppercase;
+}
+
+.growth-chart-value-strip i {
+  border-radius: 999px;
+  display: inline-block;
+  height: 8px;
+  width: 22px;
+}
+
+.growth-chart-value-strip i.model {
+  background: var(--accent);
+}
+
+.growth-chart-value-strip i.actual {
+  background: var(--green);
+}
+
+.growth-chart-value-strip strong {
+  font-size: clamp(1.1rem, 2vw, 1.55rem);
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.growth-chart-value-strip small {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.25;
 }
 
 .growth-chart-legend {
@@ -1492,19 +1583,6 @@ select {
   stroke-width: 3;
 }
 
-.growth-chart-callout {
-  font-size: 15px;
-  font-weight: 850;
-}
-
-.growth-chart-callout.model {
-  fill: var(--accent);
-}
-
-.growth-chart-callout.actual {
-  fill: var(--green);
-}
-
 .growth-product-grid {
   display: grid;
   gap: 14px;
@@ -1533,6 +1611,76 @@ select {
   display: grid;
   gap: 8px;
   padding: 16px;
+}
+
+.growth-events-card {
+  padding: 16px;
+}
+
+.growth-event-list {
+  display: grid;
+  gap: 8px;
+}
+
+.growth-event-item {
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.28fr);
+  min-width: 0;
+  padding: 12px;
+  text-decoration: none;
+}
+
+.growth-event-item:hover {
+  border-color: var(--accent);
+}
+
+.growth-event-item strong {
+  display: block;
+  font-size: 0.96rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.growth-event-kind {
+  color: var(--accent);
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 860;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.growth-event-item p {
+  font-size: 0.82rem;
+  margin-top: 4px;
+}
+
+.growth-event-meta {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  min-width: 0;
+  text-align: right;
+}
+
+.growth-event-meta span {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.growth-event-meta small {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 @keyframes desktop-scan {
@@ -3138,6 +3286,8 @@ pre {
   .id-launch-grid,
   .activity-hero,
   .growth-hero,
+  .growth-explainer-grid,
+  .growth-chart-value-strip,
   .growth-product-grid,
   .growth-assumption-grid {
     grid-template-columns: 1fr;
@@ -3316,8 +3466,10 @@ pre {
 
   .growth-public-app .desktop-public-header,
   .growth-hero,
+  .growth-explainer-card,
   .growth-model-card,
   .growth-chart-card,
+  .growth-events-card,
   .growth-product-section,
   .growth-product-card,
   .growth-assumption-grid article {
@@ -3341,7 +3493,19 @@ pre {
     padding-right: 28px;
   }
 
+  .growth-explainer-grid,
+  .growth-chart-value-strip,
+  .growth-event-item {
+    grid-template-columns: 1fr;
+  }
+
+  .growth-event-meta {
+    justify-items: start;
+    text-align: left;
+  }
+
   .growth-chart-card h3,
+  .growth-explainer-card h3,
   .growth-product-card h3,
   .growth-product-section h3 {
     overflow-wrap: anywhere;

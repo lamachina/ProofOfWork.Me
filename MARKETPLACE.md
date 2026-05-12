@@ -5,60 +5,120 @@
 - `id.proofofwork.me` is registration-only.
 - `computer.proofofwork.me` contains the authenticated Marketplace workspace.
 - `marketplace.proofofwork.me` is the standalone marketplace app.
+- `log.proofofwork.me` is the public read-only Bitcoin Computer log for tx-backed app actions.
 - The IDs workspace is for registration, receiver updates, and direct owner transfers only.
+- Marketplace is for on-chain listings, delistings, buyer-funded purchases, and future asset trades.
+- Marketplace actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer tx, and sale-ticket UTXO references.
+- Marketplace attention metrics should be derived from valid chain events: active listings, ID sale count, and seller-price sale volume.
 
 ## Current ID Marketplace Model
 
-The marketplace flow uses on-chain listings backed by owner-funded OP_RETURN sale terms and a seller-reserved Bitcoin anchor:
+The live marketplace writes on-chain listing-book events to the same canonical ProofOfWork ID registry address.
+
+Current events:
+
+```text
+pwid1:list5:<sale-ticket-json-base64url>
+pwid1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwid1:delist5:<listing-txid>
+pwid1:buy5:<listing-txid>:<new-owner-address>:<new-receive-address?>
+```
+
+Each listing mutation pays the 546 sat registry mutation fee. The confirmed chain is canonical; pending events are only best-effort mempool visibility.
+
+The current flow:
 
 1. The current ID owner chooses an owned confirmed ID.
 2. The owner enters sale terms with price, optional buyer lock, optional receive-address lock, nonce, and optional expiry.
-3. The owner reserves one confirmed wallet UTXO as the sale anchor, signs that anchor with `SIGHASH_SINGLE|ANYONECANPAY`, and publishes the terms in a `pwid1:list4` registry transaction that pays the 546 sat mutation fee.
-4. The listing txid becomes the listing ID.
-5. A buyer can use the listing to fund the seller payment, refund the seller anchor, pay the 546 sat registry transfer, and spend the anchor in one `pwid1:buy4` transaction.
-6. The indexer accepts the transfer only if the seller is still the current owner, the buy references an active listing, the transaction spends the listing anchor, and the buyer/receiver constraints match.
+3. The app publishes `pwid1:list5` and creates a 546 sat seller-controlled sale-ticket UTXO in the listing transaction.
+4. After the listing txid exists, the seller publishes `pwid1:seal5` with a `SIGHASH_SINGLE|ANYONECANPAY` signature for the sale ticket.
+5. A buyer funds one `pwid1:buy5` transaction that spends the sale ticket, pays the seller price plus ticket value, pays the 546 sat registry mutation fee, and writes the ID transfer event.
+6. The resolver accepts the purchase only if the listing is active and sealed, the seller is still the current owner, the sale ticket is spent, seller payment is sufficient, and buyer/receiver constraints match.
 
-The listing anchor is the scarce settlement point. Competing buyers must spend the same outpoint, so only one purchase can confirm. Because the anchor spend is seller-signed against the first seller-payment output, a vandal can consume the anchor only by paying the seller the required price plus anchor refund. Historical `list2`/`buy2`/`delist2` and `list3`/`buy3`/`delist3` events remain readable for replay, but new marketplace writes use `list4`/`buy4`/`delist4`.
+The sale ticket is the scarce settlement point. Competing buyers must spend the same outpoint, so only one purchase can confirm. A vandal cannot consume the ticket without paying the seller the required price plus the ticket value.
+
+## Sales Metrics
+
+The marketplace reports realized ID sale data from resolver-accepted buyer-funded transfers.
+
+- Public sale count starts with the live sale-ticket marketplace and increments for valid `buy5` purchases.
+- Historical valid `buy2`/`buy3`/`buy4` purchases remain replayable protocol history, but they are not counted in the public marketplace sales metric.
+- Sale volume is the seller price in sats, excluding the 546 sat registry mutation fee and excluding sale-ticket refunds.
+- Confirmed sales are canonical.
+- Pending sales are mempool-visible only until confirmation.
+
+## Sealed Listings
+
+`pwid1:list5` and `pwid1:seal5` are split because the listing txid does not exist until after the listing transaction broadcasts.
+
+Rules:
+
+- `list5` creates the sale-ticket output and publishes unsigned sale terms.
+- `seal5` must include an `anchorTxid` matching the listing txid.
+- `seal5` must preserve the original sale terms, except for the added ticket signature and anchor txid.
+- A `list5` record without a matching valid `seal5` is visible, but not purchasable.
+- Wallets may return either an ECDSA partial signature or a Taproot key signature. The app and API must accept both when validating sealed sale tickets.
+
+This keeps the listing public and chain-readable while making the buyer path atomic at the Bitcoin UTXO layer.
 
 ## Delistings
 
-Delistings are also on-chain registry events:
+Delistings are on-chain registry events:
 
 ```text
-pwid1:list4:<sale-authorization-json-base64url>
-pwid1:delist4:<listing-id>
+pwid1:delist5:<listing-txid>
 ```
 
-Both pay the 546 sat mutation fee to the canonical registry address. A `delist4` transaction must be funded by the current owner and cancels the listing by txid without spending the reserved seller UTXO.
+A valid delisting must:
+
+- Be funded by the current owner.
+- Spend the sale-ticket UTXO.
+- Pay the 546 sat mutation fee to the registry address.
+- Reference the listing txid being canceled.
 
 Automatic invalidation rules:
 
-- Any confirmed `pwid1:t` ownership transfer cancels all active listings for that ID.
-- Any valid confirmed `pwid1:buy4` marketplace transfer cancels all active listings for that ID.
+- Any confirmed `pwid1:t` ownership transfer cancels active listings for that ID.
+- Any confirmed `pwid1:buy5` marketplace transfer cancels active listings for that ID.
 - Expired sale authorizations are ignored by the resolver.
-- Pending listings and delistings are visible mempool intent only; confirmed history is canonical.
+- Delistings cancel the referenced listing after confirmation.
 
-Pending marketplace events are displayed separately from confirmed ownership:
+## Pending Visibility
 
-- sellers see pending listings and delistings they funded,
-- buyers see pending buyer-funded transfers they broadcast,
-- new owners/receivers see incoming pending transfers that target their wallet,
-- confirmed registry state remains the only source of truth for active listings and ownership.
+Pending marketplace events are UI status, not final ownership:
 
-Marketplace broadcasts spend confirmed wallet UTXOs only. This prevents the visible fee rate on a new listing, delisting, or purchase from being pulled down by low-fee unconfirmed ancestors in the transaction package. If the wallet only has unconfirmed spendable coins, the UI should ask the user to wait for confirmation before publishing marketplace state.
+- Sellers see pending listings, seals, and delistings they funded.
+- Buyers see pending buyer-funded transfers they broadcast.
+- New owners or receivers see incoming pending transfers that target their wallet.
+- Confirmed registry state remains the source of truth for active listings and ownership.
+
+Marketplace broadcasts spend confirmed wallet UTXOs only. This keeps the visible fee rate close to the effective package fee and avoids low-fee unconfirmed ancestors trapping marketplace actions in mempool.
+
+## Historical Replay
+
+Historical marketplace events remain readable so old registry history can be replayed:
+
+```text
+pwid1:list2 / pwid1:delist2 / pwid1:buy2
+pwid1:list3 / pwid1:delist3 / pwid1:buy3
+pwid1:list4 / pwid1:delist4 / pwid1:buy4
+```
+
+New clients must write `list5`, `seal5`, `delist5`, and `buy5`.
 
 ## General Asset Trading
 
-The marketplace should be asset-agnostic over time. IDs are the first asset type, but the same shell can trade:
+IDs are the first marketplace asset. The long-term marketplace should stay asset-agnostic without weakening the ID protocol.
+
+Future asset classes can include:
 
 - ProofOfWork IDs
 - apps
 - files
 - code bundles
-- NFTs or inscriptions if supported later
 - other Bitcoin-native records
 
-The future-facing design is a universal asset envelope:
+The forward-compatible shape is a universal asset envelope:
 
 ```json
 {
@@ -67,11 +127,11 @@ The future-facing design is a universal asset envelope:
   "locator": "pwid:bitcoin",
   "owner": "bc1...",
   "metadataHash": "sha256...",
-  "transferMethod": "pwid1:buy4"
+  "transferMethod": "pwid1:buy5"
 }
 ```
 
-Listings then sign a generic marketplace envelope:
+Listings can then sign a generic marketplace envelope:
 
 ```json
 {
@@ -86,17 +146,17 @@ Listings then sign a generic marketplace envelope:
 }
 ```
 
-This keeps IDs, apps, code, and files coherent under one marketplace without forcing every asset type into the ID protocol.
+This keeps IDs, apps, code, and files coherent under one marketplace without forcing every future asset into the ID event format.
 
-## Trading Assets For Assets
+## Asset-for-Asset Trades
 
 Sats-for-asset is the first settlement mode.
 
-Asset-for-asset should be designed as a later phase because true atomic swaps need both assets to be enforceable in one settlement path. For ProofOfWork-native assets, that can be done with a single transaction containing:
+Asset-for-asset trades are a later phase because true atomic swaps require both assets to be enforceable in one settlement path. For ProofOfWork-native assets, that can be designed as one transaction containing:
 
 - seller payment or asset consideration,
-- registry/marketplace mutation fee,
-- OP_RETURN transfer event,
+- registry or marketplace mutation fee,
+- OP_RETURN transfer events,
 - and enough signed terms for the indexer to verify the swap.
 
 For assets outside the ProofOfWork protocol, the marketplace should require an adapter that can prove ownership and transfer finality.

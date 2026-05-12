@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "audit:ids": "node scripts/audit-id-registry.mjs",
+    "rank:powids": "node scripts/rank-powid-transactions.mjs",
     "proof-api": "node server/proof-api.mjs"
   },
   "dependencies": {

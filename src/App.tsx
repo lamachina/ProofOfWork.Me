@@ -61,6 +61,7 @@ type Folder =
   | "desktop"
   | "ids"
   | "marketplace"
+  | "log"
   | "contacts"
   | "custom";
 type SortMode = "value" | "newest" | "oldest" | "thread" | "largest" | "filetype" | "sender";
@@ -250,21 +251,77 @@ type PowIdPendingEvent = {
   currentReceiveAddress?: string;
   id?: string;
   inputAddresses: string[];
-  kind: "update" | "transfer" | "marketTransfer" | "list" | "delist";
+  kind: "update" | "transfer" | "marketTransfer" | "list" | "seal" | "delist";
   listingId?: string;
   network: BitcoinNetwork;
   ownerAddress?: string;
   priceSats?: number;
   receiveAddress?: string;
   sellerAddress?: string;
+  transferVersion?: PowIdMarketplaceTransferVersion;
   txid: string;
 };
 
-type PowIdListingVersion = "list2" | "list3" | "list4";
+type PowIdMarketplaceSale = {
+  amountSats: number;
+  buyerAddress: string;
+  confirmed: boolean;
+  createdAt: string;
+  id: string;
+  listingId?: string;
+  network: BitcoinNetwork;
+  priceSats: number;
+  receiveAddress: string;
+  sellerAddress: string;
+  transferVersion?: PowIdMarketplaceTransferVersion;
+  txid: string;
+};
 
-type PowIdMarketplaceTransferVersion = "buy2" | "buy3" | "buy4";
+type PowIdMarketplaceStats = {
+  confirmedSales: number;
+  confirmedVolumeSats: number;
+  pendingSales: number;
+  pendingVolumeSats: number;
+  totalSales: number;
+  totalVolumeSats: number;
+};
 
-type PowIdDelistingVersion = "delist2" | "delist3" | "delist4";
+type PowActivityKind =
+  | "id-register"
+  | "id-update"
+  | "id-transfer"
+  | "id-list"
+  | "id-seal"
+  | "id-delist"
+  | "id-buy"
+  | "mail"
+  | "reply"
+  | "file";
+
+type PowActivityItem = {
+  amountSats?: number;
+  actor?: string;
+  confirmed: boolean;
+  counterparty?: string;
+  createdAt: string;
+  dataBytes?: number;
+  description: string;
+  detail?: string;
+  id?: string;
+  kind: PowActivityKind;
+  listingId?: string;
+  network: BitcoinNetwork;
+  tags: string[];
+  title: string;
+  txid: string;
+  utxo?: string;
+};
+
+type PowIdListingVersion = "list2" | "list3" | "list4" | "list5";
+
+type PowIdMarketplaceTransferVersion = "buy2" | "buy3" | "buy4" | "buy5";
+
+type PowIdDelistingVersion = "delist2" | "delist3" | "delist4" | "delist5";
 
 type PowIdSpentOutpoint = {
   txid: string;
@@ -296,6 +353,7 @@ type PowIdListing = {
   priceSats: number;
   receiveAddress?: string;
   saleAuthorization: PowIdSaleAuthorization;
+  sealTxid?: string;
   sellerAddress: string;
   sellerPublicKey?: string;
   txid: string;
@@ -317,7 +375,7 @@ type PowIdSaleAuthorizationDraft = {
   receiveAddress?: string;
   sellerAddress: string;
   sellerPublicKey?: string;
-  version: "pwid-sale-v1" | "pwid-sale-v2" | "pwid-sale-v3";
+  version: "pwid-sale-v1" | "pwid-sale-v2" | "pwid-sale-v3" | "pwid-sale-v4";
 };
 
 type PowIdSaleAuthorization = PowIdSaleAuthorizationDraft & {
@@ -327,6 +385,7 @@ type PowIdSaleAuthorization = PowIdSaleAuthorizationDraft & {
 type PowIdChainOrder = {
   blockHeight?: number;
   blockIndex?: number;
+  dataBytes: number;
 };
 
 type PowIdEvent = PowIdChainOrder &
@@ -399,6 +458,18 @@ type PowIdEvent = PowIdChainOrder &
       priceSats: number;
       saleAuthorization: PowIdSaleAuthorization;
       sellerAddress: string;
+      txid: string;
+    }
+  | {
+      amountSats: number;
+      confirmed: boolean;
+      createdAt: string;
+      inputAddresses: string[];
+      kind: "seal";
+      listingId: string;
+      network: BitcoinNetwork;
+      saleAuthorization: PowIdSaleAuthorization;
+      spentOutpoints: PowIdSpentOutpoint[];
       txid: string;
     }
   | {
@@ -491,9 +562,32 @@ type PaymentOutputSpec = {
 };
 
 type PowRegistryApiResponse = {
+  activity?: PowActivityItem[];
   listings?: PowIdListing[];
   pendingEvents?: PowIdPendingEvent[];
   records?: PowIdRecord[];
+  sales?: PowIdMarketplaceSale[];
+};
+
+type PowRegistryState = {
+  activity: PowActivityItem[];
+  listings: PowIdListing[];
+  pendingEvents: PowIdPendingEvent[];
+  records: PowIdRecord[];
+  sales: PowIdMarketplaceSale[];
+};
+
+type PowActivityApiResponse = {
+  activity?: PowActivityItem[];
+  stats?: {
+    addresses?: number;
+    dataBytes?: number;
+    files?: number;
+    messages?: number;
+    pending?: number;
+    registry?: number;
+    total?: number;
+  };
 };
 
 type PowMailApiResponse = {
@@ -529,6 +623,7 @@ const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
+const LOG_APP_URL = "https://log.proofofwork.me";
 const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
 const LANDING_TESTIMONIAL_TXID = "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
 const LANDING_TESTIMONIAL_TX_URL = `https://mempool.space/tx/${LANDING_TESTIMONIAL_TXID}`;
@@ -548,8 +643,10 @@ const ID_MUTATION_PRICE_SATS = 546;
 const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
 const ID_SALE_AUTH_VERSION_ANCHORED = "pwid-sale-v2";
 const ID_SALE_AUTH_VERSION = "pwid-sale-v3";
+const ID_SALE_AUTH_VERSION_TICKET = "pwid-sale-v4";
 const ID_LISTING_ANCHOR_TYPE_LEGACY = "p2wsh-op-true-v1";
 const ID_LISTING_ANCHOR_TYPE = "seller-utxo-v1";
+const ID_LISTING_TICKET_ANCHOR_TYPE = "sale-ticket-v1";
 const ID_LISTING_ANCHOR_VALUE_SATS = 546;
 const ID_LISTING_ANCHOR_VOUT = 2;
 const ID_LISTING_ANCHOR_SIGHASH_TYPE = bitcoin.Transaction.SIGHASH_SINGLE | bitcoin.Transaction.SIGHASH_ANYONECANPAY;
@@ -570,6 +667,7 @@ const APP_LINKS = [
   { href: COMPUTER_APP_URL, label: "Computer" },
   { href: DESKTOP_APP_URL, label: "Desktop" },
   { href: MARKETPLACE_APP_URL, label: "Marketplace" },
+  { href: LOG_APP_URL, label: "Log" },
 ];
 
 function isIdLaunchRoute() {
@@ -610,6 +708,16 @@ function isMarketplaceRoute() {
   const hostname = window.location.hostname.toLowerCase();
   // Production ID marketplace: marketplace.proofofwork.me. Local/dev preview: ?marketplace=1.
   return hostname === "marketplace.proofofwork.me" || window.location.search.includes("marketplace=1");
+}
+
+function isActivityRoute() {
+  if (import.meta.env.VITE_ACTIVITY_ONLY === "1" || import.meta.env.VITE_LOG_ONLY === "1") {
+    return true;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  // Production Bitcoin Computer log: log.proofofwork.me. Local/dev preview: ?log=1 or ?activity=1.
+  return hostname === "log.proofofwork.me" || hostname === "activity.proofofwork.me" || window.location.search.includes("log=1") || window.location.search.includes("activity=1");
 }
 
 function loadTheme(): ThemeMode {
@@ -1020,11 +1128,42 @@ function marketplaceLegacyAnchorScriptPubKey(network: BitcoinNetwork) {
 }
 
 function validPublicKeyHex(value: string) {
-  return /^(02|03)[0-9a-fA-F]{64}$/u.test(value) || /^04[0-9a-fA-F]{128}$/u.test(value);
+  return /^[0-9a-fA-F]{64}$/u.test(value) || /^(02|03)[0-9a-fA-F]{64}$/u.test(value) || /^04[0-9a-fA-F]{128}$/u.test(value);
 }
 
 function validSignatureHex(value: string) {
   return /^[0-9a-fA-F]+$/u.test(value) && value.length >= 18 && value.length <= 146 && value.length % 2 === 0;
+}
+
+function isTaprootScriptPubKey(script: Uint8Array) {
+  return script.length === 34 && script[0] === bitcoin.opcodes.OP_1 && script[1] === 0x20;
+}
+
+function signedInputSignature(
+  signedPsbt: bitcoin.Psbt,
+  inputIndex: number,
+  publicKeyHex: string,
+): { kind: "partial" | "tapKey"; signature: Uint8Array } | undefined {
+  const input = signedPsbt.data.inputs[inputIndex];
+  if (input?.tapKeySig) {
+    return {
+      kind: "tapKey",
+      signature: input.tapKeySig,
+    };
+  }
+
+  const normalizedPublicKey = publicKeyHex.toLowerCase();
+  const partialSig =
+    input?.partialSig?.find((candidate) => bytesToHex(candidate.pubkey).toLowerCase() === normalizedPublicKey) ??
+    input?.partialSig?.[0];
+  if (!partialSig?.signature) {
+    return undefined;
+  }
+
+  return {
+    kind: "partial",
+    signature: partialSig.signature,
+  };
 }
 
 function isValidBitcoinAddress(address: string, network: BitcoinNetwork) {
@@ -1145,6 +1284,81 @@ function ownedPowIds(records: PowIdRecord[], ownerOrReceiverAddress: string) {
   return records.filter((record) => record.ownerAddress === ownerOrReceiverAddress || record.receiveAddress === ownerOrReceiverAddress);
 }
 
+function normalizeSearchQuery(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function searchIncludes(values: Array<string | number | undefined>, query: string) {
+  const normalized = normalizeSearchQuery(query);
+  if (!normalized) {
+    return true;
+  }
+
+  return values.some((value) => String(value ?? "").toLowerCase().includes(normalized));
+}
+
+function idRecordMatchesSearch(record: PowIdRecord, query: string) {
+  return searchIncludes(
+    [
+      record.id,
+      `${record.id}@proofofwork.me`,
+      record.ownerAddress,
+      record.receiveAddress,
+      record.pgpKey ? "pgp" : "none",
+      record.txid,
+      record.network,
+      networkLabel(record.network),
+      record.amountSats,
+      record.confirmed ? "confirmed" : "pending",
+    ],
+    query,
+  );
+}
+
+function idListingMatchesSearch(listing: PowIdListing, query: string) {
+  return searchIncludes(
+    [
+      listing.id,
+      `${listing.id}@proofofwork.me`,
+      listing.sellerAddress,
+      listing.buyerAddress,
+      listing.receiveAddress,
+      listing.listingId,
+      listing.txid,
+      listing.network,
+      networkLabel(listing.network),
+      listing.priceSats,
+      listing.confirmed ? "confirmed" : "pending",
+      listing.listingVersion,
+      listing.expiresAt ? "expires" : "no expiry",
+    ],
+    query,
+  );
+}
+
+function pendingIdEventMatchesSearch(event: PowIdPendingEvent, query: string) {
+  return searchIncludes(
+    [
+      event.id,
+      event.id ? `${event.id}@proofofwork.me` : undefined,
+      event.kind,
+      event.currentOwnerAddress,
+      event.currentReceiveAddress,
+      event.ownerAddress,
+      event.receiveAddress,
+      event.sellerAddress,
+      event.listingId,
+      event.txid,
+      event.network,
+      networkLabel(event.network),
+      event.amountSats,
+      event.priceSats,
+      ...event.inputAddresses,
+    ],
+    query,
+  );
+}
+
 function pendingIdEventTouchesAddress(event: PowIdPendingEvent, targetAddress: string) {
   if (!targetAddress) {
     return false;
@@ -1192,6 +1406,10 @@ function pendingIdEventLabel(event: PowIdPendingEvent, targetAddress: string) {
 
   if (event.kind === "list") {
     return `${direction} listing`;
+  }
+
+  if (event.kind === "seal") {
+    return `${direction} sale-ticket seal`;
   }
 
   if (event.kind === "delist") {
@@ -1591,6 +1809,10 @@ function folderLabel(folder: Folder) {
     return "Marketplace";
   }
 
+  if (folder === "log") {
+    return "Log";
+  }
+
   if (folder === "desktop") {
     return "Desktop";
   }
@@ -1633,6 +1855,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "marketplace") {
     return "ID listings and transfers";
+  }
+
+  if (folder === "log") {
+    return "Chain-readable computer log";
   }
 
   if (folder === "desktop") {
@@ -1991,17 +2217,17 @@ function saleAuthorizationDraft({
     version,
   };
 
-  if (version === ID_SALE_AUTH_VERSION_ANCHORED || version === ID_SALE_AUTH_VERSION) {
+  if (version === ID_SALE_AUTH_VERSION_ANCHORED || version === ID_SALE_AUTH_VERSION || version === ID_SALE_AUTH_VERSION_TICKET) {
     draft.anchorSigHashType =
       typeof anchorSigHashType === "number" && Number.isSafeInteger(anchorSigHashType)
         ? Math.floor(anchorSigHashType)
-        : version === ID_SALE_AUTH_VERSION
+        : version === ID_SALE_AUTH_VERSION || version === ID_SALE_AUTH_VERSION_TICKET
           ? ID_LISTING_ANCHOR_SIGHASH_TYPE
           : undefined;
     draft.anchorSignature = anchorSignature?.trim().toLowerCase() || undefined;
     draft.anchorScriptPubKey = anchorScriptPubKey?.trim().toLowerCase() || undefined;
     draft.anchorTxid = anchorTxid?.trim().toLowerCase() || undefined;
-    draft.anchorType = anchorType?.trim() || (version === ID_SALE_AUTH_VERSION ? ID_LISTING_ANCHOR_TYPE : ID_LISTING_ANCHOR_TYPE_LEGACY);
+    draft.anchorType = anchorType?.trim() || (version === ID_SALE_AUTH_VERSION_TICKET ? ID_LISTING_TICKET_ANCHOR_TYPE : version === ID_SALE_AUTH_VERSION ? ID_LISTING_ANCHOR_TYPE : ID_LISTING_ANCHOR_TYPE_LEGACY);
     draft.anchorValueSats = typeof anchorValueSats === "number" && Number.isSafeInteger(anchorValueSats) ? Math.floor(anchorValueSats) : ID_LISTING_ANCHOR_VALUE_SATS;
     draft.anchorVout = typeof anchorVout === "number" && Number.isSafeInteger(anchorVout) ? Math.floor(anchorVout) : ID_LISTING_ANCHOR_VOUT;
 
@@ -2026,7 +2252,7 @@ function saleAuthorizationMessage(authorization: PowIdSaleAuthorizationDraft) {
     `expiresAt:${authorization.expiresAt || ""}`,
   ];
 
-  if (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION) {
+  if (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION || authorization.version === ID_SALE_AUTH_VERSION_TICKET) {
     lines.push(
       `anchorType:${authorization.anchorType || ""}`,
       `anchorTxid:${authorization.anchorTxid || ""}`,
@@ -2066,7 +2292,9 @@ function parseSaleAuthorizationText(value: string, targetNetwork: BitcoinNetwork
         ? ID_SALE_AUTH_VERSION_ANCHORED
         : parsed.version === ID_SALE_AUTH_VERSION
           ? ID_SALE_AUTH_VERSION
-          : "";
+          : parsed.version === ID_SALE_AUTH_VERSION_TICKET
+            ? ID_SALE_AUTH_VERSION_TICKET
+            : "";
   const anchorType = typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
   const anchorSigHashType = typeof parsed.anchorSigHashType === "number" ? Math.floor(parsed.anchorSigHashType) : Number.NaN;
   const anchorSignature = typeof parsed.anchorSignature === "string" ? parsed.anchorSignature.trim().toLowerCase() : "";
@@ -2145,6 +2373,22 @@ function parseSaleAuthorizationText(value: string, targetNetwork: BitcoinNetwork
     }
   }
 
+  if (version === ID_SALE_AUTH_VERSION_TICKET) {
+    if (
+      anchorType !== ID_LISTING_TICKET_ANCHOR_TYPE ||
+      !Number.isSafeInteger(anchorVout) ||
+      anchorVout < 0 ||
+      !Number.isSafeInteger(anchorValueSats) ||
+      anchorValueSats < DUST_SATS ||
+      !/^[0-9a-f]+$/u.test(anchorScriptPubKey) ||
+      !validPublicKeyHex(sellerPublicKey) ||
+      anchorSigHashType !== ID_LISTING_ANCHOR_SIGHASH_TYPE ||
+      (anchorSignature && !validSignatureHex(anchorSignature))
+    ) {
+      throw new Error("Listing sale ticket is invalid.");
+    }
+  }
+
   return {
     ...saleAuthorizationDraft({
       anchorSigHashType,
@@ -2174,7 +2418,11 @@ function parseSaleAuthorizationJson(value: string, targetNetwork: BitcoinNetwork
 
 function saleAuthorizationCanBroadcast(authorization: PowIdSaleAuthorization) {
   return (
-    (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION) &&
+    (
+      authorization.version === ID_SALE_AUTH_VERSION_ANCHORED ||
+      authorization.version === ID_SALE_AUTH_VERSION ||
+      (authorization.version === ID_SALE_AUTH_VERSION_TICKET && saleAuthorizationUsesSaleTicketAnchor(authorization))
+    ) &&
     Boolean(authorization.id && authorization.nonce)
   );
 }
@@ -2188,6 +2436,20 @@ function saleAuthorizationVerified(_authorization: PowIdSaleAuthorization) {
 function saleAuthorizationTermsMatch(left: PowIdSaleAuthorization, right: PowIdSaleAuthorization) {
   const leftTerms = saleAuthorizationDraft(left);
   const rightTerms = saleAuthorizationDraft(right);
+  return JSON.stringify(leftTerms) === JSON.stringify(rightTerms);
+}
+
+function saleAuthorizationTermsMatchIgnoringSeal(left: PowIdSaleAuthorization, right: PowIdSaleAuthorization) {
+  const leftTerms = saleAuthorizationDraft({
+    ...left,
+    anchorSignature: undefined,
+    anchorTxid: undefined,
+  });
+  const rightTerms = saleAuthorizationDraft({
+    ...right,
+    anchorSignature: undefined,
+    anchorTxid: undefined,
+  });
   return JSON.stringify(leftTerms) === JSON.stringify(rightTerms);
 }
 
@@ -2222,8 +2484,8 @@ function saleAuthorizationHasAnchor(authorization: PowIdSaleAuthorization): auth
   sellerPublicKey?: string;
 } {
   return (
-    (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION) &&
-    (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY || authorization.anchorType === ID_LISTING_ANCHOR_TYPE) &&
+    (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION || authorization.version === ID_SALE_AUTH_VERSION_TICKET) &&
+    (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY || authorization.anchorType === ID_LISTING_ANCHOR_TYPE || authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE) &&
     typeof authorization.anchorScriptPubKey === "string" &&
     /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey) &&
     typeof authorization.anchorVout === "number" &&
@@ -2258,6 +2520,30 @@ function saleAuthorizationUsesSellerUtxoAnchor(authorization: PowIdSaleAuthoriza
   );
 }
 
+function saleAuthorizationUsesSaleTicketAnchor(authorization: PowIdSaleAuthorization): authorization is PowIdSaleAuthorization & {
+  anchorSigHashType: number;
+  anchorSignature: string;
+  anchorScriptPubKey: string;
+  anchorTxid: string;
+  anchorType: string;
+  anchorValueSats: number;
+  anchorVout: number;
+  sellerPublicKey: string;
+} {
+  return (
+    saleAuthorizationHasAnchor(authorization) &&
+    authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+    authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE &&
+    typeof authorization.anchorTxid === "string" &&
+    /^[0-9a-f]{64}$/u.test(authorization.anchorTxid) &&
+    typeof authorization.sellerPublicKey === "string" &&
+    validPublicKeyHex(authorization.sellerPublicKey) &&
+    authorization.anchorSigHashType === ID_LISTING_ANCHOR_SIGHASH_TYPE &&
+    typeof authorization.anchorSignature === "string" &&
+    validSignatureHex(authorization.anchorSignature)
+  );
+}
+
 function listingAnchorOutpoint(listing: PowIdListing) {
   if (!saleAuthorizationHasAnchor(listing.saleAuthorization)) {
     return null;
@@ -2282,10 +2568,27 @@ function sellerPaymentRequiredSats(listing: PowIdListing) {
 }
 
 function listingAnchorIsPresent(vout: Array<Record<string, unknown>>, authorization: PowIdSaleAuthorization) {
+  if (!saleAuthorizationHasAnchor(authorization)) {
+    return false;
+  }
+
   if (
-    !saleAuthorizationHasAnchor(authorization) ||
-    authorization.version !== ID_SALE_AUTH_VERSION_ANCHORED ||
+    authorization.version !== ID_SALE_AUTH_VERSION_ANCHORED &&
+    authorization.version !== ID_SALE_AUTH_VERSION_TICKET
+  ) {
+    return false;
+  }
+
+  if (
+    authorization.version === ID_SALE_AUTH_VERSION_ANCHORED &&
     authorization.anchorType !== ID_LISTING_ANCHOR_TYPE_LEGACY
+  ) {
+    return false;
+  }
+
+  if (
+    authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+    authorization.anchorType !== ID_LISTING_TICKET_ANCHOR_TYPE
   ) {
     return false;
   }
@@ -2300,7 +2603,7 @@ function listingAnchorIsPresent(vout: Array<Record<string, unknown>>, authorizat
 
 async function listingAnchorSpent(listing: PowIdListing, network: BitcoinNetwork) {
   const anchor = listingAnchorOutpoint(listing);
-  if ((listing.listingVersion !== "list3" && listing.listingVersion !== "list4") || !anchor) {
+  if ((listing.listingVersion !== "list3" && listing.listingVersion !== "list4" && listing.listingVersion !== "list5") || !anchor) {
     return false;
   }
 
@@ -2352,17 +2655,37 @@ function buildIdMarketplaceTransferPayload(
   listingId: string,
   ownerAddress: string,
   receiveAddress: string,
-  version: Extract<PowIdMarketplaceTransferVersion, "buy3" | "buy4"> = "buy4",
+  version: Extract<PowIdMarketplaceTransferVersion, "buy3" | "buy4" | "buy5"> = "buy5",
 ) {
   const receiver = receiveAddress.trim();
   return `${ID_PROTOCOL_PREFIX}${version}:${listingId}:${ownerAddress}${receiver ? `:${receiver}` : ""}`;
 }
 
-function buildIdListingPayload(authorization: PowIdSaleAuthorization) {
-  return `${ID_PROTOCOL_PREFIX}list4:${encodeTextBase64Url(JSON.stringify(authorization))}`;
+function marketplaceTransferVersionForListing(listing: PowIdListing): Extract<PowIdMarketplaceTransferVersion, "buy3" | "buy4" | "buy5"> {
+  return listing.listingVersion === "list3" ? "buy3" : listing.listingVersion === "list4" ? "buy4" : "buy5";
 }
 
-function buildIdDelistingPayload(listingId: string, version: PowIdDelistingVersion = "delist4") {
+function listingCanBePurchased(listing: PowIdListing) {
+  return (
+    listing.listingVersion === "list3" ||
+    listing.listingVersion === "list4" ||
+    (listing.listingVersion === "list5" && saleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization))
+  );
+}
+
+function buildIdListingPayload(authorization: PowIdSaleAuthorization, version: Extract<PowIdListingVersion, "list4" | "list5"> = "list5") {
+  return `${ID_PROTOCOL_PREFIX}${version}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
+}
+
+function buildIdSaleSealPayload(listingId: string, authorization: PowIdSaleAuthorization) {
+  if (!saleAuthorizationUsesSaleTicketAnchor(authorization)) {
+    throw new Error("Sale-ticket seal signature is invalid.");
+  }
+
+  return `${ID_PROTOCOL_PREFIX}seal5:${listingId}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
+}
+
+function buildIdDelistingPayload(listingId: string, version: PowIdDelistingVersion = "delist5") {
   return `${ID_PROTOCOL_PREFIX}${version}:${listingId}`;
 }
 
@@ -2961,6 +3284,12 @@ function decodedProtocolMessages(vout: Array<Record<string, unknown>>, prefix: s
   return decodedOpReturnMessages(vout).filter((message) => message.startsWith(prefix));
 }
 
+function proofProtocolDataBytesForVout(vout: Array<Record<string, unknown>>) {
+  return decodedOpReturnMessages(vout)
+    .filter((message) => message.startsWith(PROTOCOL_PREFIX) || message.startsWith(ID_PROTOCOL_PREFIX))
+    .reduce((total, message) => total + new TextEncoder().encode(message).byteLength, 0);
+}
+
 function firstProtocolOutputIndex(vout: Array<Record<string, unknown>>) {
   return vout.findIndex((output) => {
     if (output.scriptpubkey_type !== "op_return") {
@@ -3219,7 +3548,7 @@ function registryPaymentAmount(vout: Array<Record<string, unknown>>, registryAdd
   }, 0);
 }
 
-function idEventMinimumPaymentSats(kind: "register" | "update" | "transfer" | "marketTransfer" | "list" | "delist") {
+function idEventMinimumPaymentSats(kind: "register" | "update" | "transfer" | "marketTransfer" | "list" | "seal" | "delist") {
   return kind === "register" ? ID_REGISTRATION_PRICE_SATS : ID_MUTATION_PRICE_SATS;
 }
 
@@ -3387,7 +3716,7 @@ function parseIdTransferPayload(payload: string, targetNetwork: BitcoinNetwork) 
 
 function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: BitcoinNetwork) {
   const parts = payload.split(":");
-  if (payload.startsWith("buy3:") || payload.startsWith("buy4:")) {
+  if (payload.startsWith("buy3:") || payload.startsWith("buy4:") || payload.startsWith("buy5:")) {
     if (parts.length < 3 || parts.length > 4 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
       return null;
     }
@@ -3402,7 +3731,7 @@ function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: Bitco
       listingId: listingId.toLowerCase(),
       ownerAddress: owner,
       receiveAddress,
-      transferVersion: payload.startsWith("buy4:") ? "buy4" as const : "buy3" as const,
+      transferVersion: payload.startsWith("buy5:") ? "buy5" as const : payload.startsWith("buy4:") ? "buy4" as const : "buy3" as const,
     };
   }
 
@@ -3447,8 +3776,8 @@ function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: Bitco
 }
 
 function parseIdListingPayload(payload: string, targetNetwork: BitcoinNetwork) {
-  const listingVersion: PowIdListingVersion = payload.startsWith("list4:") ? "list4" : payload.startsWith("list3:") ? "list3" : payload.startsWith("list2:") ? "list2" : "list2";
-  if (!payload.startsWith("list2:") && !payload.startsWith("list3:") && !payload.startsWith("list4:")) {
+  const listingVersion: PowIdListingVersion = payload.startsWith("list5:") ? "list5" : payload.startsWith("list4:") ? "list4" : payload.startsWith("list3:") ? "list3" : payload.startsWith("list2:") ? "list2" : "list2";
+  if (!payload.startsWith("list2:") && !payload.startsWith("list3:") && !payload.startsWith("list4:") && !payload.startsWith("list5:")) {
     return null;
   }
 
@@ -3474,9 +3803,33 @@ function parseIdListingPayload(payload: string, targetNetwork: BitcoinNetwork) {
   };
 }
 
+function parseIdSaleSealPayload(payload: string, targetNetwork: BitcoinNetwork) {
+  if (!payload.startsWith("seal5:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length !== 3 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
+    return null;
+  }
+
+  const [, listingId, authorizationEncoded] = parts;
+  let authorization: PowIdSaleAuthorization;
+  try {
+    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), targetNetwork);
+  } catch {
+    return null;
+  }
+
+  return {
+    listingId: listingId.toLowerCase(),
+    saleAuthorization: authorization,
+  };
+}
+
 function parseIdDelistingPayload(payload: string) {
-  const delistingVersion: PowIdDelistingVersion = payload.startsWith("delist4:") ? "delist4" : payload.startsWith("delist3:") ? "delist3" : payload.startsWith("delist2:") ? "delist2" : "delist2";
-  if (!payload.startsWith("delist2:") && !payload.startsWith("delist3:") && !payload.startsWith("delist4:")) {
+  const delistingVersion: PowIdDelistingVersion = payload.startsWith("delist5:") ? "delist5" : payload.startsWith("delist4:") ? "delist4" : payload.startsWith("delist3:") ? "delist3" : payload.startsWith("delist2:") ? "delist2" : "delist2";
+  if (!payload.startsWith("delist2:") && !payload.startsWith("delist3:") && !payload.startsWith("delist4:") && !payload.startsWith("delist5:")) {
     return null;
   }
 
@@ -3529,6 +3882,14 @@ function parseIdEventPayload(payload: string, targetNetwork: BitcoinNetwork) {
     return {
       kind: "list" as const,
       ...listing,
+    };
+  }
+
+  const seal = parseIdSaleSealPayload(payload, targetNetwork);
+  if (seal) {
+    return {
+      kind: "seal" as const,
+      ...seal,
     };
   }
 
@@ -3808,11 +4169,227 @@ function publicDesktopMail(inboxMessages: InboxMessage[], sentMessages: SentMess
   ];
 }
 
+function activityStatusTag(confirmed: boolean) {
+  return confirmed ? "Confirmed" : "Pending";
+}
+
+function emptyMarketplaceStats(): PowIdMarketplaceStats {
+  return {
+    confirmedSales: 0,
+    confirmedVolumeSats: 0,
+    pendingSales: 0,
+    pendingVolumeSats: 0,
+    totalSales: 0,
+    totalVolumeSats: 0,
+  };
+}
+
+function marketplaceStatsFromSales(sales: PowIdMarketplaceSale[]): PowIdMarketplaceStats {
+  return sales.reduce((stats, sale) => {
+    if (sale.confirmed) {
+      stats.confirmedSales += 1;
+      stats.confirmedVolumeSats += sale.priceSats;
+    } else {
+      stats.pendingSales += 1;
+      stats.pendingVolumeSats += sale.priceSats;
+    }
+
+    stats.totalSales += 1;
+    stats.totalVolumeSats += sale.priceSats;
+    return stats;
+  }, emptyMarketplaceStats());
+}
+
+function publicMarketplaceSales(sales: PowIdMarketplaceSale[]) {
+  return sales.filter((sale) => sale.transferVersion === "buy5");
+}
+
+function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
+  return events.map((event) => {
+    const status = activityStatusTag(event.confirmed);
+    const base = {
+      amountSats: event.amountSats,
+      actor: event.inputAddresses[0],
+      confirmed: event.confirmed,
+      createdAt: event.createdAt,
+      dataBytes: event.dataBytes,
+      network: event.network,
+      tags: [status, networkLabel(event.network), `${event.amountSats.toLocaleString()} sats`],
+      txid: event.txid,
+    };
+
+    if (event.kind === "register") {
+      return {
+        ...base,
+        counterparty: event.receiveAddress,
+        description: `${event.id}@proofofwork.me claimed by ${shortAddress(event.ownerAddress)} and routed to ${shortAddress(event.receiveAddress)}.`,
+        detail: event.pgpKey ? "PGP key registered" : "No PGP key",
+        id: event.id,
+        kind: "id-register",
+        tags: [...base.tags, "Registration"],
+        title: event.confirmed ? "ID registered" : "ID registration pending",
+      };
+    }
+
+    if (event.kind === "update") {
+      return {
+        ...base,
+        counterparty: event.receiveAddress,
+        description: `${event.id}@proofofwork.me receive address updated to ${shortAddress(event.receiveAddress)}.`,
+        id: event.id,
+        kind: "id-update",
+        tags: [...base.tags, "Receiver update"],
+        title: event.confirmed ? "Receiver updated" : "Receiver update pending",
+      };
+    }
+
+    if (event.kind === "transfer") {
+      return {
+        ...base,
+        counterparty: event.ownerAddress,
+        description: `${event.id}@proofofwork.me transferred to ${shortAddress(event.ownerAddress)} and routed to ${shortAddress(event.receiveAddress)}.`,
+        id: event.id,
+        kind: "id-transfer",
+        tags: [...base.tags, "Transfer"],
+        title: event.confirmed ? "ID transferred" : "ID transfer pending",
+      };
+    }
+
+    if (event.kind === "list") {
+      const anchorVout = event.saleAuthorization.anchorVout ?? ID_LISTING_ANCHOR_VOUT;
+      return {
+        ...base,
+        actor: event.sellerAddress,
+        counterparty: event.saleAuthorization.buyerAddress,
+        description: `${event.id}@proofofwork.me listed for ${event.priceSats.toLocaleString()} sats by ${shortAddress(event.sellerAddress)}.`,
+        detail: event.listingVersion === "list5" ? "Sale-ticket listing" : "Legacy listing",
+        id: event.id,
+        kind: "id-list",
+        listingId: event.txid,
+        tags: [...base.tags, "Listing", `${event.priceSats.toLocaleString()} sale sats`],
+        title: event.confirmed ? "ID listed" : "ID listing pending",
+        utxo: `${event.txid}:${anchorVout}`,
+      };
+    }
+
+    if (event.kind === "seal") {
+      return {
+        ...base,
+        description: `Sale ticket sealed for listing ${shortAddress(event.listingId)}.`,
+        detail: "Seller signature published on chain",
+        kind: "id-seal",
+        listingId: event.listingId,
+        tags: [...base.tags, "Seal"],
+        title: event.confirmed ? "Sale ticket sealed" : "Sale-ticket seal pending",
+      };
+    }
+
+    if (event.kind === "delist") {
+      return {
+        ...base,
+        description: `Listing ${shortAddress(event.listingId)} delisted by spending its sale ticket.`,
+        detail: event.delistingVersion,
+        kind: "id-delist",
+        listingId: event.listingId,
+        tags: [...base.tags, "Delisting"],
+        title: event.confirmed ? "Listing delisted" : "Delisting pending",
+      };
+    }
+
+    return {
+      ...base,
+      actor: event.ownerAddress,
+      counterparty: event.sellerAddress,
+      description: `${event.id ? `${event.id}@proofofwork.me` : "ID"} purchased by ${shortAddress(event.ownerAddress)}${event.sellerAddress ? ` from ${shortAddress(event.sellerAddress)}` : ""}.`,
+      detail: event.listingId ? `Listing ${shortAddress(event.listingId)}` : undefined,
+      id: event.id,
+      kind: "id-buy",
+      listingId: event.listingId,
+      tags: [...base.tags, "Marketplace buy", event.priceSats ? `${event.priceSats.toLocaleString()} sale sats` : ""].filter(Boolean),
+      title: event.confirmed ? "ID purchased" : "ID purchase pending",
+    };
+  });
+}
+
+function activityItemsFromAddressMail(inboxMessages: InboxMessage[], sentMessages: SentMessage[]): PowActivityItem[] {
+  const inboxItems = inboxMessages.map((message): PowActivityItem => {
+    const isFile = Boolean(message.attachment);
+    const isReply = Boolean(message.parentTxid);
+    return {
+      amountSats: message.amountSats,
+      actor: message.from,
+      confirmed: message.confirmed,
+      counterparty: message.to,
+      createdAt: message.createdAt,
+      description: `${message.confirmed ? "Received" : "Incoming"} ${isFile ? "file" : isReply ? "reply" : "mail"} from ${shortAddress(message.from)} for ${message.amountSats.toLocaleString()} sats.`,
+      detail: message.attachment ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}` : messageSubject(message),
+      kind: isFile ? "file" : isReply ? "reply" : "mail",
+      network: message.network,
+      tags: [activityStatusTag(message.confirmed), networkLabel(message.network), "Inbound", `${message.amountSats.toLocaleString()} sats`, isFile ? "File" : isReply ? "Reply" : "Mail"],
+      title: isFile ? "File received" : isReply ? "Reply received" : "Mail received",
+      txid: message.txid,
+    };
+  });
+
+  const sentItems = sentMessages.map((message): PowActivityItem => {
+    const deliveryStatus = sentDeliveryStatus(message);
+    const confirmed = deliveryStatus === "confirmed";
+    const isFile = Boolean(message.attachment);
+    const isReply = Boolean(message.parentTxid);
+    return {
+      amountSats: message.amountSats,
+      actor: message.from,
+      confirmed,
+      counterparty: message.to,
+      createdAt: message.createdAt,
+      description: `${confirmed ? "Sent" : deliveryStatus === "dropped" ? "Dropped" : "Pending"} ${isFile ? "file" : isReply ? "reply" : "mail"} to ${message.to} for ${message.amountSats.toLocaleString()} sats.`,
+      detail: message.attachment ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}` : messageSubject(message),
+      kind: isFile ? "file" : isReply ? "reply" : "mail",
+      network: message.network,
+      tags: [confirmed ? "Confirmed" : deliveryStatus === "dropped" ? "Dropped" : "Pending", networkLabel(message.network), "Outbound", `${message.amountSats.toLocaleString()} sats`, isFile ? "File" : isReply ? "Reply" : "Mail"],
+      title: isFile ? "File sent" : isReply ? "Reply sent" : "Mail sent",
+      txid: message.txid,
+    };
+  });
+
+  return [...inboxItems, ...sentItems];
+}
+
+function compareActivityItems(left: PowActivityItem, right: PowActivityItem) {
+  return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.txid.localeCompare(left.txid);
+}
+
+function compareMarketplaceSales(left: PowIdMarketplaceSale, right: PowIdMarketplaceSale) {
+  return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.txid.localeCompare(left.txid);
+}
+
+function activityMatchesSearch(item: PowActivityItem, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  return [
+    item.title,
+    item.description,
+    item.detail,
+    item.id ? `${item.id}@proofofwork.me` : undefined,
+    item.txid,
+    item.listingId,
+    item.actor,
+    item.counterparty,
+    item.utxo,
+    ...item.tags,
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalized));
+}
+
 function idRegistryStateFromTransactions(
   txs: Array<Record<string, unknown>>,
   registryAddress: string,
   targetNetwork: BitcoinNetwork,
-): { listings: PowIdListing[]; pendingEvents: PowIdPendingEvent[]; records: PowIdRecord[] } {
+): PowRegistryState {
   const events = txs.flatMap((tx): PowIdEvent[] => {
     const vin = Array.isArray(tx.vin) ? (tx.vin as Array<Record<string, unknown>>) : [];
     const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
@@ -3844,6 +4421,7 @@ function idRegistryStateFromTransactions(
       blockIndex: transactionBlockIndex(tx),
       confirmed,
       createdAt: new Date(blockTime).toISOString(),
+      dataBytes: proofProtocolDataBytesForVout(vout),
       inputAddresses: transactionInputAddresses(vin),
       network: targetNetwork,
       txid,
@@ -3909,6 +4487,18 @@ function idRegistryStateFromTransactions(
       ];
     }
 
+    if (eventMessage.kind === "seal") {
+      return [
+        {
+          ...baseEvent,
+          kind: "seal",
+          listingId: eventMessage.listingId,
+          saleAuthorization: eventMessage.saleAuthorization,
+          spentOutpoints,
+        },
+      ];
+    }
+
     if (eventMessage.kind === "delist") {
       return [
         {
@@ -3940,6 +4530,7 @@ function idRegistryStateFromTransactions(
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
   const records = new Map<string, PowIdRecord>();
   const listings = new Map<string, PowIdListing>();
+  const confirmedSales: PowIdMarketplaceSale[] = [];
 
   function invalidateListingsForId(id: string) {
     for (const [listingId, listing] of listings) {
@@ -3973,15 +4564,47 @@ function idRegistryStateFromTransactions(
     if (event.kind === "delist") {
       const listing = listings.get(event.listingId);
       const current = listing ? records.get(listing.id) : undefined;
-      const anchorOk = event.delistingVersion !== "delist3" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
+      const anchorOk =
+        (event.delistingVersion !== "delist3" && event.delistingVersion !== "delist5") ||
+        (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
       if (listing && current && event.inputAddresses.includes(current.ownerAddress) && anchorOk) {
         listings.delete(event.listingId);
       }
       continue;
     }
 
+    if (event.kind === "seal") {
+      const listing = listings.get(event.listingId);
+      const current = listing ? records.get(listing.id) : undefined;
+      if (
+        !listing ||
+        !current ||
+        listing.listingVersion !== "list5" ||
+        current.ownerAddress !== listing.sellerAddress ||
+        !event.inputAddresses.includes(current.ownerAddress) ||
+        !saleAuthorizationUsesSaleTicketAnchor(event.saleAuthorization) ||
+        event.saleAuthorization.anchorTxid !== listing.listingId ||
+        !saleAuthorizationTermsMatchIgnoringSeal(listing.saleAuthorization, event.saleAuthorization)
+      ) {
+        continue;
+      }
+
+      listings.set(event.listingId, {
+        ...listing,
+        anchorSigHashType: event.saleAuthorization.anchorSigHashType,
+        anchorSignature: event.saleAuthorization.anchorSignature,
+        anchorTxid: listing.listingId,
+        saleAuthorization: {
+          ...event.saleAuthorization,
+          anchorTxid: listing.listingId,
+        },
+        sealTxid: event.txid,
+      });
+      continue;
+    }
+
     if (event.kind === "marketTransfer") {
-      if (event.transferVersion === "buy3" || event.transferVersion === "buy4") {
+      if (event.transferVersion === "buy3" || event.transferVersion === "buy4" || event.transferVersion === "buy5") {
         const listing = event.listingId ? listings.get(event.listingId) : undefined;
         const current = listing ? records.get(listing.id) : undefined;
         const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
@@ -3990,6 +4613,7 @@ function idRegistryStateFromTransactions(
           !current ||
           (event.transferVersion === "buy3" && listing.listingVersion !== "list3") ||
           (event.transferVersion === "buy4" && listing.listingVersion !== "list4") ||
+          (event.transferVersion === "buy5" && listing.listingVersion !== "list5") ||
           current.ownerAddress !== listing.sellerAddress ||
           !spendsListingAnchor(event.spentOutpoints, listing) ||
           sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
@@ -4006,6 +4630,20 @@ function idRegistryStateFromTransactions(
           createdAt: event.createdAt,
           ownerAddress: event.ownerAddress,
           receiveAddress: event.receiveAddress,
+          txid: event.txid,
+        });
+        confirmedSales.push({
+          amountSats: event.amountSats,
+          buyerAddress: event.ownerAddress,
+          confirmed: true,
+          createdAt: event.createdAt,
+          id: listing.id,
+          listingId: listing.listingId,
+          network: event.network,
+          priceSats: listing.priceSats,
+          receiveAddress: event.receiveAddress,
+          sellerAddress: listing.sellerAddress,
+          transferVersion: event.transferVersion,
           txid: event.txid,
         });
         invalidateListingsForId(listing.id);
@@ -4036,6 +4674,20 @@ function idRegistryStateFromTransactions(
           receiveAddress: event.receiveAddress,
           txid: event.txid,
         });
+        confirmedSales.push({
+          amountSats: event.amountSats,
+          buyerAddress: event.ownerAddress,
+          confirmed: true,
+          createdAt: event.createdAt,
+          id: event.id,
+          listingId: matchingListing?.listingId,
+          network: event.network,
+          priceSats: event.priceSats,
+          receiveAddress: event.receiveAddress,
+          sellerAddress: event.sellerAddress,
+          transferVersion: event.transferVersion,
+          txid: event.txid,
+        });
         invalidateListingsForId(event.id);
       }
       continue;
@@ -4053,6 +4705,7 @@ function idRegistryStateFromTransactions(
         saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
         (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
         (event.listingVersion === "list4" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
+        (event.listingVersion === "list5" && (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET || !event.listingAnchorPresent)) ||
         (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
       ) {
         continue;
@@ -4118,7 +4771,9 @@ function idRegistryStateFromTransactions(
       if (event.kind === "delist") {
         const listing = listings.get(event.listingId);
         const current = listing ? records.get(listing.id) : undefined;
-        const anchorOk = event.delistingVersion !== "delist3" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
+        const anchorOk =
+          (event.delistingVersion !== "delist3" && event.delistingVersion !== "delist5") ||
+          (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
         if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress) || !anchorOk) {
           return [];
         }
@@ -4140,8 +4795,41 @@ function idRegistryStateFromTransactions(
         ];
       }
 
+      if (event.kind === "seal") {
+        const listing = listings.get(event.listingId);
+        const current = listing ? records.get(listing.id) : undefined;
+        if (
+          !listing ||
+          !current ||
+          listing.listingVersion !== "list5" ||
+            current.ownerAddress !== listing.sellerAddress ||
+            !event.inputAddresses.includes(current.ownerAddress) ||
+            !saleAuthorizationUsesSaleTicketAnchor(event.saleAuthorization) ||
+            event.saleAuthorization.anchorTxid !== listing.listingId ||
+            !saleAuthorizationTermsMatchIgnoringSeal(listing.saleAuthorization, event.saleAuthorization)
+          ) {
+          return [];
+        }
+
+        return [
+          {
+            amountSats: event.amountSats,
+            createdAt: event.createdAt,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+            id: listing.id,
+            inputAddresses: event.inputAddresses,
+            kind: "seal",
+            listingId: event.listingId,
+            network: event.network,
+            sellerAddress: listing.sellerAddress,
+            txid: event.txid,
+          },
+        ];
+      }
+
       if (event.kind === "marketTransfer") {
-        if (event.transferVersion === "buy3" || event.transferVersion === "buy4") {
+        if (event.transferVersion === "buy3" || event.transferVersion === "buy4" || event.transferVersion === "buy5") {
           const listing = event.listingId ? listings.get(event.listingId) : undefined;
           const current = listing ? records.get(listing.id) : undefined;
           const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
@@ -4150,6 +4838,7 @@ function idRegistryStateFromTransactions(
             !current ||
             (event.transferVersion === "buy3" && listing.listingVersion !== "list3") ||
             (event.transferVersion === "buy4" && listing.listingVersion !== "list4") ||
+            (event.transferVersion === "buy5" && listing.listingVersion !== "list5") ||
             current.ownerAddress !== listing.sellerAddress ||
             !spendsListingAnchor(event.spentOutpoints, listing) ||
             sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
@@ -4175,6 +4864,7 @@ function idRegistryStateFromTransactions(
               priceSats: listing.priceSats,
               receiveAddress: event.receiveAddress,
               sellerAddress: listing.sellerAddress,
+              transferVersion: event.transferVersion,
               txid: event.txid,
             },
           ];
@@ -4210,6 +4900,7 @@ function idRegistryStateFromTransactions(
               priceSats: event.priceSats,
               receiveAddress: event.receiveAddress,
               sellerAddress: event.sellerAddress,
+              transferVersion: event.transferVersion,
               txid: event.txid,
             },
           ];
@@ -4230,6 +4921,7 @@ function idRegistryStateFromTransactions(
           saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
           (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
           (event.listingVersion === "list4" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
+          (event.listingVersion === "list5" && (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET || !event.listingAnchorPresent)) ||
           (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
         ) {
           return [];
@@ -4291,6 +4983,39 @@ function idRegistryStateFromTransactions(
     })
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
 
+  const pendingSales: PowIdMarketplaceSale[] = pendingEvents
+    .filter((event): event is PowIdPendingEvent & {
+      id: string;
+      kind: "marketTransfer";
+      ownerAddress: string;
+      priceSats: number;
+      receiveAddress: string;
+      sellerAddress: string;
+    } =>
+      event.kind === "marketTransfer" &&
+      Boolean(event.id) &&
+      Boolean(event.ownerAddress) &&
+      typeof event.priceSats === "number" &&
+      Number.isSafeInteger(event.priceSats) &&
+      event.priceSats >= 0 &&
+      Boolean(event.receiveAddress) &&
+      Boolean(event.sellerAddress),
+    )
+    .map((event) => ({
+      amountSats: event.amountSats,
+      buyerAddress: event.ownerAddress,
+      confirmed: false,
+      createdAt: event.createdAt,
+      id: event.id,
+      listingId: event.listingId,
+      network: event.network,
+      priceSats: event.priceSats,
+      receiveAddress: event.receiveAddress,
+      sellerAddress: event.sellerAddress,
+      transferVersion: event.transferVersion,
+      txid: event.txid,
+    }));
+
   for (const event of pendingRegistrations) {
     if (!records.has(event.id)) {
       accepted.push({
@@ -4308,9 +5033,11 @@ function idRegistryStateFromTransactions(
   }
 
   return {
+    activity: activityItemsFromIdEvents(events).sort(compareActivityItems),
     listings: [...listings.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid)),
     pendingEvents,
     records: accepted,
+    sales: publicMarketplaceSales([...confirmedSales, ...pendingSales]).sort(compareMarketplaceSales),
   };
 }
 
@@ -4334,19 +5061,21 @@ async function fetchIdRegistry(targetNetwork: BitcoinNetwork): Promise<PowIdReco
   return (await fetchIdRegistryState(targetNetwork)).records;
 }
 
-async function fetchIdRegistryState(targetNetwork: BitcoinNetwork): Promise<{ listings: PowIdListing[]; pendingEvents: PowIdPendingEvent[]; records: PowIdRecord[] }> {
+async function fetchIdRegistryState(targetNetwork: BitcoinNetwork): Promise<PowRegistryState> {
   const registryAddress = registryAddressForNetwork(targetNetwork);
   if (!registryAddress) {
-    return { listings: [], pendingEvents: [], records: [] };
+    return { activity: [], listings: [], pendingEvents: [], records: [], sales: [] };
   }
 
   if (POW_API_BASE) {
     const payload = await fetchProofApiJson<PowRegistryApiResponse>("/api/v1/registry", targetNetwork);
     const listings = Array.isArray(payload.listings) ? payload.listings : [];
     return {
+      activity: Array.isArray(payload.activity) ? payload.activity : [],
       listings: await filterSpendableListings(listings, targetNetwork),
       pendingEvents: Array.isArray(payload.pendingEvents) ? payload.pendingEvents : [],
       records: Array.isArray(payload.records) ? payload.records : [],
+      sales: Array.isArray(payload.sales) ? payload.sales : [],
     };
   }
 
@@ -4356,6 +5085,15 @@ async function fetchIdRegistryState(targetNetwork: BitcoinNetwork): Promise<{ li
     ...state,
     listings: await filterSpendableListings(state.listings, targetNetwork),
   };
+}
+
+async function fetchGlobalActivity(targetNetwork: BitcoinNetwork): Promise<PowActivityItem[]> {
+  if (POW_API_BASE) {
+    const payload = await fetchProofApiJson<PowActivityApiResponse>("/api/v1/log", targetNetwork);
+    return Array.isArray(payload.activity) ? payload.activity : [];
+  }
+
+  return (await fetchIdRegistryState(targetNetwork)).activity;
 }
 
 async function fetchUtxos(ownerAddress: string, ownerNetwork: BitcoinNetwork): Promise<MempoolUtxo[]> {
@@ -4863,16 +5601,104 @@ async function signSellerAnchorAuthorization({
     }
   }
   const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, { network: bitcoinNetwork(network) });
-  const partialSig =
-    signedPsbt.data.inputs[0]?.partialSig?.find((candidate) => bytesToHex(candidate.pubkey).toLowerCase() === sellerPublicKey.toLowerCase()) ??
-    signedPsbt.data.inputs[0]?.partialSig?.[0];
-  const signature = partialSig?.signature;
+  const inputSignature = signedInputSignature(signedPsbt, 0, sellerPublicKey);
+  const signature = inputSignature?.signature;
 
   if (!signature || signature[signature.length - 1] !== ID_LISTING_ANCHOR_SIGHASH_TYPE) {
     throw new Error("Wallet did not return a seller anchor signature with the required sighash type.");
   }
 
-  return bytesToHex(signature);
+  const signatureHex = bytesToHex(signature);
+  if (!validSignatureHex(signatureHex)) {
+    throw new Error("Wallet returned a malformed seller anchor signature.");
+  }
+
+  return signatureHex;
+}
+
+async function signSaleTicketAuthorization({
+  listing,
+  network,
+  wallet,
+}: {
+  listing: PowIdListing;
+  network: BitcoinNetwork;
+  wallet: UnisatWallet;
+}) {
+  if (!wallet.signPsbt) {
+    throw new Error("UniSat signPsbt is not available. Update UniSat and try again.");
+  }
+
+  if (listing.listingVersion !== "list5") {
+    throw new Error("Only sale-ticket listings can be sealed.");
+  }
+
+  const anchor = await assertListingAnchorUnspent(listing, network);
+  if (!("scriptPubKey" in anchor) || !anchor.publicKey) {
+    throw new Error("This listing does not have a seller-controlled sale ticket.");
+  }
+
+  const psbt = new bitcoin.Psbt({ network: bitcoinNetwork(network) });
+  psbt.addInput({
+    hash: anchor.txid,
+    index: anchor.vout,
+    sighashType: ID_LISTING_ANCHOR_SIGHASH_TYPE,
+    ...utxoInputData({
+      txid: anchor.txid,
+      value: anchor.valueSats,
+      vout: anchor.vout,
+      previousOutput: anchor.previousOutput,
+      previousTxHex: anchor.previousTxHex,
+    }),
+  });
+  psbt.addOutput({
+    address: listing.sellerAddress,
+    value: BigInt(sellerPaymentRequiredSats(listing)),
+  });
+
+  let signedPsbtHex = "";
+  try {
+    signedPsbtHex = await wallet.signPsbt(psbt.toHex(), {
+      autoFinalized: false,
+      toSignInputs: [
+        {
+          address: listing.sellerAddress,
+          index: 0,
+          sighashTypes: [ID_LISTING_ANCHOR_SIGHASH_TYPE],
+        },
+      ],
+    });
+  } catch (addressError) {
+    try {
+      signedPsbtHex = await wallet.signPsbt(psbt.toHex(), {
+        autoFinalized: false,
+        toSignInputs: [
+          {
+            index: 0,
+            publicKey: anchor.publicKey,
+            sighashTypes: [ID_LISTING_ANCHOR_SIGHASH_TYPE],
+          },
+        ],
+      });
+    } catch {
+      throw addressError;
+    }
+  }
+
+  const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, { network: bitcoinNetwork(network) });
+  const inputSignature = signedInputSignature(signedPsbt, 0, anchor.publicKey);
+  const signature = inputSignature?.signature;
+
+  if (!signature || signature[signature.length - 1] !== ID_LISTING_ANCHOR_SIGHASH_TYPE) {
+    throw new Error("Wallet did not return a sale-ticket signature with the required sighash type.");
+  }
+
+  const signatureHex = bytesToHex(signature);
+  if (!validSignatureHex(signatureHex)) {
+    throw new Error("Wallet returned a malformed sale-ticket signature.");
+  }
+
+  return signatureHex;
 }
 
 function encodeCompactSize(value: number) {
@@ -4921,6 +5747,22 @@ function listingAnchorDetails(listing: PowIdListing, network: BitcoinNetwork) {
     };
   }
 
+  if (
+    listing.saleAuthorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+    listing.saleAuthorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE &&
+    typeof listing.saleAuthorization.sellerPublicKey === "string"
+  ) {
+    return {
+      publicKey: listing.saleAuthorization.sellerPublicKey,
+      scriptPubKey: listing.saleAuthorization.anchorScriptPubKey,
+      signature: listing.saleAuthorization.anchorSignature,
+      sighashType: listing.saleAuthorization.anchorSigHashType ?? ID_LISTING_ANCHOR_SIGHASH_TYPE,
+      txid: listing.listingId,
+      valueSats: listing.saleAuthorization.anchorValueSats,
+      vout: listing.saleAuthorization.anchorVout,
+    };
+  }
+
   if (listing.saleAuthorization.anchorScriptPubKey !== marketplaceLegacyAnchorScriptPubKey(network)) {
     throw new Error("This listing anchor script does not match the legacy marketplace protocol.");
   }
@@ -4961,6 +5803,7 @@ async function assertListingAnchorUnspent(listing: PowIdListing, network: Bitcoi
 }
 
 async function buildAnchoredMarketplacePsbt({
+  anchorSpendMode = "preSigned",
   feeRate,
   fromAddress,
   listing,
@@ -4969,6 +5812,7 @@ async function buildAnchoredMarketplacePsbt({
   protocolPayloads,
   requireConfirmedUtxos = true,
 }: {
+  anchorSpendMode?: "preSigned" | "wallet";
   feeRate: number;
   fromAddress: string;
   listing: PowIdListing;
@@ -5004,7 +5848,9 @@ async function buildAnchoredMarketplacePsbt({
     opReturnScripts.reduce((total, script) => total + outputVbytesForScript(script), 0);
   const changeOutputVbytes = outputVbytesForScript(changeScript);
   const walletUtxos = await fetchUtxos(fromAddress, network);
-  const utxos = requireConfirmedUtxos ? walletUtxos.filter((utxo) => utxo.status?.confirmed) : walletUtxos;
+  const anchorOutpointKey = `${anchor.txid}:${anchor.vout}`;
+  const spendableWalletUtxos = walletUtxos.filter((utxo) => `${utxo.txid}:${utxo.vout}` !== anchorOutpointKey);
+  const utxos = requireConfirmedUtxos ? spendableWalletUtxos.filter((utxo) => utxo.status?.confirmed) : spendableWalletUtxos;
 
   if (walletUtxos.length === 0) {
     throw new Error(`No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`);
@@ -5032,17 +5878,10 @@ async function buildAnchoredMarketplacePsbt({
   const selectedWithPreviousTx = await Promise.all(selection.selected.map((utxo) => loadUtxoPreviousOutput(utxo, network)));
 
   const psbt = new bitcoin.Psbt({ network: selectedNetwork });
-  if ("signature" in anchor && typeof anchor.signature === "string" && typeof anchor.publicKey === "string") {
-    psbt.addInput({
+  if ("scriptPubKey" in anchor) {
+    const anchorInput = {
       hash: anchor.txid,
       index: anchor.vout,
-      partialSig: [
-        {
-          pubkey: Buffer.from(anchor.publicKey, "hex"),
-          signature: Buffer.from(anchor.signature, "hex"),
-        },
-      ],
-      sighashType: anchor.sighashType,
       ...utxoInputData({
         txid: anchor.txid,
         value: anchor.valueSats,
@@ -5050,7 +5889,40 @@ async function buildAnchoredMarketplacePsbt({
         previousOutput: anchor.previousOutput,
         previousTxHex: anchor.previousTxHex,
       }),
-    });
+    };
+    const anchorIsTaproot = isTaprootScriptPubKey(anchor.previousOutput.script);
+    const anchorPublicKey = anchor.publicKey;
+    const anchorSignature = anchor.signature;
+    if (anchorSpendMode === "preSigned" && !anchorSignature) {
+      throw new Error("This sale ticket is not sealed yet. The seller must seal it before buyers can purchase.");
+    }
+
+    if (anchorSpendMode === "preSigned" && !anchorIsTaproot && !anchorPublicKey) {
+      throw new Error("This sale ticket is missing the seller public key.");
+    }
+
+    if (anchorSpendMode === "preSigned") {
+      if (anchorIsTaproot) {
+        psbt.addInput({
+          ...anchorInput,
+          sighashType: anchor.sighashType,
+          tapKeySig: Buffer.from(anchorSignature as string, "hex"),
+        });
+      } else {
+        psbt.addInput({
+          ...anchorInput,
+          partialSig: [
+            {
+              pubkey: Buffer.from(anchorPublicKey as string, "hex"),
+              signature: Buffer.from(anchorSignature as string, "hex"),
+            },
+          ],
+          sighashType: anchor.sighashType,
+        });
+      }
+    } else {
+      psbt.addInput(anchorInput);
+    }
   } else {
     psbt.addInput({
       hash: anchor.txid,
@@ -5098,7 +5970,7 @@ async function buildAnchoredMarketplacePsbt({
 
   if ("signature" in anchor && typeof anchor.signature === "string") {
     psbt.finalizeInput(0);
-  } else {
+  } else if (!("scriptPubKey" in anchor)) {
     psbt.finalizeInput(0, () => ({
       finalScriptWitness: witnessStackToScriptWitness([anchor.witnessScript]),
     }));
@@ -5111,7 +5983,10 @@ async function buildAnchoredMarketplacePsbt({
     inputCount: selection.selected.length + 1,
     outputCount: normalizedPayments.length + opReturnScripts.length + (selection.changeSats >= DUST_SATS ? 1 : 0),
     psbtHex: psbt.toHex(),
-    walletInputIndexes: selection.selected.map((_, index) => index + 1),
+    walletInputIndexes:
+      "scriptPubKey" in anchor && anchorSpendMode === "wallet"
+        ? [0, ...selection.selected.map((_, index) => index + 1)]
+        : selection.selected.map((_, index) => index + 1),
   };
 }
 
@@ -5205,7 +6080,8 @@ export default function App() {
   const landingMode = isLandingRoute();
   const desktopRoute = isDesktopRoute();
   const marketplaceMode = isMarketplaceRoute();
-  const mainnetRegistryMode = idLaunchMode || marketplaceMode;
+  const activityMode = isActivityRoute();
+  const mainnetRegistryMode = idLaunchMode || marketplaceMode || activityMode;
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
   const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
@@ -5222,6 +6098,8 @@ export default function App() {
   const [idRegistry, setIdRegistry] = useState<PowIdRecord[]>([]);
   const [idListings, setIdListings] = useState<PowIdListing[]>([]);
   const [idPendingEvents, setIdPendingEvents] = useState<PowIdPendingEvent[]>([]);
+  const [idSales, setIdSales] = useState<PowIdMarketplaceSale[]>([]);
+  const [idActivity, setIdActivity] = useState<PowActivityItem[]>([]);
   const [lastRegisteredId, setLastRegisteredId] = useState<PowIdRecord | undefined>();
   const [idName, setIdName] = useState("");
   const [idReceiveAddress, setIdReceiveAddress] = useState("");
@@ -5245,6 +6123,10 @@ export default function App() {
   const [desktopProfile, setDesktopProfile] = useState<DesktopProfile | undefined>();
   const [desktopMail, setDesktopMail] = useState<MailMessage[]>([]);
   const [desktopSelectedKey, setDesktopSelectedKey] = useState("");
+  const [activityQuery, setActivityQuery] = useState("");
+  const [activityProfile, setActivityProfile] = useState<DesktopProfile | undefined>();
+  const [activityMail, setActivityMail] = useState<PowActivityItem[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
   const [desktopLoading, setDesktopLoading] = useState(false);
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
@@ -5494,7 +6376,7 @@ export default function App() {
         selectedMarketplaceListing.listingId,
         idPurchaseOwnerAddress.trim(),
         idPurchaseReceiveAddress.trim(),
-        selectedMarketplaceListing.listingVersion === "list3" ? "buy3" : "buy4",
+        marketplaceTransferVersionForListing(selectedMarketplaceListing),
       );
     } catch {
       return "";
@@ -5559,7 +6441,7 @@ export default function App() {
         registryAddress &&
         parsedSaleAuthorization &&
         selectedMarketplaceListing &&
-        (selectedMarketplaceListing.listingVersion === "list3" || selectedMarketplaceListing.listingVersion === "list4") &&
+        listingCanBePurchased(selectedMarketplaceListing) &&
         idPurchasePayload &&
         isValidBitcoinAddress(idPurchaseOwnerAddress.trim(), network) &&
         (!purchaseReceiveAddress || isValidBitcoinAddress(purchaseReceiveAddress, network)) &&
@@ -5575,7 +6457,7 @@ export default function App() {
       ? true
       : activeFolder === "desktop"
         ? desktopLoading || !desktopProfile
-        : activeFolder === "ids" || activeFolder === "marketplace"
+        : activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log"
           ? busy || refreshInProgress || !registryAddress
           : !address || busy || refreshInProgress;
 
@@ -5715,29 +6597,41 @@ export default function App() {
   }, [address, amountSats, attachment, ccRecipient, composeOpen, feeRate, memo, network, recipient, replyParentTxid, subject]);
 
   useEffect(() => {
-    if (activeFolder === "ids" || activeFolder === "marketplace") {
+    if (activityMode) {
+      return;
+    }
+
+    if (activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log") {
       void refreshIds(true);
     }
-  }, [activeFolder, network]);
+  }, [activeFolder, activityMode, network]);
 
   useEffect(() => {
     if (!mainnetRegistryMode) {
       return;
     }
 
-    setNetwork("livenet");
+    if (network !== "livenet") {
+      setNetwork("livenet");
+      return;
+    }
+
     setActiveFolder("ids");
     void refreshIds(true);
-  }, [mainnetRegistryMode]);
+  }, [mainnetRegistryMode, network]);
 
   useEffect(() => {
     if (!landingMode) {
       return;
     }
 
-    setNetwork("livenet");
+    if (network !== "livenet") {
+      setNetwork("livenet");
+      return;
+    }
+
     void refreshIds(true);
-  }, [landingMode]);
+  }, [landingMode, network]);
 
   useEffect(() => {
     if ((!needsRegistryResolution(recipient, network) && !needsRegistryResolution(ccRecipient, network)) || !registryAddress) {
@@ -5762,7 +6656,7 @@ export default function App() {
   }, [ccRecipient, network, recipient, registryAddress]);
 
   useEffect(() => {
-    if (landingMode || desktopRoute) {
+    if (landingMode || desktopRoute || activityMode) {
       return;
     }
 
@@ -5782,10 +6676,10 @@ export default function App() {
         }
       })
       .catch(() => undefined);
-  }, [desktopRoute, hasUnisat, landingMode, mainnetRegistryMode]);
+  }, [activityMode, desktopRoute, hasUnisat, landingMode, mainnetRegistryMode]);
 
   useEffect(() => {
-    if (landingMode || desktopRoute) {
+    if (landingMode || desktopRoute || activityMode) {
       return;
     }
 
@@ -5814,8 +6708,12 @@ export default function App() {
       try {
         if (mainnetRegistryMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
-          const records = await fetchIdRegistry("livenet");
-          setIdRegistry(records);
+          const state = await fetchIdRegistryState("livenet");
+          setIdRegistry(state.records);
+          setIdListings(state.listings);
+          setIdPendingEvents(state.pendingEvents);
+          setIdSales(state.sales);
+          setIdActivity(state.activity);
           setStatus({ tone: "good", text: `${shortAddress(nextAddress)} connected. ProofOfWork ID registry ready.` });
           return;
         }
@@ -5849,7 +6747,7 @@ export default function App() {
       window.unisat?.removeListener?.("networkChanged", networkChanged);
       window.unisat?.removeListener?.("chainChanged", chainChanged);
     };
-  }, [desktopRoute, hasUnisat, landingMode, mainnetRegistryMode, network]);
+  }, [activityMode, desktopRoute, hasUnisat, landingMode, mainnetRegistryMode, network]);
 
   function applyDraft(draft: DraftMessage) {
     setRecipient(draft.recipient);
@@ -6310,6 +7208,75 @@ export default function App() {
     setStatus({ tone: "idle", text: "Desktop cleared." });
   }
 
+  async function loadActivityTarget(target = activityQuery) {
+    const query = target.trim();
+    if (!query) {
+      setActivityProfile(undefined);
+      setActivityMail([]);
+      setStatus({ tone: "idle", text: "Log search cleared." });
+      return;
+    }
+
+    const txidOnly = /^[0-9a-fA-F]{64}$/u.test(query);
+    if (txidOnly) {
+      setActivityQuery(query.toLowerCase());
+      setActivityProfile(undefined);
+      setActivityMail([]);
+      setStatus({ tone: "good", text: "Filtering log by txid." });
+      return;
+    }
+
+    setActivityLoading(true);
+    setStatus({ tone: "idle", text: "Opening ProofOfWork log..." });
+
+    try {
+      let resolved = resolveRecipientInput(query, network, idRegistry, registryAddress);
+      if (resolved.isId || resolved.error) {
+        const state = await fetchIdRegistryState(network);
+        setIdRegistry(state.records);
+        setIdListings(state.listings);
+        setIdPendingEvents(state.pendingEvents);
+        setIdSales(state.sales);
+        resolved = resolveRecipientInput(query, network, state.records, registryAddress);
+      }
+
+      if (resolved.error || !resolved.paymentAddress) {
+        setStatus({ tone: "bad", text: resolved.error || "Enter a valid Bitcoin address or confirmed ProofOfWork ID." });
+        return;
+      }
+
+      const { inboxMessages, sentMessages } = await fetchAddressMail(resolved.paymentAddress, network);
+      const addressActivity = activityItemsFromAddressMail(inboxMessages, sentMessages).sort(compareActivityItems);
+      const profile: DesktopProfile = {
+        address: resolved.paymentAddress,
+        label: resolved.isId ? resolved.displayRecipient : shortAddress(resolved.paymentAddress),
+        loadedAt: new Date().toISOString(),
+        network,
+        query,
+        resolvedId: resolved.id,
+      };
+
+      setActivityQuery(query);
+      setActivityProfile(profile);
+      setActivityMail(addressActivity);
+      setStatus({
+        tone: "good",
+        text: `${profile.label} log loaded. ${addressActivity.length.toLocaleString()} mail/file action${addressActivity.length === 1 ? "" : "s"}.`,
+      });
+    } catch (error) {
+      setStatus({ tone: "bad", text: errorMessage(error, "Log search failed.") });
+    } finally {
+      setActivityLoading(false);
+    }
+  }
+
+  function clearActivity() {
+    setActivityQuery("");
+    setActivityProfile(undefined);
+    setActivityMail([]);
+    setStatus({ tone: "idle", text: "Log cleared." });
+  }
+
   function replyTo(message: MailMessage) {
     const recipientAddress = isInboundFolder(message.folder)
       ? message.replyTo
@@ -6427,8 +7394,12 @@ export default function App() {
 
       try {
         if (mainnetRegistryMode) {
-          const records = await fetchIdRegistry("livenet");
-          setIdRegistry(records);
+          const state = await fetchIdRegistryState("livenet");
+          setIdRegistry(state.records);
+          setIdListings(state.listings);
+          setIdPendingEvents(state.pendingEvents);
+          setIdSales(state.sales);
+          setIdActivity(state.activity);
           setStatus({ tone: "good", text: `UniSat connected. ProofOfWork ID registry ready.` });
           return;
         }
@@ -6511,6 +7482,8 @@ export default function App() {
       setIdRegistry([]);
       setIdListings([]);
       setIdPendingEvents([]);
+      setIdSales([]);
+      setIdActivity([]);
       if (!silent) {
         setStatus({ tone: "idle", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
       }
@@ -6519,7 +7492,7 @@ export default function App() {
 
     setBusy(true);
     if (!silent) {
-      setStatus({ tone: "idle", text: "Scanning ProofOfWork ID registry..." });
+      setStatus({ tone: "idle", text: activityMode || activeFolder === "log" ? "Scanning ProofOfWork computer log..." : "Scanning ProofOfWork ID registry..." });
     }
 
     try {
@@ -6527,11 +7500,25 @@ export default function App() {
       setIdRegistry(state.records);
       setIdListings(state.listings);
       setIdPendingEvents(state.pendingEvents);
+      setIdSales(state.sales);
+      setIdActivity(state.activity);
+
+      const shouldLoadComputerLog = activityMode || activeFolder === "log";
+      const activity = shouldLoadComputerLog ? await fetchGlobalActivity(network) : state.activity;
+      if (shouldLoadComputerLog) {
+        setIdActivity(activity.length > 0 ? activity : state.activity);
+      }
+
       if (!silent) {
         const confirmed = state.records.filter((record) => record.confirmed).length;
         const pending = state.records.length - confirmed;
         const pendingChanges = state.pendingEvents.length;
-        setStatus({ tone: "good", text: `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${pendingChanges} in flight.` });
+        setStatus({
+          tone: "good",
+          text: shouldLoadComputerLog
+            ? `Log loaded. ${activity.length.toLocaleString()} computer action${activity.length === 1 ? "" : "s"} indexed.`
+            : `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${pendingChanges} in flight.`,
+        });
       }
     } catch (error) {
       setStatus({ tone: "bad", text: errorMessage(error, "ID registry scan failed.") });
@@ -6756,6 +7743,7 @@ export default function App() {
     setIdRegistry(latestState.records);
     setIdListings(latestState.listings);
     setIdPendingEvents(latestState.pendingEvents);
+    setIdSales(latestState.sales);
     const latestRecord = latestState.records.find((record) => record.network === network && record.id === managedIdRecord.id && record.confirmed);
 
     if (!latestRecord) {
@@ -6771,32 +7759,18 @@ export default function App() {
       await switchWalletNetwork(window.unisat, network);
     }
 
-    setStatus({ tone: "idle", text: "Preparing hardened seller anchor..." });
+    setStatus({ tone: "idle", text: "Preparing sale-ticket listing..." });
     const sellerPublicKey = (await window.unisat.getPublicKey?.())?.trim().toLowerCase() ?? "";
     if (!validPublicKeyHex(sellerPublicKey)) {
-      throw new Error("Could not read a seller public key from UniSat for the hardened listing anchor.");
+      throw new Error("Could not read a seller public key from UniSat for the sale ticket.");
     }
-
-    const { anchorUtxo, sealFundingUtxos } = await chooseSellerAnchorPlan(address, network, salePriceSats);
-    setStatus({ tone: "idle", text: "Approve the seller anchor seal in UniSat. This is not broadcast." });
-    const anchorSignature = await signSellerAnchorAuthorization({
-      anchorUtxo,
-      network,
-      priceSats: salePriceSats,
-      sellerAddress: latestRecord.ownerAddress,
-      sellerPublicKey,
-      sealFundingUtxos,
-      wallet: window.unisat,
-    });
 
     const draft = saleAuthorizationDraft({
       anchorSigHashType: ID_LISTING_ANCHOR_SIGHASH_TYPE,
-      anchorSignature,
-      anchorScriptPubKey: bytesToHex(anchorUtxo.previousOutput.script),
-      anchorTxid: anchorUtxo.txid,
-      anchorType: ID_LISTING_ANCHOR_TYPE,
-      anchorValueSats: anchorUtxo.value,
-      anchorVout: anchorUtxo.vout,
+      anchorScriptPubKey: bytesToHex(scriptForAddress(latestRecord.ownerAddress, network, "Sale-ticket output")),
+      anchorType: ID_LISTING_TICKET_ANCHOR_TYPE,
+      anchorValueSats: ID_LISTING_ANCHOR_VALUE_SATS,
+      anchorVout: ID_LISTING_ANCHOR_VOUT,
       buyerAddress: saleBuyerAddress,
       id: latestRecord.id,
       nonce: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`,
@@ -6804,7 +7778,7 @@ export default function App() {
       receiveAddress: saleReceiveAddress,
       sellerAddress: latestRecord.ownerAddress,
       sellerPublicKey,
-      version: ID_SALE_AUTH_VERSION,
+      version: ID_SALE_AUTH_VERSION_TICKET,
     });
 
     return { ...draft, signature: "" };
@@ -6826,7 +7800,7 @@ export default function App() {
 
     try {
       const authorization = await prepareIdSaleAuthorization();
-      setStatus({ tone: "idle", text: `Listing terms ready. Approve the on-chain listing transaction in UniSat...` });
+      setStatus({ tone: "idle", text: `Listing ticket ready. Approve the on-chain listing transaction in UniSat...` });
       const payload = buildIdListingPayload(authorization);
       if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
         setStatus({ tone: "bad", text: "ID listing OP_RETURN is over 100 KB." });
@@ -6836,9 +7810,117 @@ export default function App() {
       setStatus({ tone: "idle", text: `Publishing listing for ${authorization.id}@proofofwork.me...` });
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: ID_MUTATION_PRICE_SATS,
-        excludeOutpoints: saleAuthorizationUsesSellerUtxoAnchor(authorization)
-          ? [{ txid: authorization.anchorTxid, vout: authorization.anchorVout }]
-          : undefined,
+        feeRate,
+        fromAddress: address,
+        network,
+        postProtocolPayments: [
+          {
+            address,
+            amountSats: ID_LISTING_ANCHOR_VALUE_SATS,
+          },
+        ],
+        protocolPayloads: [payload],
+        requireConfirmedUtxos: true,
+        toAddress: registryAddress,
+      });
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network,
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+
+      setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
+      setStatus({ tone: "good", text: `${authorization.id}@proofofwork.me sale ticket broadcast: ${shortAddress(txid)}. After it confirms, seal it so buyers can settle atomically.` });
+      await refreshIds(true);
+    } catch (error) {
+      setStatus({ tone: "bad", text: errorMessage(error, "ID listing failed.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sealIdListing(listing: PowIdListing) {
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({ tone: "bad", text: "UniSat signPsbt is not available. Update UniSat and try again." });
+      return;
+    }
+
+    if (!registryAddress) {
+      setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+      return;
+    }
+
+    if (listing.sellerAddress !== address) {
+      setStatus({ tone: "bad", text: "Only the current listing seller can seal this sale ticket." });
+      return;
+    }
+
+    if (listing.listingVersion !== "list5") {
+      setStatus({ tone: "bad", text: "Only sale-ticket listings need sealing." });
+      return;
+    }
+
+    if (saleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)) {
+      setStatus({ tone: "good", text: "This sale ticket is already sealed." });
+      return;
+    }
+
+    setBusy(true);
+    setStatus({ tone: "idle", text: `Checking sale ticket for ${listing.id}@proofofwork.me...` });
+
+    try {
+      const latestState = await fetchIdRegistryState(network);
+      setIdRegistry(latestState.records);
+      setIdListings(latestState.listings);
+      setIdPendingEvents(latestState.pendingEvents);
+      setIdSales(latestState.sales);
+      const latestListing = latestState.listings.find((item) => item.listingId === listing.listingId && item.network === network);
+      const latestRecord = latestState.records.find((record) => record.network === network && record.id === listing.id && record.confirmed);
+
+      if (!latestListing || latestListing.listingVersion !== "list5") {
+        setStatus({ tone: "bad", text: "This sale-ticket listing is no longer active." });
+        return;
+      }
+
+      if (!latestRecord || latestRecord.ownerAddress !== address) {
+        setStatus({ tone: "bad", text: `${listing.id}@proofofwork.me is no longer owned by this wallet.` });
+        return;
+      }
+
+      const currentNetwork = await getWalletNetwork(window.unisat);
+      if (currentNetwork !== network) {
+        await switchWalletNetwork(window.unisat, network);
+      }
+
+      setStatus({ tone: "idle", text: "Approve the sale-ticket seal in UniSat. This signature is published on-chain." });
+      const anchorSignature = await signSaleTicketAuthorization({
+        listing: latestListing,
+        network,
+        wallet: window.unisat,
+      });
+      const sealedAuthorization: PowIdSaleAuthorization = {
+        ...latestListing.saleAuthorization,
+        anchorSignature,
+        anchorTxid: latestListing.listingId,
+      };
+      const payload = buildIdSaleSealPayload(latestListing.listingId, sealedAuthorization);
+      if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
+        setStatus({ tone: "bad", text: "ID sale-ticket seal OP_RETURN is over 100 KB." });
+        return;
+      }
+
+      setStatus({ tone: "idle", text: `Publishing sale-ticket seal for ${listing.id}@proofofwork.me...` });
+      const anchor = listingAnchorOutpoint(latestListing);
+      const paymentPsbt = await buildPaymentPsbt({
+        amountSats: ID_MUTATION_PRICE_SATS,
+        excludeOutpoints: anchor ? [anchor] : undefined,
         feeRate,
         fromAddress: address,
         network,
@@ -6854,11 +7936,11 @@ export default function App() {
         wallet: window.unisat,
       });
 
-      setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
-      setStatus({ tone: "good", text: `${authorization.id}@proofofwork.me listing broadcast: ${shortAddress(txid)}.` });
+      setIdSaleAuthorization(JSON.stringify(sealedAuthorization, null, 2));
+      setStatus({ tone: "good", text: `${listing.id}@proofofwork.me sale ticket sealed: ${shortAddress(txid)}.` });
       await refreshIds(true);
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "ID listing failed.") });
+      setStatus({ tone: "bad", text: errorMessage(error, "ID sale-ticket seal failed.") });
     } finally {
       setBusy(false);
     }
@@ -6885,25 +7967,26 @@ export default function App() {
       return;
     }
 
-    if (listing.listingVersion === "list3") {
-      const payload = buildIdDelistingPayload(listing.listingId, "delist3");
+    if (listing.listingVersion === "list3" || listing.listingVersion === "list5") {
+      const payload = buildIdDelistingPayload(listing.listingId, listing.listingVersion === "list5" ? "delist5" : "delist3");
       if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
         setStatus({ tone: "bad", text: "ID delisting OP_RETURN is over 100 KB." });
         return;
       }
 
       setBusy(true);
-      setStatus({ tone: "idle", text: `Closing listing anchor for ${listing.id}@proofofwork.me...` });
+      setStatus({ tone: "idle", text: `Closing sale ticket for ${listing.id}@proofofwork.me...` });
 
       try {
         const latestState = await fetchIdRegistryState(network);
         setIdRegistry(latestState.records);
         setIdListings(latestState.listings);
         setIdPendingEvents(latestState.pendingEvents);
+        setIdSales(latestState.sales);
         const latestListing = latestState.listings.find((item) => item.listingId === listing.listingId && item.network === network);
         const latestRecord = latestState.records.find((record) => record.network === network && record.id === listing.id && record.confirmed);
 
-        if (!latestListing || latestListing.listingVersion !== "list3") {
+        if (!latestListing || latestListing.listingVersion !== listing.listingVersion) {
           setStatus({ tone: "bad", text: "This listing is no longer active." });
           return;
         }
@@ -6919,6 +8002,7 @@ export default function App() {
         }
 
         const paymentPsbt = await buildAnchoredMarketplacePsbt({
+          anchorSpendMode: listing.listingVersion === "list5" ? "wallet" : "preSigned",
           feeRate,
           fromAddress: address,
           listing: latestListing,
@@ -7000,7 +8084,7 @@ export default function App() {
     }
 
     const selectedListing = selectedMarketplaceListing;
-    if (!selectedListing || (selectedListing.listingVersion !== "list3" && selectedListing.listingVersion !== "list4")) {
+    if (!selectedListing || !listingCanBePurchased(selectedListing)) {
       setStatus({ tone: "bad", text: "Select an active on-chain listing first." });
       return;
     }
@@ -7029,7 +8113,7 @@ export default function App() {
       selectedListing.listingId,
       ownerAddress,
       receiveAddress,
-      selectedListing.listingVersion === "list3" ? "buy3" : "buy4",
+      marketplaceTransferVersionForListing(selectedListing),
     );
     if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
       setStatus({ tone: "bad", text: "ID marketplace transfer OP_RETURN is over 100 KB." });
@@ -7044,6 +8128,7 @@ export default function App() {
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
+      setIdSales(latestState.sales);
       const latestListing = latestState.listings.find((listing) => listing.network === network && listing.listingId === selectedListing.listingId);
       const latestRecord = latestState.records.find((record) => record.network === network && record.id === authorization.id && record.confirmed);
 
@@ -7052,7 +8137,7 @@ export default function App() {
         return;
       }
 
-      if (!latestListing || (latestListing.listingVersion !== "list3" && latestListing.listingVersion !== "list4")) {
+      if (!latestListing || !listingCanBePurchased(latestListing)) {
         setStatus({ tone: "bad", text: "This listing is no longer active." });
         return;
       }
@@ -7132,6 +8217,7 @@ export default function App() {
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
+      setIdSales(latestState.sales);
       resolvedReceive = resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress);
     }
 
@@ -7173,6 +8259,7 @@ export default function App() {
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
+      setIdSales(latestState.sales);
       resolvedOwner = resolvePowIdOwnerInput(idTransferOwnerAddress, network, latestRegistry, registryAddress);
       resolvedReceive = receiveInput ? resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress) : undefined;
     }
@@ -7470,6 +8557,8 @@ export default function App() {
         registryAddress={registryAddressForNetwork("livenet")}
         registryListings={idListings.filter((listing) => listing.network === "livenet")}
         registryRecords={idRegistry.filter((record) => record.network === "livenet")}
+        registrySales={idSales.filter((sale) => sale.network === "livenet")}
+        sealListing={sealIdListing}
         setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
         setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
         setIdSaleBuyerAddress={setIdSaleBuyerAddress}
@@ -7524,6 +8613,34 @@ export default function App() {
     );
   }
 
+  if (activityMode) {
+    return (
+      <ActivityApp
+        activeNetwork={network}
+        busy={activityLoading || busy}
+        idActivity={idActivity.filter((item) => item.network === "livenet")}
+        profile={activityProfile}
+        query={activityQuery}
+        searchedActivity={activityMail}
+        setQuery={setActivityQuery}
+        setTheme={setTheme}
+        status={status}
+        theme={theme}
+        onClear={clearActivity}
+        onRefresh={() => {
+          void refreshIds();
+          if (activityProfile) {
+            void loadActivityTarget(activityProfile.query);
+          }
+        }}
+        onSearch={(event) => {
+          event.preventDefault();
+          void loadActivityTarget();
+        }}
+      />
+    );
+  }
+
   return (
     <main className="mail-app">
       <header className="topbar">
@@ -7553,9 +8670,17 @@ export default function App() {
           <button
             className="secondary"
             disabled={refreshDisabled}
-            onClick={() =>
-              void (activeFolder === "ids" || activeFolder === "marketplace" ? refreshIds() : activeFolder === "desktop" ? loadDesktopTarget() : refreshMail(activeFolder))
-            }
+            onClick={() => {
+              if (activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log") {
+                void refreshIds();
+                if (activeFolder === "log" && activityProfile) {
+                  void loadActivityTarget(activityProfile.query);
+                }
+                return;
+              }
+
+              void (activeFolder === "desktop" ? loadDesktopTarget() : refreshMail(activeFolder));
+            }}
             title="Refresh mail and transaction statuses"
             type="button"
           >
@@ -7743,6 +8868,13 @@ export default function App() {
               </span>
               <strong>{ownerControlledIds.length}</strong>
             </button>
+            <button aria-current={activeFolder === "log"} onClick={() => openFolder("log")} type="button">
+              <span className="folder-label">
+                <Clock size={17} />
+                <span>Log</span>
+              </span>
+              <strong>{idActivity.length}</strong>
+            </button>
             <button aria-current={activeFolder === "contacts"} onClick={() => openFolder("contacts")} type="button">
               <span className="folder-label">
                 <Users size={17} />
@@ -7855,6 +8987,8 @@ export default function App() {
             registryAddress={registryAddress}
             registryListings={idListings}
             registryRecords={idRegistry}
+            registrySales={idSales}
+            sealListing={sealIdListing}
             setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
             setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
             setIdSaleBuyerAddress={setIdSaleBuyerAddress}
@@ -7903,6 +9037,27 @@ export default function App() {
               void loadDesktopTarget();
             }}
             onSelect={(message) => setDesktopSelectedKey(mailKey(message))}
+          />
+        ) : activeFolder === "log" ? (
+          <ActivityWorkspace
+            activeNetwork={network}
+            busy={activityLoading || busy}
+            idActivity={idActivity}
+            profile={activityProfile}
+            query={activityQuery}
+            searchedActivity={activityMail}
+            setQuery={setActivityQuery}
+            onClear={clearActivity}
+            onRefresh={() => {
+              void refreshIds();
+              if (activityProfile) {
+                void loadActivityTarget(activityProfile.query);
+              }
+            }}
+            onSearch={(event) => {
+              event.preventDefault();
+              void loadActivityTarget();
+            }}
           />
         ) : activeFolder === "files" ? (
           <FilesWorkspace
@@ -8214,6 +9369,310 @@ function DesktopApp({
   );
 }
 
+function ActivityApp({
+  activeNetwork,
+  busy,
+  idActivity,
+  profile,
+  query,
+  searchedActivity,
+  setQuery,
+  setTheme,
+  status,
+  theme,
+  onClear,
+  onRefresh,
+  onSearch,
+}: {
+  activeNetwork: BitcoinNetwork;
+  busy: boolean;
+  idActivity: PowActivityItem[];
+  profile?: DesktopProfile;
+  query: string;
+  searchedActivity: PowActivityItem[];
+  setQuery: (value: string) => void;
+  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
+  status: { tone: StatusTone; text: string };
+  theme: ThemeMode;
+  onClear: () => void;
+  onRefresh: () => void;
+  onSearch: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <main className="desktop-public-app activity-public-app">
+      <header className="desktop-public-header">
+        <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
+          <div className="brand-mark" aria-hidden="true">
+            PoW
+          </div>
+          <div>
+            <h1>ProofOfWork Log</h1>
+            <span>Bitcoin Computer log</span>
+          </div>
+        </a>
+
+        <div className="landing-nav">
+          <DomainNav />
+          <button
+            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
+            className="icon-button"
+            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            type="button"
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+        </div>
+      </header>
+
+      {status.tone !== "idle" ? (
+        <div className={`status desktop-route-status ${status.tone}`}>
+          <span className="status-dot" aria-hidden="true" />
+          <span>{status.text}</span>
+        </div>
+      ) : null}
+
+      <ActivityWorkspace
+        activeNetwork={activeNetwork}
+        busy={busy}
+        idActivity={idActivity}
+        profile={profile}
+        query={query}
+        searchedActivity={searchedActivity}
+        setQuery={setQuery}
+        onClear={onClear}
+        onRefresh={onRefresh}
+        onSearch={onSearch}
+      />
+
+      <SocialFooter />
+    </main>
+  );
+}
+
+function activityKey(item: PowActivityItem) {
+  return `${item.kind}-${item.network}-${item.txid}-${item.listingId ?? ""}-${item.id ?? ""}`;
+}
+
+function activityItemsForView(idActivity: PowActivityItem[], searchedActivity: PowActivityItem[], query: string, profile?: DesktopProfile) {
+  const registryItems = profile
+    ? idActivity.filter((item) =>
+        [profile.address, profile.resolvedId ? `${profile.resolvedId}@proofofwork.me` : "", profile.resolvedId ?? "", profile.query]
+          .filter(Boolean)
+          .some((needle) => activityMatchesSearch(item, needle)),
+      )
+    : idActivity.filter((item) => activityMatchesSearch(item, query));
+
+  const merged = new Map<string, PowActivityItem>();
+  for (const item of [...registryItems, ...searchedActivity]) {
+    merged.set(activityKey(item), item);
+  }
+
+  return [...merged.values()].sort(compareActivityItems);
+}
+
+function totalActivityDataBytes(items: PowActivityItem[]) {
+  const bytesByTxid = new Map<string, number>();
+
+  for (const item of items) {
+    if (!item.txid || !Number.isFinite(item.dataBytes ?? 0) || !item.dataBytes) {
+      continue;
+    }
+
+    bytesByTxid.set(item.txid, Math.max(bytesByTxid.get(item.txid) ?? 0, item.dataBytes));
+  }
+
+  return [...bytesByTxid.values()].reduce((total, bytes) => total + bytes, 0);
+}
+
+function ActivityWorkspace({
+  activeNetwork,
+  busy,
+  idActivity,
+  profile,
+  query,
+  searchedActivity,
+  setQuery,
+  onClear,
+  onRefresh,
+  onSearch,
+}: {
+  activeNetwork: BitcoinNetwork;
+  busy: boolean;
+  idActivity: PowActivityItem[];
+  profile?: DesktopProfile;
+  query: string;
+  searchedActivity: PowActivityItem[];
+  setQuery: (value: string) => void;
+  onClear: () => void;
+  onRefresh: () => void;
+  onSearch: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const items = activityItemsForView(idActivity, searchedActivity, query, profile);
+  const confirmedCount = items.filter((item) => item.confirmed).length;
+  const pendingCount = items.length - confirmedCount;
+  const dataBytes = totalActivityDataBytes(items);
+  const title = profile ? `${profile.label} log` : query.trim() ? "Filtered log" : "Global computer log";
+
+  return (
+    <section className="activity-workspace">
+      <div className="activity-hero">
+        <div>
+          <span className="landing-kicker">Bitcoin-native audit trail</span>
+          <h2>Every ProofOfWork action with a txid.</h2>
+          <p>Messages, replies, files, ID registry events, listings, seals, delistings, and purchases in one chain-readable log.</p>
+        </div>
+        <form className="desktop-search activity-search" onSubmit={onSearch}>
+          <Search size={16} aria-hidden="true" />
+          <input
+            autoComplete="off"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="address, user@proofofwork.me, or txid"
+            spellCheck={false}
+            value={query}
+          />
+          <button className="secondary small" disabled={busy || !query.trim()} type="submit">
+            <span className="button-content">
+              <Search size={15} />
+              <span>Search</span>
+            </span>
+          </button>
+          <button className="secondary small" disabled={busy} onClick={onRefresh} type="button">
+            <span className="button-content">
+              <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
+              <span>{busy ? "Refreshing" : "Refresh"}</span>
+            </span>
+          </button>
+          <button className="secondary small" disabled={busy || (!query && !profile)} onClick={onClear} type="button">
+            <span className="button-content">
+              <X size={15} />
+              <span>Clear</span>
+            </span>
+          </button>
+        </form>
+      </div>
+
+      <div className="activity-stats" aria-label="Log stats">
+        <div>
+          <strong>{items.length.toLocaleString()}</strong>
+          <span>Total actions</span>
+        </div>
+        <div>
+          <strong>{confirmedCount.toLocaleString()}</strong>
+          <span>Confirmed</span>
+        </div>
+        <div>
+          <strong>{pendingCount.toLocaleString()}</strong>
+          <span>Pending</span>
+        </div>
+        <div>
+          <strong>{formatBytes(dataBytes)}</strong>
+          <span>Data stored</span>
+        </div>
+        <div>
+          <strong>{networkLabel(activeNetwork)}</strong>
+          <span>Network</span>
+        </div>
+      </div>
+
+      <section className="activity-feed-card">
+        <div className="id-card-head">
+          <div className="empty-icon" aria-hidden="true">
+            <Clock size={24} />
+          </div>
+          <div>
+            <h3>{title}</h3>
+            <p>Confirmed records are canonical. Pending records are visible until they confirm or disappear.</p>
+          </div>
+        </div>
+        <ActivityFeed items={items} />
+      </section>
+    </section>
+  );
+}
+
+function ActivityFeed({ items }: { items: PowActivityItem[] }) {
+  if (items.length === 0) {
+    return (
+      <div className="empty-state activity-empty">
+        <div className="empty-icon" aria-hidden="true">
+          <Clock size={26} />
+        </div>
+        <h3>No activity</h3>
+        <p>Search an address, confirmed ProofOfWork ID, or txid to narrow the protocol log.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="activity-feed">
+      {items.map((item) => (
+        <article className="activity-row" key={activityKey(item)}>
+          <div className="activity-row-main">
+            <div>
+              <h4>{item.id ? `${item.id}@proofofwork.me` : item.title}</h4>
+              <strong>{item.id ? item.title : item.description}</strong>
+              {item.id ? <p>{item.description}</p> : null}
+              {item.detail ? <span className="activity-detail">{item.detail}</span> : null}
+            </div>
+            <time dateTime={item.createdAt}>{formatDate(item.createdAt)}</time>
+          </div>
+
+          <div className="activity-tags">
+            {item.tags.map((tag) => (
+              <span key={`${activityKey(item)}-${tag}`}>{tag}</span>
+            ))}
+          </div>
+
+          <dl className="activity-meta">
+            {item.actor ? (
+              <div>
+                <dt>Actor</dt>
+                <dd>{shortAddress(item.actor)}</dd>
+              </div>
+            ) : null}
+            {item.counterparty ? (
+              <div>
+                <dt>Counterparty</dt>
+                <dd>{shortAddress(item.counterparty)}</dd>
+              </div>
+            ) : null}
+            {item.listingId ? (
+              <div>
+                <dt>Listing</dt>
+                <dd>{shortAddress(item.listingId)}</dd>
+              </div>
+            ) : null}
+            {item.utxo ? (
+              <div>
+                <dt>UTXO</dt>
+                <dd>{shortAddress(item.utxo)}</dd>
+              </div>
+            ) : null}
+          </dl>
+
+          <div className="id-record-actions">
+            <a className="secondary small" href={mempoolTxUrl(item.txid, item.network)} rel="noreferrer" target="_blank">
+              <span className="button-content">
+                <ArrowUpRight size={15} />
+                <span>View TX</span>
+              </span>
+            </a>
+            {item.listingId && item.listingId !== item.txid ? (
+              <a className="secondary small" href={mempoolTxUrl(item.listingId, item.network)} rel="noreferrer" target="_blank">
+                <span className="button-content">
+                  <ArrowUpRight size={15} />
+                  <span>View Listing</span>
+                </span>
+              </a>
+            ) : null}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function LandingApp({
   registryRecords,
   setTheme,
@@ -8470,13 +9929,10 @@ function IdLaunchApp({
   theme: ThemeMode;
   onRefresh: () => void;
 }) {
-  const [showAllRegistryRecords, setShowAllRegistryRecords] = useState(false);
   const normalizedId = normalizePowId(idName);
   const ownedIds = ownedPowIds(registryRecords, address);
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
-  const visibleRegistryRecords = showAllRegistryRecords ? registryRecords : registryRecords.slice(0, 12);
-  const hiddenRegistryRecordCount = Math.max(0, registryRecords.length - visibleRegistryRecords.length);
   const confirmedMatch = normalizedId ? confirmedRecords.find((record) => record.id === normalizedId) : undefined;
   const pendingMatch = normalizedId ? pendingRecords.find((record) => record.id === normalizedId) : undefined;
   const availabilityTone = !normalizedId ? "idle" : confirmedMatch ? "bad" : pendingMatch ? "idle" : "good";
@@ -8703,7 +10159,12 @@ function IdLaunchApp({
 
             <section className="id-launch-card">
               <h3>Your IDs</h3>
-              <IdRecordList records={ownedIds} allowVerification empty={address ? "No IDs for this wallet yet." : "Connect UniSat to see your IDs."} />
+              <IdRecordList
+                records={ownedIds}
+                allowVerification
+                empty={address ? "No IDs for this wallet yet." : "Connect UniSat to see your IDs."}
+                searchPlaceholder="Search your IDs"
+              />
             </section>
 
           </aside>
@@ -8722,18 +10183,7 @@ function IdLaunchApp({
               </span>
             </button>
           </div>
-          <IdRecordList records={visibleRegistryRecords} empty="No registry records found yet." />
-          {registryRecords.length > 12 ? (
-            <button className="secondary registry-expand-button" onClick={() => setShowAllRegistryRecords((current) => !current)} type="button">
-              <span className="button-content">
-                <span>
-                  {showAllRegistryRecords
-                    ? "Show fewer IDs"
-                    : `Show all IDs (${hiddenRegistryRecordCount.toLocaleString()} more)`}
-                </span>
-              </span>
-            </button>
-          ) : null}
+          <IdRecordList records={registryRecords} empty="No registry records found yet." initialLimit={12} />
         </section>
       </section>
 
@@ -8765,6 +10215,8 @@ function MarketplaceApp({
   registryAddress,
   registryListings,
   registryRecords,
+  registrySales,
+  sealListing,
   setIdPurchaseOwnerAddress,
   setIdPurchaseReceiveAddress,
   setIdSaleBuyerAddress,
@@ -8801,6 +10253,8 @@ function MarketplaceApp({
   registryAddress: string;
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
+  registrySales: PowIdMarketplaceSale[];
+  sealListing: (listing: PowIdListing) => void;
   setIdPurchaseOwnerAddress: (value: string) => void;
   setIdPurchaseReceiveAddress: (value: string) => void;
   setIdSaleBuyerAddress: (value: string) => void;
@@ -8820,6 +10274,7 @@ function MarketplaceApp({
   const ownerControlledIds = confirmedRecords.filter((record) => record.ownerAddress === address);
   const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
   const walletPendingEvents = pendingEvents.filter((event) => pendingIdEventTouchesAddress(event, address));
+  const marketplaceStats = marketplaceStatsFromSales(registrySales);
 
   return (
     <main className="id-launch-app marketplace-app">
@@ -8902,12 +10357,24 @@ function MarketplaceApp({
               <span>Total IDs</span>
             </div>
             <div>
-              <strong>{confirmedRecords.length.toLocaleString()}</strong>
-              <span>Confirmed</span>
+              <strong>{registryListings.length.toLocaleString()}</strong>
+              <span>Active Listings</span>
+            </div>
+            <div>
+              <strong>{marketplaceStats.totalSales.toLocaleString()}</strong>
+              <span>ID Sales</span>
+            </div>
+            <div>
+              <strong>{marketplaceStats.totalVolumeSats.toLocaleString()}</strong>
+              <span>Volume sats</span>
             </div>
             <div>
               <strong>{pendingRecords.length.toLocaleString()}</strong>
-              <span>Pending</span>
+              <span>Pending IDs</span>
+            </div>
+            <div>
+              <strong>{marketplaceStats.pendingSales.toLocaleString()}</strong>
+              <span>Pending Sales</span>
             </div>
           </div>
         </div>
@@ -8985,9 +10452,13 @@ function MarketplaceApp({
 
           <MarketplaceListingList
             address={address}
+            feeRate={feeRate}
             listings={registryListings}
             onDelist={delistListing}
+            onSeal={sealListing}
             onUse={useListing}
+            pendingEvents={pendingEvents}
+            setFeeRate={setFeeRate}
           />
 
           <section className="id-card">
@@ -9017,7 +10488,12 @@ function MarketplaceApp({
                 <p>Confirmed IDs are the assets. The public listing book will build on the same registry.</p>
               </div>
             </div>
-            <IdRecordList records={confirmedRecords} empty="No confirmed registry records found yet." />
+            <IdRecordList
+              records={confirmedRecords}
+              empty="No confirmed registry records found yet."
+              initialLimit={24}
+              searchPlaceholder="Search registry supply"
+            />
           </section>
         </div>
       </section>
@@ -9048,6 +10524,8 @@ function MarketplaceWorkspace({
   registryAddress,
   registryListings,
   registryRecords,
+  registrySales,
+  sealListing,
   setIdPurchaseOwnerAddress,
   setIdPurchaseReceiveAddress,
   setIdSaleBuyerAddress,
@@ -9079,6 +10557,8 @@ function MarketplaceWorkspace({
   registryAddress: string;
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
+  registrySales: PowIdMarketplaceSale[];
+  sealListing: (listing: PowIdListing) => void;
   setIdPurchaseOwnerAddress: (value: string) => void;
   setIdPurchaseReceiveAddress: (value: string) => void;
   setIdSaleBuyerAddress: (value: string) => void;
@@ -9092,12 +10572,15 @@ function MarketplaceWorkspace({
 }) {
   const confirmedRecords = registryRecords.filter((record) => record.network === network && record.confirmed);
   const pendingRecords = registryRecords.filter((record) => record.network === network && !record.confirmed);
+  const networkListings = registryListings.filter((listing) => listing.network === network);
+  const networkSales = registrySales.filter((sale) => sale.network === network);
+  const marketplaceStats = marketplaceStatsFromSales(networkSales);
   const ownerControlledIds = confirmedRecords.filter((record) => record.ownerAddress === address);
   const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
   const walletPendingEvents = pendingEvents.filter((event) => event.network === network && pendingIdEventTouchesAddress(event, address));
 
   return (
-    <section className="ids-workspace">
+    <section className="ids-workspace marketplace-workspace">
       <div className="files-toolbar">
         <div>
           <h2>Marketplace</h2>
@@ -9113,6 +10596,25 @@ function MarketplaceWorkspace({
             <span>{busy ? "Refreshing" : "Refresh"}</span>
           </span>
         </button>
+      </div>
+
+      <div className="id-launch-stats marketplace-workspace-stats" aria-label="Marketplace stats">
+        <div>
+          <strong>{networkListings.length.toLocaleString()}</strong>
+          <span>Active Listings</span>
+        </div>
+        <div>
+          <strong>{marketplaceStats.totalSales.toLocaleString()}</strong>
+          <span>ID Sales</span>
+        </div>
+        <div>
+          <strong>{marketplaceStats.totalVolumeSats.toLocaleString()}</strong>
+          <span>Volume sats</span>
+        </div>
+        <div>
+          <strong>{marketplaceStats.pendingSales.toLocaleString()}</strong>
+          <span>Pending Sales</span>
+        </div>
       </div>
 
       <div className="ids-content marketplace-content">
@@ -9190,9 +10692,13 @@ function MarketplaceWorkspace({
 
         <MarketplaceListingList
           address={address}
-          listings={registryListings.filter((listing) => listing.network === network)}
+          feeRate={feeRate}
+          listings={networkListings}
           onDelist={delistListing}
+          onSeal={sealListing}
           onUse={useListing}
+          pendingEvents={pendingEvents.filter((event) => event.network === network)}
+          setFeeRate={setFeeRate}
         />
 
         <section className="id-card">
@@ -9222,7 +10728,12 @@ function MarketplaceWorkspace({
               <p>Confirmed IDs are marketplace assets. The standalone marketplace uses the same registry.</p>
             </div>
           </div>
-          <IdRecordList records={confirmedRecords} empty={registryAddress ? "No confirmed registry records found yet." : "Switch to Mainnet to browse the ID marketplace."} />
+          <IdRecordList
+            records={confirmedRecords}
+            empty={registryAddress ? "No confirmed registry records found yet." : "Switch to Mainnet to browse the ID marketplace."}
+            initialLimit={24}
+            searchPlaceholder="Search registry supply"
+          />
         </section>
       </div>
     </section>
@@ -9683,7 +11194,14 @@ function IdsWorkspace({
               <p>IDs owned by or routed to the connected address.</p>
             </div>
           </div>
-          <IdRecordList records={ownedIds} allowVerification contacts={contacts} empty="No IDs for this wallet yet." onAddContact={onAddContact} />
+          <IdRecordList
+            records={ownedIds}
+            allowVerification
+            contacts={contacts}
+            empty="No IDs for this wallet yet."
+            onAddContact={onAddContact}
+            searchPlaceholder="Search your IDs"
+          />
         </section>
 
         <section className="id-card">
@@ -9717,7 +11235,9 @@ function IdsWorkspace({
             records={registryRecords}
             contacts={contacts}
             empty={registryAddress ? "No registry records found yet." : "Registry address is not configured for this network."}
+            initialLimit={24}
             onAddContact={onAddContact}
+            searchPlaceholder="Search registry IDs"
           />
         </section>
       </div>
@@ -9727,15 +11247,50 @@ function IdsWorkspace({
 
 function MarketplaceListingList({
   address,
+  feeRate,
   listings,
   onDelist,
+  onSeal,
   onUse,
+  pendingEvents,
+  setFeeRate,
 }: {
   address: string;
+  feeRate: number;
   listings: PowIdListing[];
   onDelist: (listing: PowIdListing) => void;
+  onSeal: (listing: PowIdListing) => void;
   onUse: (listing: PowIdListing) => void;
+  pendingEvents: PowIdPendingEvent[];
+  setFeeRate: (value: number) => void;
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const filteredListings = searchQuery ? listings.filter((listing) => idListingMatchesSearch(listing, searchQuery)) : listings;
+  const sellerListings = address ? listings.filter((listing) => listing.sellerAddress === address) : [];
+  const pendingSealByListingId = new Map(
+    pendingEvents
+      .filter((event) => event.kind === "seal" && event.listingId)
+      .map((event) => [event.listingId as string, event]),
+  );
+  const hasUnsealedSellerTicket = sellerListings.some(
+    (listing) =>
+      listing.listingVersion === "list5" &&
+      !saleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization) &&
+      !pendingSealByListingId.has(listing.listingId),
+  );
+  const listingStatus = (listing: PowIdListing) => {
+    const pendingSeal = pendingSealByListingId.get(listing.listingId);
+    if (listing.listingVersion === "list5") {
+      if (saleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)) {
+        return "Sealed ticket";
+      }
+
+      return pendingSeal ? "Seal pending" : "Ticket needs seal";
+    }
+
+    return listing.listingVersion === "list4" ? "Hardened" : listing.listingVersion === "list3" ? "Anchored" : "Legacy";
+  };
+
   return (
     <section className="id-card ids-registry-card marketplace-listings-card">
       <div className="id-card-head">
@@ -9748,56 +11303,99 @@ function MarketplaceListingList({
         </div>
       </div>
 
+      <IdSearchControl
+        placeholder="Search listings, sellers, txids"
+        resultCount={filteredListings.length}
+        setValue={setSearchQuery}
+        totalCount={listings.length}
+        value={searchQuery}
+      />
+
+      {sellerListings.length > 0 ? (
+        <div className="listing-fee-control">
+          <div>
+            <strong>{hasUnsealedSellerTicket ? "Seal fee rate" : "Seller action fee rate"}</strong>
+            <span>Used for sealing and delisting marketplace listings.</span>
+          </div>
+          <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+        </div>
+      ) : null}
+
       {listings.length === 0 ? (
         <p className="field-note">No active on-chain listings yet.</p>
+      ) : filteredListings.length === 0 ? (
+        <p className="field-note">No active listings match this search.</p>
       ) : (
         <div className="id-record-list marketplace-listing-list">
-          {listings.map((listing) => (
-            <article className="id-record" key={listing.listingId}>
-              <div>
-                <strong>{listing.id}@proofofwork.me</strong>
-                <span>
-                  {listing.priceSats.toLocaleString()} sats · {listing.listingVersion === "list4" ? "Hardened" : listing.listingVersion === "list3" ? "Anchored" : "Legacy"} · Listed {formatDate(listing.createdAt)}
-                </span>
-              </div>
-              <dl>
+          {filteredListings.map((listing) => {
+            const pendingSeal = pendingSealByListingId.get(listing.listingId);
+            const sealTxid = listing.sealTxid ?? pendingSeal?.txid;
+
+            return (
+              <article className="id-record" key={listing.listingId}>
                 <div>
-                  <dt>Seller</dt>
-                  <dd>{shortAddress(listing.sellerAddress)}</dd>
-                </div>
-                <div>
-                  <dt>Buyer</dt>
-                  <dd>{listing.buyerAddress ? shortAddress(listing.buyerAddress) : "Any"}</dd>
-                </div>
-                <div>
-                  <dt>Listing</dt>
-                  <dd>{shortAddress(listing.listingId)}</dd>
-                </div>
-              </dl>
-              <div className="id-record-actions">
-                <button className="primary small" disabled={listing.listingVersion !== "list3" && listing.listingVersion !== "list4"} onClick={() => onUse(listing)} type="button">
-                  <span className="button-content">
-                    <Send size={15} />
-                    <span>{listing.listingVersion === "list3" || listing.listingVersion === "list4" ? "Select Listing" : "Legacy"}</span>
+                  <strong>{listing.id}@proofofwork.me</strong>
+                  <span>
+                    {listing.priceSats.toLocaleString()} sats · {listingStatus(listing)} · Listed {formatDate(listing.createdAt)}
                   </span>
-                </button>
-                {address && listing.sellerAddress === address ? (
-                  <button className="secondary small" onClick={() => onDelist(listing)} type="button">
+                </div>
+                <dl>
+                  <div>
+                    <dt>Seller</dt>
+                    <dd>{shortAddress(listing.sellerAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>Buyer</dt>
+                    <dd>{listing.buyerAddress ? shortAddress(listing.buyerAddress) : "Any"}</dd>
+                  </div>
+                  <div>
+                    <dt>Listing</dt>
+                    <dd>{shortAddress(listing.listingId)}</dd>
+                  </div>
+                </dl>
+                <div className="id-record-actions">
+                  <button className="primary small" disabled={!listingCanBePurchased(listing)} onClick={() => onUse(listing)} type="button">
                     <span className="button-content">
-                      <Trash2 size={15} />
-                      <span>Delist</span>
+                      <Send size={15} />
+                      <span>{listingCanBePurchased(listing) ? "Select Listing" : pendingSeal ? "Seal Pending" : "Not Sealed"}</span>
                     </span>
                   </button>
-                ) : null}
-                <a className="secondary small link-button" href={mempoolTxUrl(listing.txid, listing.network)} rel="noreferrer" target="_blank">
-                  <span className="button-content">
-                    <ArrowUpRight size={15} />
-                    <span>View TX</span>
-                  </span>
-                </a>
-              </div>
-            </article>
-          ))}
+                  {address && listing.sellerAddress === address ? (
+                    <>
+                      {listing.listingVersion === "list5" && !saleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization) && !pendingSeal ? (
+                        <button className="secondary small" onClick={() => onSeal(listing)} type="button">
+                          <span className="button-content">
+                            <Send size={15} />
+                            <span>Seal</span>
+                          </span>
+                        </button>
+                      ) : null}
+                      <button className="secondary small" onClick={() => onDelist(listing)} type="button">
+                        <span className="button-content">
+                          <Trash2 size={15} />
+                          <span>Delist</span>
+                        </span>
+                      </button>
+                    </>
+                  ) : null}
+                  <a className="secondary small link-button" href={mempoolTxUrl(listing.txid, listing.network)} rel="noreferrer" target="_blank">
+                    <span className="button-content">
+                      <ArrowUpRight size={15} />
+                      <span>View TX</span>
+                    </span>
+                  </a>
+                  {sealTxid ? (
+                    <a className="secondary small link-button" href={mempoolTxUrl(sealTxid, listing.network)} rel="noreferrer" target="_blank">
+                      <span className="button-content">
+                        <ArrowUpRight size={15} />
+                        <span>View Seal TX</span>
+                      </span>
+                    </a>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
     </section>
@@ -9905,7 +11503,7 @@ function IdMarketplaceCard({
         </div>
         <div>
           <h3>Marketplace Transfer</h3>
-          <p>Listings are anchored on-chain. Buyers settle by spending the listing anchor and paying the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
+          <p>Listings create a sale-ticket UTXO. Buyers settle by spending that ticket and paying the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
         </div>
       </div>
 
@@ -10008,13 +11606,27 @@ function PendingIdEventList({
   empty: string;
   events: PowIdPendingEvent[];
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const filteredEvents = searchQuery ? events.filter((event) => pendingIdEventMatchesSearch(event, searchQuery)) : events;
+
   if (events.length === 0) {
     return <p className="field-note">{empty}</p>;
   }
 
   return (
-    <div className="id-record-list">
-      {events.map((event) => (
+    <>
+      <IdSearchControl
+        placeholder="Search pending IDs, addresses, txids"
+        resultCount={filteredEvents.length}
+        setValue={setSearchQuery}
+        totalCount={events.length}
+        value={searchQuery}
+      />
+      {filteredEvents.length === 0 ? (
+        <p className="field-note">No pending ID events match this search.</p>
+      ) : (
+        <div className="id-record-list">
+          {filteredEvents.map((event) => (
         <article className="id-record" key={`${event.network}-${event.txid}-${event.kind}`}>
           <div>
             <strong>{event.id ? `${event.id}@proofofwork.me` : "Registry event"}</strong>
@@ -10047,7 +11659,49 @@ function PendingIdEventList({
             </a>
           </div>
         </article>
-      ))}
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function IdSearchControl({
+  placeholder,
+  resultCount,
+  setValue,
+  totalCount,
+  value,
+}: {
+  placeholder: string;
+  resultCount: number;
+  setValue: (value: string) => void;
+  totalCount: number;
+  value: string;
+}) {
+  return (
+    <div className="id-search-row">
+      <div className="desktop-search id-search-control">
+        <Search size={16} aria-hidden="true" />
+        <input
+          aria-label={placeholder}
+          autoComplete="off"
+          onChange={(event) => setValue(event.target.value)}
+          placeholder={placeholder}
+          spellCheck={false}
+          value={value}
+        />
+        {value ? (
+          <button aria-label="Clear search" className="icon-button id-search-clear" onClick={() => setValue("")} type="button">
+            <X size={14} />
+          </button>
+        ) : null}
+      </div>
+      <span>
+        {value
+          ? `${resultCount.toLocaleString()} of ${totalCount.toLocaleString()}`
+          : `${totalCount.toLocaleString()} total`}
+      </span>
     </div>
   );
 }
@@ -10057,21 +11711,42 @@ function IdRecordList({
   allowVerification = false,
   contacts = [],
   empty,
+  initialLimit,
   onAddContact,
+  searchPlaceholder = "Search IDs, addresses, txids",
 }: {
   records: PowIdRecord[];
   allowVerification?: boolean;
   contacts?: ContactRecord[];
   empty: string;
+  initialLimit?: number;
   onAddContact?: (record: PowIdRecord) => void;
+  searchPlaceholder?: string;
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const filteredRecords = searchQuery ? records.filter((record) => idRecordMatchesSearch(record, searchQuery)) : records;
+  const visibleRecords = initialLimit && !expanded && !searchQuery ? filteredRecords.slice(0, initialLimit) : filteredRecords;
+  const hiddenCount = Math.max(0, filteredRecords.length - visibleRecords.length);
+
   if (records.length === 0) {
     return <p className="field-note">{empty}</p>;
   }
 
   return (
-    <div className="id-record-list">
-      {records.map((record) => {
+    <>
+      <IdSearchControl
+        placeholder={searchPlaceholder}
+        resultCount={filteredRecords.length}
+        setValue={setSearchQuery}
+        totalCount={records.length}
+        value={searchQuery}
+      />
+      {visibleRecords.length === 0 ? (
+        <p className="field-note">No IDs match this search.</p>
+      ) : (
+        <div className="id-record-list">
+          {visibleRecords.map((record) => {
         const saved = contacts.some((contact) => contactKey(contact) === registryContactKey(record));
 
         return (
@@ -10124,8 +11799,23 @@ function IdRecordList({
             </div>
           </article>
         );
-      })}
-    </div>
+          })}
+        </div>
+      )}
+      {hiddenCount > 0 ? (
+        <button className="secondary registry-expand-button" onClick={() => setExpanded(true)} type="button">
+          <span className="button-content">
+            <span>Show all IDs ({hiddenCount.toLocaleString()} more)</span>
+          </span>
+        </button>
+      ) : expanded && initialLimit && !searchQuery && records.length > initialLimit ? (
+        <button className="secondary registry-expand-button" onClick={() => setExpanded(false)} type="button">
+          <span className="button-content">
+            <span>Show fewer IDs</span>
+          </span>
+        </button>
+      ) : null}
+    </>
   );
 }
 

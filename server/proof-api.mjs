@@ -21,6 +21,9 @@ const ELECTRUM_HOST = process.env.ELECTRUM_HOST ?? "127.0.0.1";
 const ELECTRUM_PORT = Number(process.env.ELECTRUM_PORT ?? 50001);
 const MAX_REGISTRY_TX_PAGES = Number(process.env.MAX_REGISTRY_TX_PAGES ?? 250);
 const MAX_ADDRESS_TX_PAGES = Number(process.env.MAX_ADDRESS_TX_PAGES ?? 50);
+const MAX_ACTIVITY_ADDRESSES = Number(process.env.MAX_ACTIVITY_ADDRESSES ?? 500);
+const MAX_ACTIVITY_ADDRESS_GRAPH_PASSES = Number(process.env.MAX_ACTIVITY_ADDRESS_GRAPH_PASSES ?? 1);
+const ACTIVITY_CACHE_TTL_MS = Number(process.env.ACTIVITY_CACHE_TTL_MS ?? 15_000);
 const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
 const BLOCK_TXID_FETCH_CONCURRENCY = Number(process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4);
 
@@ -31,9 +34,12 @@ const ID_MUTATION_PRICE_SATS = 546;
 const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
 const ID_SALE_AUTH_VERSION_ANCHORED = "pwid-sale-v2";
 const ID_SALE_AUTH_VERSION = "pwid-sale-v3";
+const ID_SALE_AUTH_VERSION_TICKET = "pwid-sale-v4";
 const ID_LISTING_ANCHOR_TYPE_LEGACY = "p2wsh-op-true-v1";
 const ID_LISTING_ANCHOR_TYPE = "seller-utxo-v1";
+const ID_LISTING_TICKET_ANCHOR_TYPE = "sale-ticket-v1";
 const ID_LISTING_ANCHOR_VALUE_SATS = 546;
+const ID_LISTING_ANCHOR_VOUT = 2;
 const ID_LISTING_ANCHOR_SIGHASH_TYPE = bitcoin.Transaction.SIGHASH_SINGLE | bitcoin.Transaction.SIGHASH_ANYONECANPAY;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const ID_REGISTRY_ADDRESSES = {
@@ -42,6 +48,7 @@ const ID_REGISTRY_ADDRESSES = {
 
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
 const BLOCK_TXID_INDEX_CACHE = new Map();
+const GLOBAL_ACTIVITY_CACHE = new Map();
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
@@ -206,7 +213,7 @@ function marketplaceLegacyAnchorScriptPubKey() {
 }
 
 function validPublicKeyHex(value) {
-  return /^(02|03)[0-9a-fA-F]{64}$/u.test(value) || /^04[0-9a-fA-F]{128}$/u.test(value);
+  return /^[0-9a-fA-F]{64}$/u.test(value) || /^(02|03)[0-9a-fA-F]{64}$/u.test(value) || /^04[0-9a-fA-F]{128}$/u.test(value);
 }
 
 function validSignatureHex(value) {
@@ -519,6 +526,16 @@ function decodedOpReturnMessages(vout) {
 
 function decodedProtocolMessages(vout, prefix) {
   return decodedOpReturnMessages(vout).filter((message) => message.startsWith(prefix));
+}
+
+function protocolDataBytesForVout(vout, prefix) {
+  return decodedProtocolMessages(vout, prefix).reduce((total, message) => total + Buffer.byteLength(message, "utf8"), 0);
+}
+
+function proofProtocolDataBytesForVout(vout) {
+  return decodedOpReturnMessages(vout)
+    .filter((message) => message.startsWith(PROTOCOL_PREFIX) || message.startsWith(ID_PROTOCOL_PREFIX))
+    .reduce((total, message) => total + Buffer.byteLength(message, "utf8"), 0);
 }
 
 function firstProtocolOutputIndex(vout) {
@@ -997,16 +1014,16 @@ function saleAuthorizationDraft({
     version,
   };
 
-  if (version === ID_SALE_AUTH_VERSION_ANCHORED || version === ID_SALE_AUTH_VERSION) {
+  if (version === ID_SALE_AUTH_VERSION_ANCHORED || version === ID_SALE_AUTH_VERSION || version === ID_SALE_AUTH_VERSION_TICKET) {
     draft.anchorSigHashType = Number.isSafeInteger(anchorSigHashType)
       ? Math.floor(anchorSigHashType)
-      : version === ID_SALE_AUTH_VERSION
+      : version === ID_SALE_AUTH_VERSION || version === ID_SALE_AUTH_VERSION_TICKET
         ? ID_LISTING_ANCHOR_SIGHASH_TYPE
         : undefined;
     draft.anchorSignature = anchorSignature?.trim().toLowerCase() || undefined;
     draft.anchorScriptPubKey = anchorScriptPubKey?.trim().toLowerCase() || undefined;
     draft.anchorTxid = anchorTxid?.trim().toLowerCase() || undefined;
-    draft.anchorType = anchorType?.trim() || (version === ID_SALE_AUTH_VERSION ? ID_LISTING_ANCHOR_TYPE : ID_LISTING_ANCHOR_TYPE_LEGACY);
+    draft.anchorType = anchorType?.trim() || (version === ID_SALE_AUTH_VERSION_TICKET ? ID_LISTING_TICKET_ANCHOR_TYPE : version === ID_SALE_AUTH_VERSION ? ID_LISTING_ANCHOR_TYPE : ID_LISTING_ANCHOR_TYPE_LEGACY);
     draft.anchorValueSats = Number.isSafeInteger(anchorValueSats) ? Math.floor(anchorValueSats) : ID_LISTING_ANCHOR_VALUE_SATS;
     draft.anchorVout = Number.isSafeInteger(anchorVout) ? Math.floor(anchorVout) : 2;
 
@@ -1031,7 +1048,7 @@ function saleAuthorizationMessage(authorization) {
     `expiresAt:${authorization.expiresAt || ""}`,
   ];
 
-  if (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION) {
+  if (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION || authorization.version === ID_SALE_AUTH_VERSION_TICKET) {
     lines.push(
       `anchorType:${authorization.anchorType || ""}`,
       `anchorTxid:${authorization.anchorTxid || ""}`,
@@ -1067,7 +1084,9 @@ function parseSaleAuthorizationJson(value, network) {
         ? ID_SALE_AUTH_VERSION_ANCHORED
         : parsed.version === ID_SALE_AUTH_VERSION
           ? ID_SALE_AUTH_VERSION
-          : "";
+          : parsed.version === ID_SALE_AUTH_VERSION_TICKET
+            ? ID_SALE_AUTH_VERSION_TICKET
+            : "";
   const anchorType = typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
   const anchorSigHashType = typeof parsed.anchorSigHashType === "number" ? Math.floor(parsed.anchorSigHashType) : Number.NaN;
   const anchorSignature = typeof parsed.anchorSignature === "string" ? parsed.anchorSignature.trim().toLowerCase() : "";
@@ -1127,6 +1146,22 @@ function parseSaleAuthorizationJson(value, network) {
     }
   }
 
+  if (version === ID_SALE_AUTH_VERSION_TICKET) {
+    if (
+      anchorType !== ID_LISTING_TICKET_ANCHOR_TYPE ||
+      !Number.isSafeInteger(anchorVout) ||
+      anchorVout < 0 ||
+      !Number.isSafeInteger(anchorValueSats) ||
+      anchorValueSats < 546 ||
+      !/^[0-9a-f]+$/u.test(anchorScriptPubKey) ||
+      !validPublicKeyHex(sellerPublicKey) ||
+      anchorSigHashType !== ID_LISTING_ANCHOR_SIGHASH_TYPE ||
+      (anchorSignature && !validSignatureHex(anchorSignature))
+    ) {
+      throw new Error("Sale authorization ticket is invalid.");
+    }
+  }
+
   return {
     ...saleAuthorizationDraft({
       anchorSigHashType,
@@ -1174,6 +1209,11 @@ function saleAuthorizationTermsMatch(left, right) {
   return JSON.stringify(saleAuthorizationDraft(left)) === JSON.stringify(saleAuthorizationDraft(right));
 }
 
+function saleAuthorizationTermsMatchIgnoringSeal(left, right) {
+  return JSON.stringify(saleAuthorizationDraft({ ...left, anchorSignature: undefined, anchorTxid: undefined })) ===
+    JSON.stringify(saleAuthorizationDraft({ ...right, anchorSignature: undefined, anchorTxid: undefined }));
+}
+
 function findMatchingActiveListing(listings, authorization, currentOwnerAddress) {
   for (const listing of listings.values()) {
     if (
@@ -1192,13 +1232,28 @@ function findMatchingActiveListing(listings, authorization, currentOwnerAddress)
 
 function saleAuthorizationHasAnchor(authorization) {
   return (
-    (authorization?.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization?.version === ID_SALE_AUTH_VERSION) &&
-    (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY || authorization.anchorType === ID_LISTING_ANCHOR_TYPE) &&
+    (authorization?.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization?.version === ID_SALE_AUTH_VERSION || authorization?.version === ID_SALE_AUTH_VERSION_TICKET) &&
+    (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY || authorization.anchorType === ID_LISTING_ANCHOR_TYPE || authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE) &&
     typeof authorization.anchorScriptPubKey === "string" &&
     /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey) &&
     Number.isSafeInteger(authorization.anchorVout) &&
     Number.isSafeInteger(authorization.anchorValueSats) &&
     authorization.anchorValueSats >= 546
+  );
+}
+
+function saleAuthorizationUsesSaleTicketAnchor(authorization) {
+  return (
+    saleAuthorizationHasAnchor(authorization) &&
+    authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+    authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE &&
+    typeof authorization.anchorTxid === "string" &&
+    /^[0-9a-f]{64}$/u.test(authorization.anchorTxid) &&
+    typeof authorization.sellerPublicKey === "string" &&
+    validPublicKeyHex(authorization.sellerPublicKey) &&
+    authorization.anchorSigHashType === ID_LISTING_ANCHOR_SIGHASH_TYPE &&
+    typeof authorization.anchorSignature === "string" &&
+    validSignatureHex(authorization.anchorSignature)
   );
 }
 
@@ -1240,11 +1295,19 @@ function sellerPaymentRequiredSats(listing) {
 }
 
 function listingAnchorIsPresent(vout, authorization) {
-  if (
-    !saleAuthorizationHasAnchor(authorization) ||
-    authorization.version !== ID_SALE_AUTH_VERSION_ANCHORED ||
-    authorization.anchorType !== ID_LISTING_ANCHOR_TYPE_LEGACY
-  ) {
+  if (!saleAuthorizationHasAnchor(authorization)) {
+    return false;
+  }
+
+  if (authorization.version !== ID_SALE_AUTH_VERSION_ANCHORED && authorization.version !== ID_SALE_AUTH_VERSION_TICKET) {
+    return false;
+  }
+
+  if (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED && authorization.anchorType !== ID_LISTING_ANCHOR_TYPE_LEGACY) {
+    return false;
+  }
+
+  if (authorization.version === ID_SALE_AUTH_VERSION_TICKET && authorization.anchorType !== ID_LISTING_TICKET_ANCHOR_TYPE) {
     return false;
   }
 
@@ -1258,7 +1321,7 @@ function listingAnchorIsPresent(vout, authorization) {
 
 async function listingAnchorSpent(listing, network) {
   const anchor = listingAnchorOutpoint(listing);
-  if ((listing?.listingVersion !== "list3" && listing?.listingVersion !== "list4") || !anchor) {
+  if ((listing?.listingVersion !== "list3" && listing?.listingVersion !== "list4" && listing?.listingVersion !== "list5") || !anchor) {
     return false;
   }
 
@@ -1309,7 +1372,7 @@ function compareRegistryEventOrder(left, right) {
 
 function parseIdMarketplaceTransferPayload(payload, network) {
   const parts = payload.split(":");
-  if (payload.startsWith("buy3:") || payload.startsWith("buy4:")) {
+  if (payload.startsWith("buy3:") || payload.startsWith("buy4:") || payload.startsWith("buy5:")) {
     if (parts.length < 3 || parts.length > 4 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
       return null;
     }
@@ -1324,7 +1387,7 @@ function parseIdMarketplaceTransferPayload(payload, network) {
       listingId: listingId.toLowerCase(),
       ownerAddress: owner,
       receiveAddress,
-      transferVersion: payload.startsWith("buy4:") ? "buy4" : "buy3",
+      transferVersion: payload.startsWith("buy5:") ? "buy5" : payload.startsWith("buy4:") ? "buy4" : "buy3",
     };
   }
 
@@ -1369,7 +1432,7 @@ function parseIdMarketplaceTransferPayload(payload, network) {
 }
 
 function parseIdListingPayload(payload, network) {
-  const listingVersion = payload.startsWith("list4:") ? "list4" : payload.startsWith("list3:") ? "list3" : payload.startsWith("list2:") ? "list2" : "";
+  const listingVersion = payload.startsWith("list5:") ? "list5" : payload.startsWith("list4:") ? "list4" : payload.startsWith("list3:") ? "list3" : payload.startsWith("list2:") ? "list2" : "";
   if (!listingVersion) {
     return null;
   }
@@ -1396,8 +1459,32 @@ function parseIdListingPayload(payload, network) {
   };
 }
 
+function parseIdSaleSealPayload(payload, network) {
+  if (!payload.startsWith("seal5:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length !== 3 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
+    return null;
+  }
+
+  const [, listingId, authorizationEncoded] = parts;
+  let authorization;
+  try {
+    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), network);
+  } catch {
+    return null;
+  }
+
+  return {
+    listingId: listingId.toLowerCase(),
+    saleAuthorization: authorization,
+  };
+}
+
 function parseIdDelistingPayload(payload) {
-  const delistingVersion = payload.startsWith("delist4:") ? "delist4" : payload.startsWith("delist3:") ? "delist3" : payload.startsWith("delist2:") ? "delist2" : "";
+  const delistingVersion = payload.startsWith("delist5:") ? "delist5" : payload.startsWith("delist4:") ? "delist4" : payload.startsWith("delist3:") ? "delist3" : payload.startsWith("delist2:") ? "delist2" : "";
   if (!delistingVersion) {
     return null;
   }
@@ -1454,6 +1541,14 @@ function parseIdEventPayload(payload, network) {
     };
   }
 
+  const seal = parseIdSaleSealPayload(payload, network);
+  if (seal) {
+    return {
+      kind: "seal",
+      ...seal,
+    };
+  }
+
   const delisting = parseIdDelistingPayload(payload);
   if (delisting) {
     return {
@@ -1463,6 +1558,428 @@ function parseIdEventPayload(payload, network) {
   }
 
   return null;
+}
+
+function shortAddress(value) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-8)}` : value;
+}
+
+function networkLabel(network) {
+  if (network === "testnet4") {
+    return "Testnet4";
+  }
+
+  return network === "livenet" ? "Mainnet" : "Testnet3";
+}
+
+function activityStatusTag(confirmed) {
+  return confirmed ? "Confirmed" : "Pending";
+}
+
+function emptyMarketplaceStats() {
+  return {
+    confirmedSales: 0,
+    confirmedVolumeSats: 0,
+    pendingSales: 0,
+    pendingVolumeSats: 0,
+    totalSales: 0,
+    totalVolumeSats: 0,
+  };
+}
+
+function marketplaceStatsFromSales(sales) {
+  return sales.reduce((stats, sale) => {
+    if (sale.confirmed) {
+      stats.confirmedSales += 1;
+      stats.confirmedVolumeSats += sale.priceSats;
+    } else {
+      stats.pendingSales += 1;
+      stats.pendingVolumeSats += sale.priceSats;
+    }
+
+    stats.totalSales += 1;
+    stats.totalVolumeSats += sale.priceSats;
+    return stats;
+  }, emptyMarketplaceStats());
+}
+
+function publicMarketplaceSales(sales) {
+  return sales.filter((sale) => sale.transferVersion === "buy5");
+}
+
+function compareMarketplaceSales(left, right) {
+  return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.txid.localeCompare(left.txid);
+}
+
+function compareActivityItems(left, right) {
+  return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.txid.localeCompare(left.txid);
+}
+
+function idActivityItemsFromEvents(events) {
+  return events.map((event) => {
+    const status = activityStatusTag(event.confirmed);
+    const base = {
+      amountSats: event.amountSats,
+      actor: event.inputAddresses[0],
+      confirmed: event.confirmed,
+      createdAt: event.createdAt,
+      dataBytes: event.dataBytes ?? 0,
+      network: event.network,
+      tags: [status, networkLabel(event.network), `${event.amountSats.toLocaleString()} sats`],
+      txid: event.txid,
+    };
+
+    if (event.kind === "register") {
+      return {
+        ...base,
+        counterparty: event.receiveAddress,
+        description: `${event.id}@proofofwork.me claimed by ${shortAddress(event.ownerAddress)} and routed to ${shortAddress(event.receiveAddress)}.`,
+        detail: event.pgpKey ? "PGP key registered" : "No PGP key",
+        id: event.id,
+        kind: "id-register",
+        tags: [...base.tags, "Registration"],
+        title: event.confirmed ? "ID registered" : "ID registration pending",
+      };
+    }
+
+    if (event.kind === "update") {
+      return {
+        ...base,
+        counterparty: event.receiveAddress,
+        description: `${event.id}@proofofwork.me receive address updated to ${shortAddress(event.receiveAddress)}.`,
+        id: event.id,
+        kind: "id-update",
+        tags: [...base.tags, "Receiver update"],
+        title: event.confirmed ? "Receiver updated" : "Receiver update pending",
+      };
+    }
+
+    if (event.kind === "transfer") {
+      return {
+        ...base,
+        counterparty: event.ownerAddress,
+        description: `${event.id}@proofofwork.me transferred to ${shortAddress(event.ownerAddress)} and routed to ${shortAddress(event.receiveAddress)}.`,
+        id: event.id,
+        kind: "id-transfer",
+        tags: [...base.tags, "Transfer"],
+        title: event.confirmed ? "ID transferred" : "ID transfer pending",
+      };
+    }
+
+    if (event.kind === "list") {
+      const anchorVout = event.saleAuthorization.anchorVout ?? ID_LISTING_ANCHOR_VOUT;
+      return {
+        ...base,
+        actor: event.sellerAddress,
+        counterparty: event.saleAuthorization.buyerAddress,
+        description: `${event.id}@proofofwork.me listed for ${event.priceSats.toLocaleString()} sats by ${shortAddress(event.sellerAddress)}.`,
+        detail: event.listingVersion === "list5" ? "Sale-ticket listing" : "Legacy listing",
+        id: event.id,
+        kind: "id-list",
+        listingId: event.txid,
+        tags: [...base.tags, "Listing", `${event.priceSats.toLocaleString()} sale sats`],
+        title: event.confirmed ? "ID listed" : "ID listing pending",
+        utxo: `${event.txid}:${anchorVout}`,
+      };
+    }
+
+    if (event.kind === "seal") {
+      return {
+        ...base,
+        description: `Sale ticket sealed for listing ${shortAddress(event.listingId)}.`,
+        detail: "Seller signature published on chain",
+        kind: "id-seal",
+        listingId: event.listingId,
+        tags: [...base.tags, "Seal"],
+        title: event.confirmed ? "Sale ticket sealed" : "Sale-ticket seal pending",
+      };
+    }
+
+    if (event.kind === "delist") {
+      return {
+        ...base,
+        description: `Listing ${shortAddress(event.listingId)} delisted by spending its sale ticket.`,
+        detail: event.delistingVersion,
+        kind: "id-delist",
+        listingId: event.listingId,
+        tags: [...base.tags, "Delisting"],
+        title: event.confirmed ? "Listing delisted" : "Delisting pending",
+      };
+    }
+
+    return {
+      ...base,
+      actor: event.ownerAddress,
+      counterparty: event.sellerAddress,
+      description: `${event.id ? `${event.id}@proofofwork.me` : "ID"} purchased by ${shortAddress(event.ownerAddress)}${event.sellerAddress ? ` from ${shortAddress(event.sellerAddress)}` : ""}.`,
+      detail: event.listingId ? `Listing ${shortAddress(event.listingId)}` : undefined,
+      id: event.id,
+      kind: "id-buy",
+      listingId: event.listingId,
+      tags: [...base.tags, "Marketplace buy", event.priceSats ? `${event.priceSats.toLocaleString()} sale sats` : ""].filter(Boolean),
+      title: event.confirmed ? "ID purchased" : "ID purchase pending",
+    };
+  });
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function compactText(value, maxLength = 140) {
+  const text = String(value ?? "").replace(/\s+/gu, " ").trim();
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
+}
+
+function activityKey(item) {
+  return `${item.kind}:${item.network}:${item.txid}:${item.listingId ?? ""}:${item.id ?? ""}`;
+}
+
+function dedupeActivityItems(items) {
+  const merged = new Map();
+
+  for (const item of items) {
+    if (!item?.txid) {
+      continue;
+    }
+
+    const key = activityKey(item);
+    const current = merged.get(key);
+    if (!current || (item.confirmed && !current.confirmed)) {
+      merged.set(key, item);
+    }
+  }
+
+  return [...merged.values()].sort(compareActivityItems);
+}
+
+function totalProtocolDataBytes(items) {
+  const bytesByTxid = new Map();
+
+  for (const item of items) {
+    if (!item?.txid || !Number.isFinite(item.dataBytes) || item.dataBytes <= 0) {
+      continue;
+    }
+
+    bytesByTxid.set(item.txid, Math.max(bytesByTxid.get(item.txid) ?? 0, item.dataBytes));
+  }
+
+  return [...bytesByTxid.values()].reduce((total, bytes) => total + bytes, 0);
+}
+
+function mailActivityItemFromTransaction(tx, network) {
+  const vin = Array.isArray(tx.vin) ? tx.vin : [];
+  const vout = Array.isArray(tx.vout) ? tx.vout : [];
+  const protocolMessage = extractProtocolMemo(vout);
+  const txid = transactionTxid(tx);
+
+  if (!protocolMessage || !txid) {
+    return null;
+  }
+
+  const confirmed = transactionConfirmed(tx);
+  const blockTime = typeof tx.status?.block_time === "number" ? tx.status.block_time * 1000 : Date.now();
+  const createdAt = new Date(blockTime).toISOString();
+  const recipients = protocolPaymentOutputs(vout);
+  const amountSats = recipients.reduce((total, recipient) => total + recipient.amountSats, 0);
+  const actor = senderAddress(vin, "");
+  const counterparty = recipients.length === 0 ? "Unknown" : recipients.length === 1 ? recipients[0].display : `${recipients[0].display} +${recipients.length - 1}`;
+  const isFile = Boolean(protocolMessage.attachment);
+  const isReply = Boolean(protocolMessage.parentTxid);
+  const kind = isFile ? "file" : isReply ? "reply" : "mail";
+  const noun = isFile ? "file" : isReply ? "reply" : "mail";
+  const title = `${isFile ? "File" : isReply ? "Reply" : "Mail"} ${confirmed ? "sent" : "pending"}`;
+  const detail = protocolMessage.attachment
+    ? `${protocolMessage.attachment.name} · ${formatBytes(protocolMessage.attachment.size)} · ${protocolMessage.attachment.mime}`
+    : protocolMessage.subject
+      ? `Subject: ${protocolMessage.subject}`
+      : compactText(protocolMessage.memo, 120) || "No message body";
+
+  return {
+    amountSats,
+    actor,
+    confirmed,
+    counterparty,
+    createdAt,
+    dataBytes: proofProtocolDataBytesForVout(vout),
+    description: `${shortAddress(actor)} sent ${noun} to ${counterparty}${amountSats > 0 ? ` for ${amountSats.toLocaleString()} sats` : ""}.`,
+    detail,
+    kind,
+    network,
+    tags: [
+      activityStatusTag(confirmed),
+      networkLabel(network),
+      isFile ? "Attachment" : isReply ? "Reply" : "Message",
+      recipients.length > 1 ? `${recipients.length} recipients` : "1 recipient",
+      amountSats > 0 ? `${amountSats.toLocaleString()} sats` : "",
+    ].filter(Boolean),
+    title,
+    txid,
+  };
+}
+
+function mailActivityItemsFromTransactions(txs, network) {
+  return dedupeTransactions(txs)
+    .map((tx) => mailActivityItemFromTransaction(tx, network))
+    .filter(Boolean);
+}
+
+function addActivityAddress(addresses, address, network) {
+  if (typeof address === "string" && isValidBitcoinAddress(address, network)) {
+    addresses.add(address);
+  }
+}
+
+function activityAddressesFromRegistry(registry, network) {
+  const addresses = new Set();
+
+  for (const record of registry.records ?? []) {
+    addActivityAddress(addresses, record.ownerAddress, network);
+    addActivityAddress(addresses, record.receiveAddress, network);
+  }
+
+  for (const event of registry.pendingEvents ?? []) {
+    for (const inputAddress of event.inputAddresses ?? []) {
+      addActivityAddress(addresses, inputAddress, network);
+    }
+    addActivityAddress(addresses, event.currentOwnerAddress, network);
+    addActivityAddress(addresses, event.currentReceiveAddress, network);
+    addActivityAddress(addresses, event.ownerAddress, network);
+    addActivityAddress(addresses, event.receiveAddress, network);
+    addActivityAddress(addresses, event.sellerAddress, network);
+  }
+
+  for (const listing of registry.listings ?? []) {
+    addActivityAddress(addresses, listing.sellerAddress, network);
+    addActivityAddress(addresses, listing.buyerAddress, network);
+    addActivityAddress(addresses, listing.receiveAddress, network);
+  }
+
+  for (const item of registry.activity ?? []) {
+    addActivityAddress(addresses, item.actor, network);
+    addActivityAddress(addresses, item.counterparty, network);
+  }
+
+  return [...addresses].slice(0, MAX_ACTIVITY_ADDRESSES);
+}
+
+function activityAddressesFromMailTransactions(txs, network) {
+  const addresses = new Set();
+
+  for (const tx of txs) {
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
+    const vout = Array.isArray(tx.vout) ? tx.vout : [];
+    if (!extractProtocolMemo(vout)) {
+      continue;
+    }
+
+    for (const address of inputAddresses(vin)) {
+      addActivityAddress(addresses, address, network);
+    }
+
+    for (const recipient of protocolPaymentOutputs(vout)) {
+      addActivityAddress(addresses, recipient.address, network);
+    }
+  }
+
+  return addresses;
+}
+
+async function globalActivityPayload(network) {
+  const cacheKey = network;
+  const cached = GLOBAL_ACTIVITY_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < ACTIVITY_CACHE_TTL_MS) {
+    return cached.payload;
+  }
+
+  const registry = await registryPayload(network);
+  const seenAddresses = new Set();
+  const queuedAddresses = activityAddressesFromRegistry(registry, network);
+  const mailTxs = [];
+
+  let graphPasses = 0;
+  while (queuedAddresses.length > 0 && seenAddresses.size < MAX_ACTIVITY_ADDRESSES && graphPasses < MAX_ACTIVITY_ADDRESS_GRAPH_PASSES) {
+    graphPasses += 1;
+    const passCount = queuedAddresses.length;
+    let processedInPass = 0;
+
+    while (queuedAddresses.length > 0 && processedInPass < passCount && seenAddresses.size < MAX_ACTIVITY_ADDRESSES) {
+      const batch = queuedAddresses.splice(0, Math.max(1, TX_FETCH_CONCURRENCY)).filter((address) => !seenAddresses.has(address));
+      if (batch.length === 0) {
+        continue;
+      }
+      processedInPass += batch.length;
+
+      for (const address of batch) {
+        seenAddresses.add(address);
+      }
+
+      const addressTxGroups = await mapWithConcurrency(batch, TX_FETCH_CONCURRENCY, async (address) => {
+        try {
+          return await fetchAddressTransactionsViaMempoolPagination(address, network, 3);
+        } catch {
+          return [];
+        }
+      });
+      const batchTxs = addressTxGroups.flat();
+      mailTxs.push(...batchTxs);
+
+      for (const discoveredAddress of activityAddressesFromMailTransactions(batchTxs, network)) {
+        if (!seenAddresses.has(discoveredAddress) && seenAddresses.size + queuedAddresses.length < MAX_ACTIVITY_ADDRESSES) {
+          queuedAddresses.push(discoveredAddress);
+        }
+      }
+    }
+  }
+
+  const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
+  const activity = dedupeActivityItems([...(registry.activity ?? []), ...mailActivity]);
+  const dataBytes = totalProtocolDataBytes(activity);
+  const fileActions = activity.filter((item) => item.kind === "file").length;
+  const messageActions = activity.filter((item) => item.kind === "mail" || item.kind === "reply").length;
+
+  const payload = {
+    activity,
+    indexedAt: new Date().toISOString(),
+    network,
+    source: mempoolBase(network),
+    stats: {
+      addresses: seenAddresses.size,
+      dataBytes,
+      files: fileActions,
+      messages: messageActions,
+      pending: activity.filter((item) => !item.confirmed).length,
+      registry: (registry.activity ?? []).length,
+      total: activity.length,
+    },
+  };
+
+  GLOBAL_ACTIVITY_CACHE.set(cacheKey, {
+    createdAt: Date.now(),
+    payload,
+  });
+
+  return payload;
 }
 
 function idRegistryStateFromTransactions(txs, registryAddress, network) {
@@ -1495,6 +2012,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       blockIndex: transactionBlockIndex(tx),
       confirmed: transactionConfirmed(tx),
       createdAt: new Date(blockTime).toISOString(),
+      dataBytes: proofProtocolDataBytesForVout(vout),
       inputAddresses: inputAddresses(vin),
       network,
       txid,
@@ -1560,6 +2078,18 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       ];
     }
 
+    if (eventMessage.kind === "seal") {
+      return [
+        {
+          ...baseEvent,
+          kind: "seal",
+          listingId: eventMessage.listingId,
+          saleAuthorization: eventMessage.saleAuthorization,
+          spentOutpoints: eventSpentOutpoints,
+        },
+      ];
+    }
+
     if (eventMessage.kind === "delist") {
       return [
         {
@@ -1591,6 +2121,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
   const records = new Map();
   const listings = new Map();
+  const confirmedSales = [];
 
   function invalidateListingsForId(id) {
     for (const [listingId, listing] of listings) {
@@ -1624,15 +2155,47 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     if (event.kind === "delist") {
       const listing = listings.get(event.listingId);
       const current = listing ? records.get(listing.id) : undefined;
-      const anchorOk = event.delistingVersion !== "delist3" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
+      const anchorOk =
+        (event.delistingVersion !== "delist3" && event.delistingVersion !== "delist5") ||
+        (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
       if (listing && current && event.inputAddresses.includes(current.ownerAddress) && anchorOk) {
         listings.delete(event.listingId);
       }
       continue;
     }
 
+    if (event.kind === "seal") {
+      const listing = listings.get(event.listingId);
+      const current = listing ? records.get(listing.id) : undefined;
+      if (
+        !listing ||
+        !current ||
+        listing.listingVersion !== "list5" ||
+        current.ownerAddress !== listing.sellerAddress ||
+        !event.inputAddresses.includes(current.ownerAddress) ||
+        !saleAuthorizationUsesSaleTicketAnchor(event.saleAuthorization) ||
+        event.saleAuthorization.anchorTxid !== listing.listingId ||
+        !saleAuthorizationTermsMatchIgnoringSeal(listing.saleAuthorization, event.saleAuthorization)
+      ) {
+        continue;
+      }
+
+      listings.set(event.listingId, {
+        ...listing,
+        anchorSigHashType: event.saleAuthorization.anchorSigHashType,
+        anchorSignature: event.saleAuthorization.anchorSignature,
+        anchorTxid: listing.listingId,
+        saleAuthorization: {
+          ...event.saleAuthorization,
+          anchorTxid: listing.listingId,
+        },
+        sealTxid: event.txid,
+      });
+      continue;
+    }
+
     if (event.kind === "marketTransfer") {
-      if (event.transferVersion === "buy3" || event.transferVersion === "buy4") {
+      if (event.transferVersion === "buy3" || event.transferVersion === "buy4" || event.transferVersion === "buy5") {
         const listing = event.listingId ? listings.get(event.listingId) : undefined;
         const current = listing ? records.get(listing.id) : undefined;
         const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
@@ -1641,6 +2204,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           !current ||
           (event.transferVersion === "buy3" && listing.listingVersion !== "list3") ||
           (event.transferVersion === "buy4" && listing.listingVersion !== "list4") ||
+          (event.transferVersion === "buy5" && listing.listingVersion !== "list5") ||
           current.ownerAddress !== listing.sellerAddress ||
           !spendsListingAnchor(event.spentOutpoints, listing) ||
           sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
@@ -1657,6 +2221,20 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           createdAt: event.createdAt,
           ownerAddress: event.ownerAddress,
           receiveAddress: event.receiveAddress,
+          txid: event.txid,
+        });
+        confirmedSales.push({
+          amountSats: event.amountSats,
+          buyerAddress: event.ownerAddress,
+          confirmed: true,
+          createdAt: event.createdAt,
+          id: listing.id,
+          listingId: listing.listingId,
+          network: event.network,
+          priceSats: listing.priceSats,
+          receiveAddress: event.receiveAddress,
+          sellerAddress: listing.sellerAddress,
+          transferVersion: event.transferVersion,
           txid: event.txid,
         });
         invalidateListingsForId(listing.id);
@@ -1687,6 +2265,20 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           receiveAddress: event.receiveAddress,
           txid: event.txid,
         });
+        confirmedSales.push({
+          amountSats: event.amountSats,
+          buyerAddress: event.ownerAddress,
+          confirmed: true,
+          createdAt: event.createdAt,
+          id: event.id,
+          listingId: matchingListing?.listingId,
+          network: event.network,
+          priceSats: event.priceSats,
+          receiveAddress: event.receiveAddress,
+          sellerAddress: event.sellerAddress,
+          transferVersion: event.transferVersion,
+          txid: event.txid,
+        });
         invalidateListingsForId(event.id);
       }
       continue;
@@ -1704,6 +2296,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
         (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
         (event.listingVersion === "list4" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
+        (event.listingVersion === "list5" && (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET || !event.listingAnchorPresent)) ||
         (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
       ) {
         continue;
@@ -1769,7 +2362,9 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       if (event.kind === "delist") {
         const listing = listings.get(event.listingId);
         const current = listing ? records.get(listing.id) : undefined;
-        const anchorOk = event.delistingVersion !== "delist3" || (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
+        const anchorOk =
+          (event.delistingVersion !== "delist3" && event.delistingVersion !== "delist5") ||
+          (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
         if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress) || !anchorOk) {
           return [];
         }
@@ -1791,8 +2386,41 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         ];
       }
 
+      if (event.kind === "seal") {
+        const listing = listings.get(event.listingId);
+        const current = listing ? records.get(listing.id) : undefined;
+        if (
+          !listing ||
+          !current ||
+          listing.listingVersion !== "list5" ||
+          current.ownerAddress !== listing.sellerAddress ||
+          !event.inputAddresses.includes(current.ownerAddress) ||
+          !saleAuthorizationUsesSaleTicketAnchor(event.saleAuthorization) ||
+          event.saleAuthorization.anchorTxid !== listing.listingId ||
+          !saleAuthorizationTermsMatchIgnoringSeal(listing.saleAuthorization, event.saleAuthorization)
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            amountSats: event.amountSats,
+            createdAt: event.createdAt,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+            id: listing.id,
+            inputAddresses: event.inputAddresses,
+            kind: "seal",
+            listingId: event.listingId,
+            network: event.network,
+            sellerAddress: listing.sellerAddress,
+            txid: event.txid,
+          },
+        ];
+      }
+
       if (event.kind === "marketTransfer") {
-        if (event.transferVersion === "buy3" || event.transferVersion === "buy4") {
+        if (event.transferVersion === "buy3" || event.transferVersion === "buy4" || event.transferVersion === "buy5") {
           const listing = event.listingId ? listings.get(event.listingId) : undefined;
           const current = listing ? records.get(listing.id) : undefined;
           const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
@@ -1801,6 +2429,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
             !current ||
             (event.transferVersion === "buy3" && listing.listingVersion !== "list3") ||
             (event.transferVersion === "buy4" && listing.listingVersion !== "list4") ||
+            (event.transferVersion === "buy5" && listing.listingVersion !== "list5") ||
             current.ownerAddress !== listing.sellerAddress ||
             !spendsListingAnchor(event.spentOutpoints, listing) ||
             sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
@@ -1826,6 +2455,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
               priceSats: listing.priceSats,
               receiveAddress: event.receiveAddress,
               sellerAddress: listing.sellerAddress,
+              transferVersion: event.transferVersion,
               txid: event.txid,
             },
           ];
@@ -1861,6 +2491,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
               priceSats: event.priceSats,
               receiveAddress: event.receiveAddress,
               sellerAddress: event.sellerAddress,
+              transferVersion: event.transferVersion,
               txid: event.txid,
             },
           ];
@@ -1881,6 +2512,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
           (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
           (event.listingVersion === "list4" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
+          (event.listingVersion === "list5" && (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET || !event.listingAnchorPresent)) ||
           (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
         ) {
           return [];
@@ -1942,6 +2574,31 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     })
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
 
+  const pendingSales = pendingEvents
+    .filter((event) =>
+      event.kind === "marketTransfer" &&
+      event.id &&
+      event.ownerAddress &&
+      Number.isSafeInteger(event.priceSats) &&
+      event.priceSats >= 0 &&
+      event.receiveAddress &&
+      event.sellerAddress
+    )
+    .map((event) => ({
+      amountSats: event.amountSats,
+      buyerAddress: event.ownerAddress,
+      confirmed: false,
+      createdAt: event.createdAt,
+      id: event.id,
+      listingId: event.listingId,
+      network: event.network,
+      priceSats: event.priceSats,
+      receiveAddress: event.receiveAddress,
+      sellerAddress: event.sellerAddress,
+      transferVersion: event.transferVersion,
+      txid: event.txid,
+    }));
+
   for (const event of pendingRegistrations) {
     if (!records.has(event.id)) {
       accepted.push({
@@ -1959,9 +2616,11 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
   }
 
   return {
+    activity: idActivityItemsFromEvents(events).sort(compareActivityItems),
     listings: [...listings.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid)),
     pendingEvents,
     records: accepted,
+    sales: publicMarketplaceSales([...confirmedSales, ...pendingSales]).sort(compareMarketplaceSales),
   };
 }
 
@@ -2057,13 +2716,21 @@ async function registryPayload(network) {
   const registryAddress = registryAddressForNetwork(network);
   if (!registryAddress) {
     return {
+      activity: [],
       indexedAt: new Date().toISOString(),
       network,
       records: [],
       registryAddress: "",
+      sales: [],
       stats: {
         confirmed: 0,
+        confirmedSales: 0,
+        confirmedSalesVolumeSats: 0,
         pending: 0,
+        pendingSales: 0,
+        pendingSalesVolumeSats: 0,
+        sales: 0,
+        salesVolumeSats: 0,
         total: 0,
       },
     };
@@ -2072,23 +2739,32 @@ async function registryPayload(network) {
   const txs = await fetchRegistryTransactions(registryAddress, network);
   const state = idRegistryStateFromTransactions(txs, registryAddress, network);
   const listings = await filterSpendableListings(state.listings, network);
-  const { pendingEvents, records } = state;
+  const { activity, pendingEvents, records, sales } = state;
+  const marketplaceStats = marketplaceStatsFromSales(sales);
   const confirmed = records.filter((record) => record.confirmed).length;
   const pendingRecords = records.length - confirmed;
 
   return {
+    activity,
     indexedAt: new Date().toISOString(),
     listings,
     network,
     pendingEvents,
     records,
     registryAddress,
+    sales,
     source: mempoolBase(network),
     stats: {
       confirmed,
+      confirmedSales: marketplaceStats.confirmedSales,
+      confirmedSalesVolumeSats: marketplaceStats.confirmedVolumeSats,
       pending: pendingRecords + pendingEvents.length,
       pendingChanges: pendingEvents.length,
       pendingRecords,
+      pendingSales: marketplaceStats.pendingSales,
+      pendingSalesVolumeSats: marketplaceStats.pendingVolumeSats,
+      sales: marketplaceStats.totalSales,
+      salesVolumeSats: marketplaceStats.totalVolumeSats,
       total: records.length,
       transactions: txs.length,
     },
@@ -2195,6 +2871,11 @@ async function handleRequest(request, response) {
 
     if (url.pathname === "/api/v1/registry" || url.pathname === "/api/v1/ids") {
       jsonResponse(response, 200, await registryPayload(network), "public, max-age=15");
+      return;
+    }
+
+    if (url.pathname === "/api/v1/activity" || url.pathname === "/api/v1/log") {
+      jsonResponse(response, 200, await globalActivityPayload(network), "public, max-age=15");
       return;
     }
 

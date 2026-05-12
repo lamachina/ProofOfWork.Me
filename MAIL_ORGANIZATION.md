@@ -11,6 +11,8 @@ proofofwork.me              landing page
 id.proofofwork.me           focused ProofOfWork ID registry onboarding app
 computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
+marketplace.proofofwork.me  standalone ID marketplace
+log.proofofwork.me          public Bitcoin Computer log
 ```
 
 Mail organization features that are already implemented in the full app:
@@ -27,11 +29,15 @@ Mail organization features that are already implemented in the full app:
 - Reply All for multi-recipient mail.
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
+- Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
+- Log surface for tx-backed registry, marketplace, mail, reply, file, and attachment actions.
 - Export/import for local drafts, archive/favorite preferences, theme, and sent/outbox tracking.
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
 - First-party OP_RETURN API reads for production mainnet mail, files, registry, and tx status when `VITE_POW_API_BASE` is configured.
 
 Future developers should keep `id.proofofwork.me` narrow. Do not pull the full mailbox UI into the Phase 1 registry launch unless the launch scope explicitly changes.
+Marketplace actions should stay outside the mailbox folders. Keep ID trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders.
+Log is not a mailbox folder. It is a read-only Bitcoin Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, and attachments.
 
 ## Core Idea
 

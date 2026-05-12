@@ -15,9 +15,10 @@ Do not change these without an explicit migration plan:
 - Registration event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
 - Receiver update event: `pwid1:u:<id-base64url>:<receive-address>`
 - Transfer event: `pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>`
-- Listing event: `pwid1:list4:<sale-authorization-json-base64url>`
-- Delisting event: `pwid1:delist4:<listing-txid>`
-- Buyer-funded marketplace transfer event: `pwid1:buy4:<listing-txid>:<new-owner-address>:<new-receive-address?>`
+- Listing event: `pwid1:list5:<sale-ticket-json-base64url>`
+- Sale-ticket seal event: `pwid1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>`
+- Delisting event: `pwid1:delist5:<listing-txid>`
+- Buyer-funded marketplace transfer event: `pwid1:buy5:<listing-txid>:<new-owner-address>:<new-receive-address?>`
 - Resolver rule: first confirmed valid registration wins
 - Casing rule: IDs are case-insensitive forever
 - Pending rule: pending IDs are visible but not final, and mail must not route to them
@@ -93,6 +94,7 @@ id.proofofwork.me
 
 The ID subdomain renders a focused mainnet claim flow using the same registry address and `pwid1:r2` protocol. It is intentionally narrower than the full mail app: connect UniSat, check availability, register, view registry stats, view owned IDs, view public registry records, and verify owned/routed IDs on X. Do not put ID transfer, management, or marketplace tools on `id.proofofwork.me`; those belong in the Computer app and the standalone Marketplace app.
 Inside `computer.proofofwork.me`, the IDs workspace is limited to registration, receiver updates, and direct owner transfers. Marketplace is a dedicated sidebar workspace for listing owned confirmed IDs and executing buyer-funded transfers.
+All registry-facing UI surfaces should include search once the registry grows: public registry, owned IDs, pending ID events, active marketplace listings, and registry supply lists should be searchable by ID, full `user@proofofwork.me`, owner/receiver address, txid, network, status, and sats where relevant.
 
 Production domains:
 
@@ -102,11 +104,13 @@ id.proofofwork.me           focused ID registry app
 computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
 marketplace.proofofwork.me  standalone ID marketplace
+log.proofofwork.me          public Bitcoin Computer log
 ```
 
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
-The Marketplace subdomain can connect UniSat, publish hardened on-chain listings for owned confirmed IDs, delist active listings, and execute buyer-funded `pwid1:buy4` transfers.
+The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers.
+The Log subdomain is read-only. It exposes a unified Bitcoin Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, and attachments.
 
 Local preview:
 
@@ -128,6 +132,12 @@ Marketplace-only build:
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
 ```
 
+Log-only build:
+
+```bash
+VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
+```
+
 Current registration payload:
 
 ```text
@@ -139,15 +149,16 @@ Current mutation payloads:
 ```text
 pwid1:u:<id-base64url>:<receive-address>
 pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>
-pwid1:list4:<sale-authorization-json-base64url>
-pwid1:delist4:<listing-txid>
-pwid1:buy4:<listing-txid>:<new-owner-address>:<new-receive-address?>
+pwid1:list5:<sale-ticket-json-base64url>
+pwid1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwid1:delist5:<listing-txid>
+pwid1:buy5:<listing-txid>:<new-owner-address>:<new-receive-address?>
 ```
 
 Rules:
 
 - `pwid1:r2` registration transactions must pay at least `1000` sats to the registry address.
-- `pwid1:u`, `pwid1:t`, `pwid1:list4`, `pwid1:delist4`, and `pwid1:buy4` transactions must pay at least `546` sats to the registry address.
+- `pwid1:u`, `pwid1:t`, `pwid1:list5`, `pwid1:seal5`, `pwid1:delist5`, and `pwid1:buy5` transactions must pay at least `546` sats to the registry address.
 - The registry payment output must appear before the ID OP_RETURN output in the transaction.
 - The OP_RETURN must start with `pwid1:`.
 - Registrations, receiver updates, and transfers all use the same canonical registry address.
@@ -155,15 +166,18 @@ Rules:
 - `pwid1:u` changes only the receive address. The owner remains unchanged.
 - `pwid1:t` changes ownership. If the new receive address is omitted, the new owner address also becomes the receive address.
 - App UI may accept confirmed ProofOfWork IDs as transfer owner or receive targets, but the written `pwid1:u` and `pwid1:t` events must still contain resolved Bitcoin addresses.
-- `pwid1:list4` publishes sale terms as an active marketplace listing. The listing txid is the listing ID, and the sale authorization reserves an existing seller wallet UTXO as the listing anchor.
-- `pwid1:delist4` cancels an active listing by listing txid. The transaction must be funded by the current owner; it does not need to spend the reserved seller UTXO.
-- Any confirmed ownership transfer through `pwid1:t` or `pwid1:buy4` automatically invalidates all active listings for that ID.
-- `pwid1:buy4` changes ownership using active on-chain sale terms from a current-owner `list4` transaction. The buyer must spend the seller-reserved anchor, so competing buys conflict as double-spends.
-- A `buy4` transaction must pay the 546 sat mutation fee before the ID OP_RETURN and must also pay the listed sale price plus anchor refund to the current owner before the ID OP_RETURN.
-- A `list4` sale authorization uses JSON version `pwid-sale-v3` and includes the ID, seller address, seller public key, price, optional buyer lock, optional receive-address lock, nonce, optional expiry, seller UTXO anchor outpoint/value/script, and a seller `SIGHASH_SINGLE|ANYONECANPAY` anchor signature.
-- The resolver applies `buy4` only when the referenced active listing exists, the current owner still matches the seller, the transaction spends the listing anchor, seller payment is sufficient, and the buyer/receiver constraints match the event.
-- Historical `pwid1:list2`, `pwid1:delist2`, `pwid1:buy2`, `pwid1:list3`, `pwid1:delist3`, and `pwid1:buy3` events remain readable for replay, but new marketplace writes must use `list4`/`delist4`/`buy4`.
-- Sale terms are public on-chain listing objects. Anyone can execute an open listing by paying the listed price, refunding the anchor, paying the mutation fee, and spending the anchor.
+- `pwid1:list5` publishes sale terms as an active marketplace listing and creates a 546 sat seller-controlled sale-ticket UTXO in the listing transaction.
+- `pwid1:seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` signature for the sale ticket after the listing txid exists, with `anchorTxid` set to the referenced listing txid.
+- `pwid1:delist5` cancels an active listing by spending the sale ticket and paying the mutation fee.
+- Any confirmed ownership transfer through `pwid1:t` or `pwid1:buy5` automatically invalidates all active listings for that ID.
+- `pwid1:buy5` changes ownership using active on-chain sale terms from a current-owner `list5` transaction and matching `seal5` event. The buyer must spend the sale ticket, so competing buys conflict as double-spends.
+- A `buy5` transaction must pay the 546 sat mutation fee before the ID OP_RETURN and must also pay the listed sale price plus ticket value to the current owner before the ID OP_RETURN.
+- A `list5` sale authorization uses JSON version `pwid-sale-v4` and includes the ID, seller address, seller public key, price, optional buyer lock, optional receive-address lock, nonce, optional expiry, sale-ticket vout/value/script, and a `sale-ticket-v1` anchor type. A matching `seal5` adds the seller's `SIGHASH_SINGLE|ANYONECANPAY` anchor signature.
+- A `seal5` is valid only when its sealed authorization keeps the same terms as the `list5` authorization and its `anchorTxid` equals the listing txid. Listings without a matching valid seal are visible but not purchasable.
+- Sale-ticket seals may use wallet-returned ECDSA partial signatures or Taproot key signatures.
+- The resolver applies `buy5` only when the referenced active listing exists, the current owner still matches the seller, the transaction spends the sale ticket, seller payment is sufficient, and the buyer/receiver constraints match the event.
+- Historical `pwid1:list2`, `pwid1:delist2`, `pwid1:buy2`, `pwid1:list3`, `pwid1:delist3`, `pwid1:buy3`, `pwid1:list4`, `pwid1:delist4`, and `pwid1:buy4` events remain readable for replay, but new marketplace writes must use `list5`/`seal5`/`delist5`/`buy5`.
+- Sale terms are public on-chain listing objects. Anyone can execute an open sealed listing by paying the listed price, refunding the ticket, paying the mutation fee, and spending the sale ticket.
 - IDs are case-insensitive forever. `User`, `user`, and `USER` all resolve to `user`.
 - The app normalizes IDs to lowercase for writing, display, lookup, and first-claim comparisons.
 - There is no arbitrary app-level ID length or character whitelist.
@@ -175,7 +189,7 @@ Rules:
 - First confirmed valid registration wins.
 - Pending registrations can be displayed, but are not final.
 - Pending transfers/receiver updates are not applied to canonical routing until confirmed.
-- Pending `u`, `t`, `list4`, `delist4`, and `buy4` events should be exposed separately from confirmed records. The sender/current owner sees outgoing events; the new owner or new receiver sees incoming events; marketplace participants see listing, delisting, and purchase events that touch their wallet.
+- Pending `u`, `t`, `list5`, `seal5`, `delist5`, and `buy5` events should be exposed separately from confirmed records. The sender/current owner sees outgoing events; the new owner or new receiver sees incoming events; marketplace participants see listing, sealing, delisting, and purchase events that touch their wallet.
 - The compose flow must not route mail to a pending ID. IDs are sendable only after a confirmed registry record resolves to a receive address.
 - Public Desktop search follows the same confirmed-only ID resolver rule.
 - Duplicate confirmed registrations are ignored by the resolver.
@@ -212,9 +226,10 @@ Possible registry events:
 pwid1:r2:<id-base64url>:<owner>:<receiver>:<pgp-public-key-base64url?>
 pwid1:u:<id-base64url>:<receiver>
 pwid1:t:<id-base64url>:<new-owner>:<new-receiver?>
-pwid1:list4:<sale-authorization-json-base64url>
-pwid1:delist4:<listing-txid>
-pwid1:buy4:<listing-txid>:<new-owner>:<new-receiver?>
+pwid1:list5:<sale-ticket-json-base64url>
+pwid1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwid1:delist5:<listing-txid>
+pwid1:buy5:<listing-txid>:<new-owner>:<new-receiver?>
 pwid1:k:<id-base64url>:<pgp-public-key-base64url>
 pwid1:bid:<id-base64url>:<bidder>:<price>:<currency>
 pwid1:accept:<id-base64url>:<bid-txid>
@@ -226,11 +241,11 @@ Rules to preserve:
 - All event ID fields should be base64url encoded and normalized case-insensitively by resolvers.
 - `r2` is valid only if the ID is unclaimed.
 - `r2` requires at least `1000` sats to the registry address.
-- `u`, `t`, `k`, `list4`, `delist4`, and `accept` are valid only from the current owner.
-- `u`, `t`, `list4`, `delist4`, and `buy4` require at least `546` sats to the registry address.
-- `u`, `t`, `list4`, `delist4`, and `buy4` are live registry events.
-- `buy4` is valid only with a matching active hardened listing, a spent listing anchor, and matching seller payment.
-- `buy4` is valid only against current ownership; marketplace UIs should prefer active `list4` listings.
+- `u`, `t`, `k`, `list5`, `seal5`, `delist5`, and `accept` are valid only from the current owner.
+- `u`, `t`, `list5`, `seal5`, `delist5`, and `buy5` require at least `546` sats to the registry address.
+- `u`, `t`, `list5`, `seal5`, `delist5`, and `buy5` are live registry events.
+- `buy5` is valid only with a matching active sealed sale-ticket listing, a spent sale ticket, and matching seller payment.
+- `buy5` is valid only against current ownership; marketplace UIs should prefer active sealed `list5` listings.
 - Marketplace events should be verifiable from chain history.
 - The resolver should expose both current owner and current receiver.
 
@@ -241,11 +256,11 @@ IDs should behave like transferable assets.
 - Owners can list IDs for sale.
 - Buyers can purchase listed IDs.
 - Seller-funded direct transfers use `pwid1:t`.
-- On-chain listings use `pwid1:list4` plus a `pwid-sale-v3` authorization and seller-UTXO listing anchor.
-- Buyer-funded purchases use `pwid1:buy4`.
+- On-chain listings use `pwid1:list5` plus a `pwid-sale-v4` sale ticket and `pwid1:seal5` seller signature.
+- Buyer-funded purchases use `pwid1:buy5`.
 - Bidders can place offers.
 - Owners can accept bids.
-- Owners can delist IDs with `pwid1:delist4`.
+- Owners can delist IDs with `pwid1:delist5`.
 - Marketplaces can verify current ownership from the chain.
 - The current receiver determines where new mail is delivered.
 
@@ -314,6 +329,8 @@ https://proofofwork.me/api/*
 https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
+https://marketplace.proofofwork.me/api/*
+https://log.proofofwork.me/api/*
 ```
 
 Pending registry records are useful for network visibility, but first-confirmed-wins only becomes final after block confirmation. Pending IDs must never be routable in compose.

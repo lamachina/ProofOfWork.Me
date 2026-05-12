@@ -23,6 +23,7 @@ id.proofofwork.me
 computer.proofofwork.me
 desktop.proofofwork.me
 marketplace.proofofwork.me
+log.proofofwork.me
 ```
 
 Production app roles:
@@ -32,9 +33,10 @@ Production app roles:
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `marketplace.proofofwork.me` is the standalone ProofOfWork ID listing and buyer-funded transfer app.
+- `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, and Marketplace. Public social links should include X, YouTube, GitHub, and Discord.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Marketplace, and Log. Public social links should include X, YouTube, GitHub, and Discord.
 
 Official YouTube:
 
@@ -106,6 +108,7 @@ Launch invariants for future developers/agents:
 - Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
 - Uses the correct mempool.space explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
+- Searches ID registry records, owned IDs, pending ID events, marketplace listings, and registry supply views across the app.
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
 - Lets ID management receive fields accept confirmed ProofOfWork IDs, resolving them to raw Bitcoin receive addresses before writing registry events.
@@ -140,6 +143,7 @@ https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
+https://log.proofofwork.me/api/*
 ```
 
 Current production behavior:
@@ -151,6 +155,8 @@ Current production behavior:
 - For pending visibility, the API merges the local node/indexer view with `PENDING_MEMPOOL_BASE`, which currently defaults to public `https://mempool.space`.
 - Confirmed records remain canonical; pending records are visible but not final.
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
+- Marketplace ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public marketplace stats.
+- The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, and attachments discovered from the ProofOfWork address graph. Address, confirmed ID, or txid search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across all `pwm1:` and `pwid1:` OP_RETURN records.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which mempool.space reports as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
@@ -215,16 +221,17 @@ ID owners can mutate confirmed IDs through the same canonical registry address:
 ```text
 pwid1:u:<id-base64url>:<receive-address>
 pwid1:t:<id-base64url>:<new-owner-address>:<new-receive-address?>
-pwid1:list4:<sale-authorization-json-base64url>
-pwid1:delist4:<listing-txid>
-pwid1:buy4:<listing-txid>:<new-owner-address>:<new-receive-address?>
+pwid1:list5:<sale-ticket-json-base64url>
+pwid1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwid1:delist5:<listing-txid>
+pwid1:buy5:<listing-txid>:<new-owner-address>:<new-receive-address?>
 ```
 
 `pwid1:r2` registrations require a 1,000 sat registry payment. `pwid1:u` and `pwid1:t` require a 546 sat mutation payment and must be spent from the current owner address. If a transfer omits the new receive address, the new owner also becomes the receiver.
 The UI may accept confirmed ProofOfWork IDs in owner/receive fields, but `pwid1:u` and `pwid1:t` always write resolved Bitcoin addresses on-chain.
-`pwid1:list4` publishes on-chain marketplace terms as a `pwid-sale-v3` JSON object. The seller reserves an existing confirmed wallet UTXO as the listing anchor and includes a seller `SIGHASH_SINGLE|ANYONECANPAY` signature that lets buyers spend that anchor only when the first output pays the seller the listed price plus anchor refund. `pwid1:buy4` must spend that seller anchor, pay the seller price plus anchor refund, and pay the 546 sat mutation fee before the ID OP_RETURN. Because every valid buyer spends the same anchor outpoint, competing purchases conflict at the Bitcoin UTXO layer instead of both paying.
-`pwid1:delist4` cancels a listing by txid from the current owner without spending the reserved seller UTXO. Historical `list2`/`buy2`/`delist2` and `list3`/`buy3`/`delist3` events remain readable for replay, but new marketplace writes use `list4`/`buy4`/`delist4`.
-Pending `pwid1:u`, `pwid1:t`, `pwid1:list4`, `pwid1:delist4`, and `pwid1:buy4` events are exposed as in-flight changes for touched wallets. They do not change canonical owner/receiver routing until confirmed.
+`pwid1:list5` publishes sale terms as a `pwid-sale-v4` JSON object and creates a 546 sat seller-controlled sale-ticket UTXO in the listing transaction. `pwid1:seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` signature for that ticket after the listing txid exists, and the seal must name the listing txid as its `anchorTxid`. `pwid1:buy5` must spend that same ticket, pay the seller price plus ticket value, and pay the 546 sat mutation fee before the ID OP_RETURN. Because every valid buyer spends the same sale ticket, competing purchases conflict at the Bitcoin UTXO layer instead of both paying.
+`pwid1:delist5` cancels a listing by spending the sale ticket and paying the mutation fee. Historical `list2`/`buy2`/`delist2`, `list3`/`buy3`/`delist3`, and `list4`/`buy4`/`delist4` events remain readable for replay, but new marketplace writes use `list5`/`seal5`/`buy5`/`delist5`.
+Pending `pwid1:u`, `pwid1:t`, `pwid1:list5`, `pwid1:seal5`, `pwid1:delist5`, and `pwid1:buy5` events are exposed as in-flight changes for touched wallets. They do not change canonical owner/receiver routing until confirmed.
 
 ## Run
 
@@ -257,6 +264,12 @@ To preview the standalone ID Marketplace locally:
 http://localhost:5173/?marketplace=1
 ```
 
+To preview the public Log locally:
+
+```text
+http://localhost:5173/?log=1
+```
+
 To build a landing-page-only deployment for `proofofwork.me`:
 
 ```bash
@@ -285,6 +298,12 @@ To build the standalone ID Marketplace app for production:
 
 ```bash
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
+```
+
+To build the standalone Log app for production:
+
+```bash
+VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 ```
 
 To run localhost against the production API:

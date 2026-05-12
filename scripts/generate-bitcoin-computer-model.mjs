@@ -1,9 +1,10 @@
 import { writeFileSync } from "node:fs";
 
 const OUTPUT = "output/bitcoin-computer-agent-adoption-model.md";
+const GROWTH_JSON_OUTPUT = "output/bitcoin-computer-growth-model.json";
 
 const inputs = {
-  generatedOn: "2026-05-11",
+  generatedOn: "2026-05-12",
   bitnodes: {
     reachableNodes: 23984,
     snapshotTimeUtc: "2026-04-30 08:58:26 UTC",
@@ -30,6 +31,9 @@ const inputs = {
     totalFileBytes: 37284,
     fileFlowSats: 2184,
     satsPerFileBase: 1000,
+    marketplaceSales: 1,
+    marketplaceVolumeSats: 1000,
+    marketplaceAverageSaleSats: 1000,
   },
   blockspace: {
     maxBlockWeightUnits: 4_000_000,
@@ -38,6 +42,7 @@ const inputs = {
     daysPerYear: 365,
     idVbytesPerWrite: 350,
     mailVbytesPerWrite: 500,
+    marketplaceVbytesPerSale: 1500,
     txOverheadVbytes: 300,
   },
   scenario: {
@@ -47,6 +52,8 @@ const inputs = {
     mailValueMultiple: 5,
     driveFilesPerIdPerYear: 6,
     driveValueMultiple: 5,
+    marketplaceSalesPerIdPerYear: 0.2,
+    marketplaceValueMultiple: 5,
     canonicalFee: 0.00001,
     horizons: [
       { label: "6 months", years: 0.5, adoption: 0.1 },
@@ -62,6 +69,7 @@ const inputs = {
       id: 0.25,
       mail: 0.5,
       drive: 0.75,
+      marketplace: 0.5,
     },
   },
 };
@@ -96,6 +104,7 @@ function modelRow(horizon, feeRate) {
   const idMultiplier = feeMultiplier(feeRate, inputs.scenario.elasticities.id);
   const mailMultiplier = feeMultiplier(feeRate, inputs.scenario.elasticities.mail);
   const driveMultiplier = feeMultiplier(feeRate, inputs.scenario.elasticities.drive);
+  const marketplaceMultiplier = feeMultiplier(feeRate, inputs.scenario.elasticities.marketplace);
   const rawIdSats = powids ** 2 * inputs.pow.idDensitySatsPerN2 * idMultiplier;
   const rawMailSats =
     directedPairs *
@@ -110,6 +119,12 @@ function modelRow(horizon, feeRate) {
     inputs.pow.satsPerFileBase *
     inputs.scenario.driveValueMultiple *
     driveMultiplier;
+  const rawMarketplaceSats =
+    powids *
+    inputs.scenario.marketplaceSalesPerIdPerYear *
+    inputs.pow.marketplaceAverageSaleSats *
+    inputs.scenario.marketplaceValueMultiple *
+    marketplaceMultiplier;
   const idWrites = powids * idMultiplier;
   const mailWrites =
     directedPairs *
@@ -117,10 +132,12 @@ function modelRow(horizon, feeRate) {
     inputs.scenario.mailMessagesPerPairPerYear *
     mailMultiplier;
   const driveWrites = powids * inputs.scenario.driveFilesPerIdPerYear * driveMultiplier;
+  const marketplaceWrites = powids * inputs.scenario.marketplaceSalesPerIdPerYear * marketplaceMultiplier;
   const idVbytes = idWrites * inputs.blockspace.idVbytesPerWrite;
   const mailVbytes = mailWrites * inputs.blockspace.mailVbytesPerWrite;
   const driveVbytes = driveWrites * driveVbytesPerWrite;
-  const rawBlockspaceVbytes = idVbytes + mailVbytes + driveVbytes;
+  const marketplaceVbytes = marketplaceWrites * inputs.blockspace.marketplaceVbytesPerSale;
+  const rawBlockspaceVbytes = idVbytes + mailVbytes + driveVbytes + marketplaceVbytes;
   const executedBlockspaceVbytes = Math.min(rawBlockspaceVbytes, blockspaceVbytesPerYear);
   const blockspaceUsageRatio = rawBlockspaceVbytes > 0 ? executedBlockspaceVbytes / rawBlockspaceVbytes : 1;
   const blockspaceSaturation = executedBlockspaceVbytes / blockspaceVbytesPerYear;
@@ -128,7 +145,8 @@ function modelRow(horizon, feeRate) {
   const idSats = rawIdSats;
   const mailSats = rawMailSats * blockspaceUsageRatio;
   const driveSats = rawDriveSats * blockspaceUsageRatio;
-  const totalSats = idSats + mailSats + driveSats;
+  const marketplaceSats = rawMarketplaceSats * blockspaceUsageRatio;
+  const totalSats = idSats + mailSats + driveSats + marketplaceSats;
   const btc = totalSats / 100_000_000;
   const usdPath = futureBtcUsd(horizon.years);
 
@@ -142,20 +160,25 @@ function modelRow(horizon, feeRate) {
     idMultiplier,
     mailMultiplier,
     driveMultiplier,
+    marketplaceMultiplier,
     rawIdSats,
     rawMailSats,
     rawDriveSats,
-    rawTotalSats: rawIdSats + rawMailSats + rawDriveSats,
+    rawMarketplaceSats,
+    rawTotalSats: rawIdSats + rawMailSats + rawDriveSats + rawMarketplaceSats,
     idSats,
     mailSats,
     driveSats,
+    marketplaceSats,
     totalSats,
     idWrites,
     mailWrites,
     driveWrites,
+    marketplaceWrites,
     idVbytes,
     mailVbytes,
     driveVbytes,
+    marketplaceVbytes,
     rawBlockspaceVbytes,
     executedBlockspaceVbytes,
     blockspaceUsageRatio,
@@ -258,13 +281,14 @@ function table(headers, rows) {
 
 function productTable(rows) {
   return table(
-    ["Horizon", "PowIDs", "ID sats", "Mail sats", "Drive sats", "Total sats", "BTC", "Base USD", "Volatility USD range"],
+    ["Horizon", "PowIDs", "ID sats", "Mail sats", "Drive sats", "Marketplace sats", "Total sats", "BTC", "Base USD", "Volatility USD range"],
     rows.map((row) => [
       row.label,
       fmtNumber(Math.round(row.powids)),
       fmtSats(row.idSats),
       fmtSats(row.mailSats),
       fmtSats(row.driveSats),
+      fmtSats(row.marketplaceSats),
       fmtSats(row.totalSats),
       fmtBtc(row.btc),
       `${fmtUsd(row.usdBase)} (${humanUsd(row.usdBase)})`,
@@ -414,7 +438,7 @@ ${svgText(card.body, x + 28, 415, { size: 22, weight: 500, fill: "#334155", line
 
   const body = `${cardSvg}
 <rect x="160" y="635" width="1280" height="96" rx="24" fill="#0f172a"/>
-${svgText(["Native value is IDs + Mail + Drive in sats/BTC."], 800, 680, { size: 32, weight: 800, fill: "#ffffff", anchor: "middle" })}
+${svgText(["Native value is IDs + Mail + Drive + Marketplace in sats/BTC."], 800, 680, { size: 32, weight: 800, fill: "#ffffff", anchor: "middle" })}
 ${svgText(["USD value is a translation layer after Bitcoin's historical growth and volatility are applied."], 800, 720, { size: 24, fill: "#cbd5e1", anchor: "middle" })}`;
 
   return svgShell("What is compounding?", "More agents, more IDs, lower fees, finite blockspace, then Bitcoin reprices the result.", body);
@@ -453,6 +477,7 @@ function renderProductSplitVisual(rows) {
     id: "#2563eb",
     mail: "#0f766e",
     drive: "#c2410c",
+    marketplace: "#7c3aed",
   };
   const bars = selected
     .map((row, index) => {
@@ -461,25 +486,29 @@ function renderProductSplitVisual(rows) {
       const width = 1080;
       const idW = (row.idSats / row.totalSats) * width;
       const mailW = (row.mailSats / row.totalSats) * width;
-      const driveW = width - idW - mailW;
+      const driveW = (row.driveSats / row.totalSats) * width;
+      const marketplaceW = Math.max(0, width - idW - mailW - driveW);
       const btcUsd = row.btcUsdBase;
       const idUsd = (row.idSats / 100_000_000) * btcUsd;
       const mailUsd = (row.mailSats / 100_000_000) * btcUsd;
       const driveUsd = (row.driveSats / 100_000_000) * btcUsd;
+      const marketplaceUsd = (row.marketplaceSats / 100_000_000) * btcUsd;
       return `${svgText([row.label], 190, y + 50, { size: 28, weight: 850, fill: "#0f172a", anchor: "end" })}
 <rect x="${x}" y="${y}" width="${idW}" height="64" rx="12" fill="${productColors.id}"/>
 <rect x="${x + idW}" y="${y}" width="${mailW}" height="64" fill="${productColors.mail}"/>
-<rect x="${x + idW + mailW}" y="${y}" width="${driveW}" height="64" rx="12" fill="${productColors.drive}"/>
+<rect x="${x + idW + mailW}" y="${y}" width="${driveW}" height="64" fill="${productColors.drive}"/>
+<rect x="${x + idW + mailW + driveW}" y="${y}" width="${marketplaceW}" height="64" rx="12" fill="${productColors.marketplace}"/>
 ${svgText([`Total: ${humanUsd(row.usdBase)}`], 1365, y + 42, { size: 24, weight: 800, fill: "#0f172a", anchor: "end" })}
-${svgText([`IDs ${humanUsdShort(idUsd)}  |  Mail ${humanUsdShort(mailUsd)}  |  Drive ${humanUsdShort(driveUsd)}`], x, y + 100, { size: 22, weight: 650, fill: "#334155" })}`;
+${svgText([`IDs ${humanUsdShort(idUsd)}  |  Mail ${humanUsdShort(mailUsd)}  |  Drive ${humanUsdShort(driveUsd)}  |  Market ${humanUsdShort(marketplaceUsd)}`], x, y + 100, { size: 22, weight: 650, fill: "#334155" })}`;
     })
     .join("\n");
 
   const legend = `<rect x="170" y="182" width="28" height="28" rx="6" fill="${productColors.id}"/>${svgText(["IDs"], 210, 205, { size: 24, weight: 750 })}
 <rect x="300" y="182" width="28" height="28" rx="6" fill="${productColors.mail}"/>${svgText(["Mail"], 340, 205, { size: 24, weight: 750 })}
-<rect x="440" y="182" width="28" height="28" rx="6" fill="${productColors.drive}"/>${svgText(["Drive"], 480, 205, { size: 24, weight: 750 })}`;
+<rect x="440" y="182" width="28" height="28" rx="6" fill="${productColors.drive}"/>${svgText(["Drive"], 480, 205, { size: 24, weight: 750 })}
+<rect x="585" y="182" width="28" height="28" rx="6" fill="${productColors.marketplace}"/>${svgText(["Marketplace"], 625, 205, { size: 24, weight: 750 })}`;
 
-  return svgShell("IDs + Mail + Drive = Bitcoin Computer", "The aggregate is not one product. It is three reinforcing products measured together.", `${legend}${bars}`);
+  return svgShell("IDs + Mail + Drive + Marketplace = Bitcoin Computer", "The aggregate is not one product. It is four reinforcing products measured together.", `${legend}${bars}`);
 }
 
 function renderBlockspaceVisual(rows) {
@@ -508,7 +537,7 @@ ${svgText(["raw demand", humanVbytes(row.rawBlockspaceVbytes)], x + 125, 642, { 
 ${svgText([`Current theoretical ceiling: ${humanVbytes(blockspaceVbytesPerYear)} per year`], 800, 191, { size: 27, weight: 850, fill: "#ffffff", anchor: "middle" })}`;
 
   const footer = `<rect x="170" y="735" width="1260" height="74" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-${svgText(["Once raw write demand crosses the ceiling, Mail and Drive are throttled by executable blockspace.", "Scarce blockspace becomes part of the model instead of infinite throughput."], 800, 766, { size: 22, weight: 700, fill: "#0f172a", anchor: "middle", lineHeight: 28 })}`;
+${svgText(["Once raw write demand crosses the ceiling, Mail, Drive, and Marketplace are throttled by executable blockspace.", "Scarce blockspace becomes part of the model instead of infinite throughput."], 800, 766, { size: 22, weight: 700, fill: "#0f172a", anchor: "middle", lineHeight: 28 })}`;
 
   return svgShell("Blockspace is the ceiling", "Usage demand compounds until it hits today's theoretical Bitcoin blockspace limit.", `${header}${cards}${footer}`);
 }
@@ -532,7 +561,7 @@ ${svgText([item.text], x + 215, 520, { size: 22, fill: "#475569", anchor: "middl
     })
     .join("\n");
 
-  const footer = `${svgText(["10-year canonical model: the Bitcoin Computer is 570,056.66 BTC in every path."], 800, 685, { size: 30, weight: 850, fill: "#0f172a", anchor: "middle" })}
+  const footer = `${svgText([`10-year canonical model: the Bitcoin Computer is ${fmtBtc(row.btc)} BTC in every path.`], 800, 685, { size: 30, weight: 850, fill: "#0f172a", anchor: "middle" })}
 ${svgText(["Only the USD translation changes with Bitcoin volatility."], 800, 728, { size: 24, weight: 650, fill: "#475569", anchor: "middle" })}`;
 
   return svgShell("Volatility does not change the Bitcoin Computer", "It changes what the same BTC-denominated value looks like in dollars.", `${cards}${footer}`);
@@ -570,7 +599,8 @@ All prior standalone charts, product-only markdown models, and old projection fi
 1. ProofOfWork IDs
 2. ProofOfWork Mail
 3. ProofOfWork Files / Bitcoin Drive
-4. The aggregate Bitcoin Computer
+4. ProofOfWork Marketplace
+5. The aggregate Bitcoin Computer
 
 The model is success-case by design:
 
@@ -581,7 +611,7 @@ BTC/USD follows Bitcoin's backward-facing log-growth benchmark
 BTC/USD includes a one-standard-deviation volatility cone
 lower relay fees unlock exponentially more agent usage
 Bitcoin Computer write demand grows exponentially until today's blockspace ceiling
-IDs, Mail, and Drive reinforce each other
+IDs, Mail, Drive, and Marketplace reinforce each other
 \`\`\`
 
 ## Visual Read
@@ -594,7 +624,7 @@ They are written for normal human pattern recognition: big labels, plain words, 
 
 ![Dollar growth in human words](bitcoin-computer-model-dollar-growth.png)
 
-![IDs Mail Drive product split](bitcoin-computer-model-product-split.png)
+![IDs Mail Drive Marketplace product split](bitcoin-computer-model-product-split.png)
 
 ![Blockspace ceiling](bitcoin-computer-model-blockspace.png)
 
@@ -604,7 +634,7 @@ SVG versions:
 
 - [What is compounding](bitcoin-computer-model-compounding.svg)
 - [Dollar growth in human words](bitcoin-computer-model-dollar-growth.svg)
-- [IDs Mail Drive product split](bitcoin-computer-model-product-split.svg)
+- [IDs Mail Drive Marketplace product split](bitcoin-computer-model-product-split.svg)
 - [Blockspace ceiling](bitcoin-computer-model-blockspace.svg)
 - [Bitcoin volatility translation](bitcoin-computer-model-volatility.svg)
 
@@ -675,6 +705,15 @@ File-bearing payment flow: ${fmtSats(inputs.pow.fileFlowSats)} sats
 Canonical forward sats per file: ${fmtSats(inputs.pow.satsPerFileBase)} sats
 \`\`\`
 
+Marketplace:
+
+\`\`\`text
+Confirmed marketplace sales: ${inputs.pow.marketplaceSales}
+Confirmed marketplace volume: ${fmtSats(inputs.pow.marketplaceVolumeSats)} sats
+Average sats per sale: ${fmtSats(inputs.pow.marketplaceAverageSaleSats)} sats
+Canonical forward sales per ID per year: ${inputs.scenario.marketplaceSalesPerIdPerYear}
+\`\`\`
+
 ## Bitcoin Growth Benchmark
 
 Backward-facing Bitcoin log growth:
@@ -731,6 +770,7 @@ ID write size: ${fmtNumber(inputs.blockspace.idVbytesPerWrite)} vB
 Mail write size: ${fmtNumber(inputs.blockspace.mailVbytesPerWrite)} vB
 Average current file payload: ${fmtNumber(averageFilePayloadBytes, 0)} bytes
 Drive write size: ${fmtNumber(driveVbytesPerWrite)} vB
+Marketplace sale write size: ${fmtNumber(inputs.blockspace.marketplaceVbytesPerSale)} vB
 \`\`\`
 
 Important boundary:
@@ -780,6 +820,7 @@ product_multiplier = fee_drop_factor ^ elasticity
 ID elasticity = ${inputs.scenario.elasticities.id}
 Mail elasticity = ${inputs.scenario.elasticities.mail}
 Drive elasticity = ${inputs.scenario.elasticities.drive}
+Marketplace elasticity = ${inputs.scenario.elasticities.marketplace}
 \`\`\`
 
 ## Growth Engine
@@ -795,6 +836,7 @@ raw_blockspace_demand_vbytes =
   id_writes * id_write_vbytes
   + mail_writes * mail_write_vbytes
   + drive_writes * drive_write_vbytes
+  + marketplace_writes * marketplace_sale_vbytes
 
 executable_blockspace_vbytes =
   min(raw_blockspace_demand_vbytes, annual_theoretical_blockspace_ceiling)
@@ -844,6 +886,18 @@ drive_value_sats =
   * blockspace_usage_fulfillment_ratio
 \`\`\`
 
+### Marketplace
+
+\`\`\`text
+marketplace_value_sats =
+  projected_powids
+  * marketplace_sales_per_id_per_year
+  * average_sale_sats
+  * value_multiple
+  * marketplace_fee_multiplier
+  * blockspace_usage_fulfillment_ratio
+\`\`\`
+
 ### Bitcoin Computer
 
 \`\`\`text
@@ -851,6 +905,7 @@ bitcoin_computer_value_sats =
   id_value_sats
   + mail_value_sats
   + drive_value_sats
+  + marketplace_value_sats
 \`\`\`
 
 The BTC column is a sats-denominated valuation converted into BTC as a unit of account. It is not a claim that those sats are locked in the protocol.
@@ -918,3 +973,69 @@ The node growth, agent share, agent adoption curve, fee tiers, fee elasticities,
 `;
 
 writeFileSync(OUTPUT, `${markdown.trim()}\n`);
+writeFileSync(
+  GROWTH_JSON_OUTPUT,
+  `${JSON.stringify(
+    {
+      generatedOn: inputs.generatedOn,
+      startDate: inputs.btc.currentDate,
+      products: ["IDs", "Mail", "Drive", "Marketplace"],
+      inputs: {
+        bitnodesReachableNodes: inputs.bitnodes.reachableNodes,
+        agentShare: inputs.scenario.agentShare,
+        blockspaceVbytesPerYear,
+        canonicalFee: inputs.scenario.canonicalFee,
+        currentPowids: inputs.pow.confirmedPowids,
+        nodeCagr: inputs.scenario.nodeCagr,
+        productAssumptions: {
+          id: {
+            elasticity: inputs.scenario.elasticities.id,
+            idDensitySatsPerN2: inputs.pow.idDensitySatsPerN2,
+            vbytesPerWrite: inputs.blockspace.idVbytesPerWrite,
+          },
+          mail: {
+            elasticity: inputs.scenario.elasticities.mail,
+            edgeDensity: inputs.pow.mailEdgeDensity,
+            messagesPerPairPerYear: inputs.scenario.mailMessagesPerPairPerYear,
+            satsPerDelivery: inputs.pow.mailSatsPerDelivery,
+            valueMultiple: inputs.scenario.mailValueMultiple,
+            vbytesPerWrite: inputs.blockspace.mailVbytesPerWrite,
+          },
+          drive: {
+            elasticity: inputs.scenario.elasticities.drive,
+            filesPerIdPerYear: inputs.scenario.driveFilesPerIdPerYear,
+            satsPerFile: inputs.pow.satsPerFileBase,
+            valueMultiple: inputs.scenario.driveValueMultiple,
+            vbytesPerWrite: driveVbytesPerWrite,
+          },
+          marketplace: {
+            averageSaleSats: inputs.pow.marketplaceAverageSaleSats,
+            elasticity: inputs.scenario.elasticities.marketplace,
+            salesPerIdPerYear: inputs.scenario.marketplaceSalesPerIdPerYear,
+            valueMultiple: inputs.scenario.marketplaceValueMultiple,
+            vbytesPerSale: inputs.blockspace.marketplaceVbytesPerSale,
+          },
+        },
+      },
+      canonicalRows: canonicalRows.map((row) => ({
+        adoption: row.adoption,
+        blockspaceUsageRatio: row.blockspaceUsageRatio,
+        driveSats: Math.round(row.driveSats),
+        driveWrites: row.driveWrites,
+        idSats: Math.round(row.idSats),
+        idWrites: row.idWrites,
+        label: row.label,
+        mailSats: Math.round(row.mailSats),
+        mailWrites: row.mailWrites,
+        marketplaceSats: Math.round(row.marketplaceSats),
+        marketplaceWrites: row.marketplaceWrites,
+        powids: row.powids,
+        totalSats: Math.round(row.totalSats),
+        totalWrites: row.idWrites + (row.mailWrites + row.driveWrites + row.marketplaceWrites) * row.blockspaceUsageRatio,
+        years: row.years,
+      })),
+    },
+    null,
+    2,
+  )}\n`,
+);

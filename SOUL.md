@@ -8,7 +8,7 @@ It is distilled from current repository docs and public launch memory captured o
 
 - Public account: `@proofofworkme`
 - Launch memory reviewed: 2026-05-10
-- Core domains: `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `marketplace.proofofwork.me`, `log.proofofwork.me`
+- Core domains: `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `marketplace.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -73,6 +73,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `marketplace.proofofwork.me` is the standalone ID marketplace.
 - `log.proofofwork.me` is the public read-only Bitcoin Computer log for tx-backed ProofOfWork actions.
+- `growth.proofofwork.me` is the public read-only growth dashboard for the canonical model versus confirmed chain metrics.
 - Canonical mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`
 - Registration price: `1000` sats.
 - Current ID event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
@@ -84,6 +85,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Wallet signing stays local.
 - Node/API infrastructure reads, indexes, verifies, and broadcasts already-signed txs. It does not custody.
 - Every tx-backed app action should be inspectable from an activity surface with clear labels for confirmed, pending, txid, listing txid, and UTXO references where relevant.
+- Every new product should enter the growth model with the same shape: real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace accounting.
 - Attachments are small and verified by size/hash.
 - Confirmed chain history is canonical; pending status can become dropped.
 - Local state is portable through backups, not server accounts.

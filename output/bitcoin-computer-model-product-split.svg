@@ -1,26 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
 <rect width="1600" height="900" fill="#f8fafc"/>
-<text x="80" y="82" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="56" font-weight="850" fill="#0f172a">IDs + Mail + Drive = Bitcoin Computer</text>
-<text x="82" y="126" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="500" fill="#475569">The aggregate is not one product. It is three reinforcing products measured together.</text>
+<text x="80" y="82" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="56" font-weight="850" fill="#0f172a">IDs + Mail + Drive + Marketplace = Bitcoin Computer</text>
+<text x="82" y="126" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="500" fill="#475569">The aggregate is not one product. It is four reinforcing products measured together.</text>
 <rect x="170" y="182" width="28" height="28" rx="6" fill="#2563eb"/><text x="210" y="205" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#0f172a">IDs</text>
 <rect x="300" y="182" width="28" height="28" rx="6" fill="#0f766e"/><text x="340" y="205" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#0f172a">Mail</text>
-<rect x="440" y="182" width="28" height="28" rx="6" fill="#c2410c"/><text x="480" y="205" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#0f172a">Drive</text><text x="190" y="310" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="850" fill="#0f172a">6 months</text>
-<rect x="220" y="260" width="152.474865838067" height="64" rx="12" fill="#2563eb"/>
-<rect x="372.474865838067" y="260" width="533.8642337700107" height="64" fill="#0f766e"/>
-<rect x="906.3390996080777" y="260" width="393.66090039192227" height="64" rx="12" fill="#c2410c"/>
+<rect x="440" y="182" width="28" height="28" rx="6" fill="#c2410c"/><text x="480" y="205" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#0f172a">Drive</text>
+<rect x="585" y="182" width="28" height="28" rx="6" fill="#7c3aed"/><text x="625" y="205" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#0f172a">Marketplace</text><text x="190" y="310" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="850" fill="#0f172a">6 months</text>
+<rect x="220" y="260" width="152.14613670040205" height="64" rx="12" fill="#2563eb"/>
+<rect x="372.14613670040205" y="260" width="532.7132458466388" height="64" fill="#0f766e"/>
+<rect x="904.8593825470408" y="260" width="392.81218471929657" height="64" fill="#c2410c"/>
+<rect x="1297.6715672663374" y="260" width="2.3284327336626234" height="64" rx="12" fill="#7c3aed"/>
 <text x="1365" y="302" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="800" fill="#0f172a">Total: $21 million</text>
-<text x="220" y="360" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="650" fill="#334155">IDs $2.96M  |  Mail $10.4M  |  Drive $7.65M</text>
+<text x="220" y="360" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="650" fill="#334155">IDs $2.96M  |  Mail $10.4M  |  Drive $7.65M  |  Market $45.3K</text>
 <text x="190" y="460" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="850" fill="#0f172a">24 months</text>
-<rect x="220" y="410" width="402.8288483745925" height="64" rx="12" fill="#2563eb"/>
-<rect x="622.8288483745926" y="410" width="598.2989742968535" height="64" fill="#0f766e"/>
-<rect x="1221.1278226714462" y="410" width="78.8721773285539" height="64" rx="12" fill="#c2410c"/>
+<rect x="220" y="410" width="402.8022379217147" height="64" rx="12" fill="#2563eb"/>
+<rect x="622.8022379217148" y="410" width="597.9096853240935" height="64" fill="#0f766e"/>
+<rect x="1220.7119232458083" y="410" width="78.82085838900922" height="64" fill="#c2410c"/>
+<rect x="1299.5327816348174" y="410" width="0.4672183651824895" height="64" rx="12" fill="#7c3aed"/>
 <text x="1365" y="452" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="800" fill="#0f172a">Total: $540 million</text>
-<text x="220" y="510" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="650" fill="#334155">IDs $201M  |  Mail $299M  |  Drive $39.4M</text>
+<text x="220" y="510" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="650" fill="#334155">IDs $201M  |  Mail $299M  |  Drive $39.4M  |  Market $234K</text>
 <text x="190" y="610" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="850" fill="#0f172a">10 years</text>
-<rect x="220" y="560" width="1053.4943504882324" height="64" rx="12" fill="#2563eb"/>
-<rect x="1273.4943504882324" y="560" width="26.21577757713301" height="64" fill="#0f766e"/>
-<rect x="1299.7101280653653" y="560" width="0.28987193463460414" height="64" rx="12" fill="#c2410c"/>
+<rect x="220" y="560" width="1053.4956947646072" height="64" rx="12" fill="#2563eb"/>
+<rect x="1273.4956947646072" y="560" width="26.212748745231455" height="64" fill="#0f766e"/>
+<rect x="1299.7084435098386" y="560" width="0.28983844436862344" height="64" fill="#c2410c"/>
+<rect x="1299.9982819542072" y="560" width="0.0017180457927706283" height="64" rx="12" fill="#7c3aed"/>
 <text x="1365" y="602" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="800" fill="#0f172a">Total: $1.86 trillion</text>
-<text x="220" y="660" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="650" fill="#334155">IDs $1.81T  |  Mail $45.1B  |  Drive $499M</text>
+<text x="220" y="660" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="650" fill="#334155">IDs $1.81T  |  Mail $45.1B  |  Drive $499M  |  Market $2.96M</text>
 <text x="80" y="848" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="500" fill="#64748b">ProofOfWork.Me Bitcoin Computer Model | generated from output/bitcoin-computer-agent-adoption-model.md</text>
 </svg>

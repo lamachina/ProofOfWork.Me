@@ -65,6 +65,7 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   min-width: 320px;
+  overflow-x: hidden;
 }
 
 #root {
@@ -1275,6 +1276,257 @@ select {
 
 .activity-empty {
   min-height: 220px;
+}
+
+.growth-public-app {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.growth-workspace {
+  display: grid;
+  gap: 18px;
+  margin: 0 auto;
+  max-width: 1220px;
+  padding: 28px 18px 42px;
+  width: 100%;
+}
+
+.growth-hero {
+  align-items: end;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 430px);
+}
+
+.growth-hero > div:first-child {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+}
+
+.growth-hero h2 {
+  font-size: clamp(2.3rem, 6vw, 5.4rem);
+  letter-spacing: 0;
+  line-height: 0.94;
+}
+
+.growth-hero p,
+.growth-product-section p,
+.growth-assumption-grid p,
+.growth-model-card p,
+.growth-chart-card p {
+  color: var(--text-muted);
+  font-size: 0.98rem;
+  line-height: 1.5;
+}
+
+.growth-model-card,
+.growth-chart-card,
+.growth-product-card,
+.growth-assumption-grid article {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.growth-model-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.growth-assumption-list,
+.growth-product-metrics {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.growth-assumption-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.growth-assumption-list div,
+.growth-product-metrics div,
+.growth-stat-grid div {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.growth-assumption-list dt,
+.growth-product-metrics dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 840;
+  text-transform: uppercase;
+}
+
+.growth-assumption-list dd,
+.growth-product-metrics dd {
+  color: var(--text);
+  font-size: 1.22rem;
+  font-weight: 860;
+  line-height: 1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.growth-product-metrics span {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.25;
+}
+
+.growth-stat-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.growth-stat-grid strong {
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+.growth-stat-grid span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 780;
+}
+
+.growth-chart-card,
+.growth-product-section {
+  display: grid;
+  gap: 14px;
+}
+
+.growth-chart-card {
+  padding: 16px;
+}
+
+.growth-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.growth-chart-legend span {
+  align-items: center;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 780;
+  gap: 6px;
+}
+
+.growth-chart-legend i {
+  border-radius: 999px;
+  display: inline-block;
+  height: 9px;
+  width: 24px;
+}
+
+.growth-chart-legend i.model {
+  background: var(--accent);
+}
+
+.growth-chart-legend i.actual {
+  background: var(--green);
+}
+
+.growth-chart {
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.growth-chart-bg {
+  fill: var(--surface-soft);
+}
+
+.growth-chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.growth-chart-grid-vertical {
+  opacity: 0.64;
+}
+
+.growth-chart-label {
+  fill: var(--text-muted);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.growth-chart-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.growth-chart-line.model,
+.growth-chart-dot.model {
+  stroke: var(--accent);
+}
+
+.growth-chart-line.actual,
+.growth-chart-dot.actual {
+  stroke: var(--green);
+}
+
+.growth-chart-dot {
+  fill: var(--surface);
+  stroke-width: 3;
+}
+
+.growth-chart-callout {
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.growth-chart-callout.model {
+  fill: var(--accent);
+}
+
+.growth-chart-callout.actual {
+  fill: var(--green);
+}
+
+.growth-product-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.growth-product-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.growth-product-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.growth-assumption-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.growth-assumption-grid article {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
 }
 
 @keyframes desktop-scan {
@@ -2878,12 +3130,17 @@ pre {
 
   .id-launch-hero,
   .id-launch-grid,
-  .activity-hero {
+  .activity-hero,
+  .growth-hero,
+  .growth-product-grid,
+  .growth-assumption-grid {
     grid-template-columns: 1fr;
   }
 
   .id-launch-stats,
-  .activity-stats {
+  .activity-stats,
+  .growth-stat-grid,
+  .growth-product-metrics {
     grid-template-columns: 1fr 1fr 1fr;
   }
 
@@ -3033,6 +3290,34 @@ pre {
     grid-template-columns: 1fr;
   }
 
+  .growth-public-app .landing-nav {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  .growth-public-app .domain-nav {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  .growth-public-app .domain-nav a {
+    flex: 0 0 auto;
+    min-width: 74px;
+    white-space: nowrap;
+  }
+
+  .growth-public-app .icon-button {
+    flex: 0 0 42px;
+    width: 42px;
+  }
+
   .landing-hero {
     min-height: 560px;
   }
@@ -3059,7 +3344,10 @@ pre {
   }
 
   .id-launch-stats,
-  .activity-stats {
+  .activity-stats,
+  .growth-stat-grid,
+  .growth-product-metrics,
+  .growth-assumption-list {
     grid-template-columns: 1fr;
   }
 }

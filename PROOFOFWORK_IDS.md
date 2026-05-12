@@ -105,12 +105,14 @@ computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
 marketplace.proofofwork.me  standalone ID marketplace
 log.proofofwork.me          public Bitcoin Computer log
+growth.proofofwork.me       public growth model dashboard
 ```
 
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
 The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers.
 The Log subdomain is read-only. It exposes a unified Bitcoin Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, and attachments.
+The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace model with confirmed registry, log, and marketplace metrics.
 
 Local preview:
 
@@ -136,6 +138,12 @@ Log-only build:
 
 ```bash
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
+```
+
+Growth-only build:
+
+```bash
+VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
 
 Current registration payload:
@@ -331,6 +339,7 @@ https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
+https://growth.proofofwork.me/api/*
 ```
 
 Pending registry records are useful for network visibility, but first-confirmed-wins only becomes final after block confirmation. Pending IDs must never be routable in compose.

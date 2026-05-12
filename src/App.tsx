@@ -29,6 +29,7 @@ import {
   Star,
   Sun,
   Trash2,
+  TrendingUp,
   Upload,
   UserPlus,
   Users,
@@ -624,6 +625,7 @@ const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 const LOG_APP_URL = "https://log.proofofwork.me";
+const GROWTH_APP_URL = "https://growth.proofofwork.me";
 const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
 const LANDING_TESTIMONIAL_TXID = "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
 const LANDING_TESTIMONIAL_TX_URL = `https://mempool.space/tx/${LANDING_TESTIMONIAL_TXID}`;
@@ -668,7 +670,162 @@ const APP_LINKS = [
   { href: DESKTOP_APP_URL, label: "Desktop" },
   { href: MARKETPLACE_APP_URL, label: "Marketplace" },
   { href: LOG_APP_URL, label: "Log" },
+  { href: GROWTH_APP_URL, label: "Growth" },
 ];
+
+type GrowthModelRow = {
+  adoption: number;
+  blockspaceUsageRatio: number;
+  driveSats: number;
+  driveWrites: number;
+  idSats: number;
+  idWrites: number;
+  label: string;
+  mailSats: number;
+  mailWrites: number;
+  marketplaceSats: number;
+  marketplaceWrites: number;
+  powids: number;
+  totalSats: number;
+  totalWrites: number;
+  years: number;
+};
+
+type GrowthActualPoint = {
+  label: string;
+  powids: number;
+  years: number;
+};
+
+const GROWTH_MODEL_START_DATE = "2026-05-11";
+const GROWTH_MODEL_GENERATED_ON = "2026-05-12";
+const GROWTH_MODEL_INPUTS = {
+  bitnodesReachableNodes: 23_984,
+  agentShare: 0.51,
+  nodeCagr: 0.25,
+  currentPowids: 94,
+  idDensitySatsPerN2: 268.68933906745133,
+  mailEdgeDensity: 0.012307692307692308,
+  mailSatsPerDelivery: 680.1333333333333,
+  marketplaceAverageSaleSats: 1000,
+  satsPerFile: 1000,
+  canonicalFee: 0.00001,
+  blockspaceVbytesPerYear: 52_560_000_000,
+  idVbytesPerWrite: 350,
+  mailVbytesPerWrite: 500,
+  driveVbytesPerWrite: 9_621,
+  marketplaceVbytesPerSale: 1_500,
+  mailMessagesPerPairPerYear: 4,
+  driveFilesPerIdPerYear: 6,
+  marketplaceSalesPerIdPerYear: 0.2,
+  valueMultiple: 5,
+  elasticities: {
+    id: 0.25,
+    mail: 0.5,
+    drive: 0.75,
+    marketplace: 0.5,
+  },
+  horizons: [
+    { label: "6 months", years: 0.5, adoption: 0.1 },
+    { label: "12 months", years: 1, adoption: 0.2 },
+    { label: "24 months", years: 2, adoption: 0.4 },
+    { label: "5 years", years: 5, adoption: 0.6 },
+    { label: "10 years", years: 10, adoption: 0.8 },
+    { label: "25 years", years: 25, adoption: 0.9 },
+    { label: "50 years", years: 50, adoption: 1 },
+  ],
+};
+
+function growthFeeMultiplier(feeRate: number, elasticity: number) {
+  return (0.01 / feeRate) ** elasticity;
+}
+
+function growthModelRow(horizon: { label: string; years: number; adoption: number }): GrowthModelRow {
+  const nodes = GROWTH_MODEL_INPUTS.bitnodesReachableNodes * (1 + GROWTH_MODEL_INPUTS.nodeCagr) ** horizon.years;
+  const agentNodes = nodes * GROWTH_MODEL_INPUTS.agentShare;
+  const powids = agentNodes * horizon.adoption;
+  const directedPairs = powids * Math.max(0, powids - 1);
+  const idMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.id);
+  const mailMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.mail);
+  const driveMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.drive);
+  const marketplaceMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.marketplace);
+  const rawIdSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 * idMultiplier;
+  const rawMailSats =
+    directedPairs *
+    GROWTH_MODEL_INPUTS.mailEdgeDensity *
+    GROWTH_MODEL_INPUTS.mailMessagesPerPairPerYear *
+    GROWTH_MODEL_INPUTS.mailSatsPerDelivery *
+    GROWTH_MODEL_INPUTS.valueMultiple *
+    mailMultiplier;
+  const rawDriveSats =
+    powids *
+    GROWTH_MODEL_INPUTS.driveFilesPerIdPerYear *
+    GROWTH_MODEL_INPUTS.satsPerFile *
+    GROWTH_MODEL_INPUTS.valueMultiple *
+    driveMultiplier;
+  const rawMarketplaceSats =
+    powids *
+    GROWTH_MODEL_INPUTS.marketplaceSalesPerIdPerYear *
+    GROWTH_MODEL_INPUTS.marketplaceAverageSaleSats *
+    GROWTH_MODEL_INPUTS.valueMultiple *
+    marketplaceMultiplier;
+  const idWrites = powids * idMultiplier;
+  const mailWrites = directedPairs * GROWTH_MODEL_INPUTS.mailEdgeDensity * GROWTH_MODEL_INPUTS.mailMessagesPerPairPerYear * mailMultiplier;
+  const driveWrites = powids * GROWTH_MODEL_INPUTS.driveFilesPerIdPerYear * driveMultiplier;
+  const marketplaceWrites = powids * GROWTH_MODEL_INPUTS.marketplaceSalesPerIdPerYear * marketplaceMultiplier;
+  const rawBlockspaceVbytes =
+    idWrites * GROWTH_MODEL_INPUTS.idVbytesPerWrite +
+    mailWrites * GROWTH_MODEL_INPUTS.mailVbytesPerWrite +
+    driveWrites * GROWTH_MODEL_INPUTS.driveVbytesPerWrite +
+    marketplaceWrites * GROWTH_MODEL_INPUTS.marketplaceVbytesPerSale;
+  const blockspaceUsageRatio =
+    rawBlockspaceVbytes > 0 ? Math.min(rawBlockspaceVbytes, GROWTH_MODEL_INPUTS.blockspaceVbytesPerYear) / rawBlockspaceVbytes : 1;
+  const idSats = rawIdSats;
+  const mailSats = rawMailSats * blockspaceUsageRatio;
+  const driveSats = rawDriveSats * blockspaceUsageRatio;
+  const marketplaceSats = rawMarketplaceSats * blockspaceUsageRatio;
+
+  return {
+    ...horizon,
+    blockspaceUsageRatio,
+    driveSats,
+    driveWrites: driveWrites * blockspaceUsageRatio,
+    idSats,
+    idWrites,
+    mailSats,
+    mailWrites: mailWrites * blockspaceUsageRatio,
+    marketplaceSats,
+    marketplaceWrites: marketplaceWrites * blockspaceUsageRatio,
+    powids,
+    totalSats: idSats + mailSats + driveSats + marketplaceSats,
+    totalWrites: idWrites + (mailWrites + driveWrites + marketplaceWrites) * blockspaceUsageRatio,
+  };
+}
+
+function growthModelStartRow(): GrowthModelRow {
+  const idMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.id);
+  const idSats = GROWTH_MODEL_INPUTS.currentPowids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 * idMultiplier;
+  return {
+    adoption: 0,
+    blockspaceUsageRatio: 1,
+    driveSats: 0,
+    driveWrites: 0,
+    idSats,
+    idWrites: GROWTH_MODEL_INPUTS.currentPowids,
+    label: "Model start",
+    mailSats: 0,
+    mailWrites: 0,
+    marketplaceSats: 0,
+    marketplaceWrites: 0,
+    powids: GROWTH_MODEL_INPUTS.currentPowids,
+    totalSats: idSats,
+    totalWrites: GROWTH_MODEL_INPUTS.currentPowids,
+    years: 0,
+  };
+}
+
+const GROWTH_MODEL_ROWS = GROWTH_MODEL_INPUTS.horizons.map(growthModelRow);
+const GROWTH_MODEL_CHART_ROWS = [growthModelStartRow(), ...GROWTH_MODEL_ROWS];
 
 function isIdLaunchRoute() {
   if (import.meta.env.VITE_ID_LAUNCH_ONLY === "1") {
@@ -718,6 +875,16 @@ function isActivityRoute() {
   const hostname = window.location.hostname.toLowerCase();
   // Production Bitcoin Computer log: log.proofofwork.me. Local/dev preview: ?log=1 or ?activity=1.
   return hostname === "log.proofofwork.me" || hostname === "activity.proofofwork.me" || window.location.search.includes("log=1") || window.location.search.includes("activity=1");
+}
+
+function isGrowthRoute() {
+  if (import.meta.env.VITE_GROWTH_ONLY === "1") {
+    return true;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  // Production growth model: growth.proofofwork.me. Local/dev preview: ?growth=1.
+  return hostname === "growth.proofofwork.me" || window.location.search.includes("growth=1");
 }
 
 function loadTheme(): ThemeMode {
@@ -6081,7 +6248,8 @@ export default function App() {
   const desktopRoute = isDesktopRoute();
   const marketplaceMode = isMarketplaceRoute();
   const activityMode = isActivityRoute();
-  const mainnetRegistryMode = idLaunchMode || marketplaceMode || activityMode;
+  const growthMode = isGrowthRoute();
+  const mainnetRegistryMode = idLaunchMode || marketplaceMode || activityMode || growthMode;
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
   const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
@@ -6597,14 +6765,14 @@ export default function App() {
   }, [address, amountSats, attachment, ccRecipient, composeOpen, feeRate, memo, network, recipient, replyParentTxid, subject]);
 
   useEffect(() => {
-    if (activityMode) {
+    if (activityMode || growthMode) {
       return;
     }
 
     if (activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log") {
       void refreshIds(true);
     }
-  }, [activeFolder, activityMode, network]);
+  }, [activeFolder, activityMode, growthMode, network]);
 
   useEffect(() => {
     if (!mainnetRegistryMode) {
@@ -6656,7 +6824,7 @@ export default function App() {
   }, [ccRecipient, network, recipient, registryAddress]);
 
   useEffect(() => {
-    if (landingMode || desktopRoute || activityMode) {
+    if (landingMode || desktopRoute || activityMode || growthMode) {
       return;
     }
 
@@ -6676,10 +6844,10 @@ export default function App() {
         }
       })
       .catch(() => undefined);
-  }, [activityMode, desktopRoute, hasUnisat, landingMode, mainnetRegistryMode]);
+  }, [activityMode, desktopRoute, growthMode, hasUnisat, landingMode, mainnetRegistryMode]);
 
   useEffect(() => {
-    if (landingMode || desktopRoute || activityMode) {
+    if (landingMode || desktopRoute || activityMode || growthMode) {
       return;
     }
 
@@ -6747,7 +6915,7 @@ export default function App() {
       window.unisat?.removeListener?.("networkChanged", networkChanged);
       window.unisat?.removeListener?.("chainChanged", chainChanged);
     };
-  }, [activityMode, desktopRoute, hasUnisat, landingMode, mainnetRegistryMode, network]);
+  }, [activityMode, desktopRoute, growthMode, hasUnisat, landingMode, mainnetRegistryMode, network]);
 
   function applyDraft(draft: DraftMessage) {
     setRecipient(draft.recipient);
@@ -7492,7 +7660,7 @@ export default function App() {
 
     setBusy(true);
     if (!silent) {
-      setStatus({ tone: "idle", text: activityMode || activeFolder === "log" ? "Scanning ProofOfWork computer log..." : "Scanning ProofOfWork ID registry..." });
+      setStatus({ tone: "idle", text: activityMode || growthMode || activeFolder === "log" ? "Scanning ProofOfWork computer log..." : "Scanning ProofOfWork ID registry..." });
     }
 
     try {
@@ -7503,7 +7671,7 @@ export default function App() {
       setIdSales(state.sales);
       setIdActivity(state.activity);
 
-      const shouldLoadComputerLog = activityMode || activeFolder === "log";
+      const shouldLoadComputerLog = activityMode || growthMode || activeFolder === "log";
       const activity = shouldLoadComputerLog ? await fetchGlobalActivity(network) : state.activity;
       if (shouldLoadComputerLog) {
         setIdActivity(activity.length > 0 ? activity : state.activity);
@@ -8641,6 +8809,22 @@ export default function App() {
     );
   }
 
+  if (growthMode) {
+    return (
+      <GrowthApp
+        busy={busy}
+        idActivity={idActivity.filter((item) => item.network === "livenet")}
+        registryListings={idListings.filter((listing) => listing.network === "livenet")}
+        registryRecords={idRegistry.filter((record) => record.network === "livenet")}
+        registrySales={idSales.filter((sale) => sale.network === "livenet")}
+        setTheme={setTheme}
+        status={status}
+        theme={theme}
+        onRefresh={() => void refreshIds()}
+      />
+    );
+  }
+
   return (
     <main className="mail-app">
       <header className="topbar">
@@ -9670,6 +9854,444 @@ function ActivityFeed({ items }: { items: PowActivityItem[] }) {
         </article>
       ))}
     </div>
+  );
+}
+
+const GROWTH_MODEL_CHART_YEARS = 10;
+const GROWTH_MODEL_START_MS = Date.parse(`${GROWTH_MODEL_START_DATE}T00:00:00.000Z`);
+const MS_PER_MODEL_YEAR = 365 * 24 * 60 * 60 * 1000;
+
+function growthElapsedYears() {
+  return Math.max(0, (Date.now() - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR);
+}
+
+function growthCompactNumber(value: number, decimals = 0) {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+
+  const units = [
+    { label: "T", size: 1_000_000_000_000 },
+    { label: "B", size: 1_000_000_000 },
+    { label: "M", size: 1_000_000 },
+    { label: "K", size: 1_000 },
+  ];
+  const unit = units.find((item) => Math.abs(value) >= item.size);
+  if (!unit) {
+    return Math.round(value).toLocaleString();
+  }
+
+  const scaled = value / unit.size;
+  const digits = scaled >= 100 ? 0 : scaled >= 10 ? Math.min(1, decimals + 1) : Math.min(2, decimals + 1);
+  return `${scaled.toFixed(digits).replace(/\.0+$|(\.\d*[1-9])0+$/u, "$1")}${unit.label}`;
+}
+
+function growthSats(value: number) {
+  return `${growthCompactNumber(value)} sats`;
+}
+
+function growthPercent(value: number) {
+  return `${Math.round(value * 100).toLocaleString()}%`;
+}
+
+function growthActualPowIdPoints(records: PowIdRecord[]): GrowthActualPoint[] {
+  const confirmedRecords = records
+    .filter((record) => record.confirmed)
+    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid));
+  const currentCount = confirmedRecords.length;
+  const startCount = Math.min(GROWTH_MODEL_INPUTS.currentPowids, currentCount);
+  const points: GrowthActualPoint[] = [{ label: "Model start", powids: startCount, years: 0 }];
+
+  let count = startCount;
+  for (const record of confirmedRecords) {
+    const createdMs = Date.parse(record.createdAt);
+    if (!Number.isFinite(createdMs) || createdMs <= GROWTH_MODEL_START_MS || count >= currentCount) {
+      continue;
+    }
+
+    count += 1;
+    points.push({
+      label: `${record.id}@proofofwork.me`,
+      powids: count,
+      years: Math.max(0, (createdMs - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR),
+    });
+  }
+
+  const elapsed = growthElapsedYears();
+  const lastPoint = points[points.length - 1];
+  if (!lastPoint || lastPoint.powids !== currentCount || lastPoint.years < elapsed) {
+    points.push({ label: "Real now", powids: currentCount, years: elapsed });
+  }
+
+  return points;
+}
+
+function growthChartPath(points: Array<{ powids: number; years: number }>, xFor: (years: number) => number, yFor: (value: number) => number) {
+  return points
+    .map((point) => `${xFor(point.years).toFixed(2)},${yFor(point.powids).toFixed(2)}`)
+    .join(" ");
+}
+
+function GrowthLineChart({ actualPoints }: { actualPoints: GrowthActualPoint[] }) {
+  const width = 920;
+  const height = 390;
+  const padLeft = 72;
+  const padRight = 28;
+  const padTop = 24;
+  const padBottom = 52;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+  const modelPoints = GROWTH_MODEL_CHART_ROWS.filter((row) => row.years <= GROWTH_MODEL_CHART_YEARS);
+  const visibleActualPoints = actualPoints.map((point) => ({ ...point, years: Math.min(GROWTH_MODEL_CHART_YEARS, point.years) }));
+  const yValues = [...modelPoints.map((row) => row.powids), ...visibleActualPoints.map((point) => point.powids)].filter((value) => value > 0);
+  const yMin = Math.max(1, Math.floor(Math.min(...yValues) * 0.72));
+  const yMax = Math.max(1_000, Math.ceil(Math.max(...yValues) * 1.2));
+  const logMin = Math.log10(yMin);
+  const logMax = Math.log10(yMax);
+  const xFor = (years: number) => padLeft + (Math.max(0, Math.min(GROWTH_MODEL_CHART_YEARS, years)) / GROWTH_MODEL_CHART_YEARS) * plotWidth;
+  const yFor = (value: number) => padTop + (1 - (Math.log10(Math.max(yMin, value)) - logMin) / (logMax - logMin || 1)) * plotHeight;
+  const yTicks = [100, 1_000, 10_000, 100_000].filter((tick) => tick >= yMin && tick <= yMax);
+  const xTicks = [0, 1, 2, 5, 10];
+  const currentActual = visibleActualPoints[visibleActualPoints.length - 1];
+
+  return (
+    <svg className="growth-chart" role="img" viewBox={`0 0 ${width} ${height}`} aria-label="Modeled ProofOfWork ID growth compared with real confirmed ID growth">
+      <rect className="growth-chart-bg" x="0" y="0" width={width} height={height} rx="18" />
+      {yTicks.map((tick) => (
+        <g key={`y-${tick}`}>
+          <line className="growth-chart-grid" x1={padLeft} x2={width - padRight} y1={yFor(tick)} y2={yFor(tick)} />
+          <text className="growth-chart-label" x={padLeft - 14} y={yFor(tick) + 4} textAnchor="end">
+            {growthCompactNumber(tick)}
+          </text>
+        </g>
+      ))}
+      {xTicks.map((tick) => (
+        <g key={`x-${tick}`}>
+          <line className="growth-chart-grid growth-chart-grid-vertical" x1={xFor(tick)} x2={xFor(tick)} y1={padTop} y2={height - padBottom} />
+          <text className="growth-chart-label" x={xFor(tick)} y={height - 20} textAnchor="middle">
+            {tick === 0 ? "now" : `${tick}y`}
+          </text>
+        </g>
+      ))}
+      <polyline className="growth-chart-line model" points={growthChartPath(modelPoints, xFor, yFor)} />
+      <polyline className="growth-chart-line actual" points={growthChartPath(visibleActualPoints, xFor, yFor)} />
+      {modelPoints.map((point) => (
+        <circle className="growth-chart-dot model" cx={xFor(point.years)} cy={yFor(point.powids)} key={`model-${point.label}`} r="4.5" />
+      ))}
+      {visibleActualPoints.map((point, index) => (
+        <circle className="growth-chart-dot actual" cx={xFor(point.years)} cy={yFor(point.powids)} key={`actual-${point.label}-${index}`} r={index === visibleActualPoints.length - 1 ? 6 : 4} />
+      ))}
+      {currentActual ? (
+        <g>
+          <text className="growth-chart-callout actual" x={Math.min(width - 150, xFor(currentActual.years) + 14)} y={Math.max(36, yFor(currentActual.powids) - 12)}>
+            Real: {currentActual.powids.toLocaleString()} IDs
+          </text>
+          <text className="growth-chart-callout model" x={xFor(1) + 12} y={yFor(GROWTH_MODEL_ROWS[1]?.powids ?? GROWTH_MODEL_ROWS[0].powids) - 12}>
+            Model path
+          </text>
+        </g>
+      ) : null}
+    </svg>
+  );
+}
+
+function GrowthProductCard({
+  actual,
+  actualLabel,
+  icon,
+  modelFiveYear,
+  modelLabel,
+  modelOneYear,
+  name,
+  note,
+}: {
+  actual: string;
+  actualLabel: string;
+  icon: ReactNode;
+  modelFiveYear: string;
+  modelLabel: string;
+  modelOneYear: string;
+  name: string;
+  note: string;
+}) {
+  return (
+    <article className="growth-product-card">
+      <div className="id-card-head">
+        <div className="empty-icon" aria-hidden="true">
+          {icon}
+        </div>
+        <div>
+          <h3>{name}</h3>
+          <p>{note}</p>
+        </div>
+      </div>
+      <dl className="growth-product-metrics">
+        <div>
+          <dt>Real now</dt>
+          <dd>{actual}</dd>
+          <span>{actualLabel}</span>
+        </div>
+        <div>
+          <dt>12m model</dt>
+          <dd>{modelOneYear}</dd>
+          <span>{modelLabel}</span>
+        </div>
+        <div>
+          <dt>5y model</dt>
+          <dd>{modelFiveYear}</dd>
+          <span>{modelLabel}</span>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+function GrowthApp({
+  busy,
+  idActivity,
+  registryListings,
+  registryRecords,
+  registrySales,
+  setTheme,
+  status,
+  theme,
+  onRefresh,
+}: {
+  busy: boolean;
+  idActivity: PowActivityItem[];
+  registryListings: PowIdListing[];
+  registryRecords: PowIdRecord[];
+  registrySales: PowIdMarketplaceSale[];
+  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
+  status: { tone: StatusTone; text: string };
+  theme: ThemeMode;
+  onRefresh: () => void;
+}) {
+  return (
+    <main className="desktop-public-app activity-public-app growth-public-app">
+      <header className="desktop-public-header">
+        <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
+          <div className="brand-mark" aria-hidden="true">
+            PoW
+          </div>
+          <div>
+            <h1>ProofOfWork Growth</h1>
+            <span>Model vs chain</span>
+          </div>
+        </a>
+
+        <div className="landing-nav">
+          <DomainNav />
+          <button
+            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
+            className="icon-button"
+            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            type="button"
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+        </div>
+      </header>
+
+      {status.tone !== "idle" ? (
+        <div className={`status desktop-route-status ${status.tone}`}>
+          <span className="status-dot" aria-hidden="true" />
+          <span>{status.text}</span>
+        </div>
+      ) : null}
+
+      <GrowthWorkspace
+        busy={busy}
+        idActivity={idActivity}
+        registryListings={registryListings}
+        registryRecords={registryRecords}
+        registrySales={registrySales}
+        onRefresh={onRefresh}
+      />
+
+      <SocialFooter />
+    </main>
+  );
+}
+
+function GrowthWorkspace({
+  busy,
+  idActivity,
+  registryListings,
+  registryRecords,
+  registrySales,
+  onRefresh,
+}: {
+  busy: boolean;
+  idActivity: PowActivityItem[];
+  registryListings: PowIdListing[];
+  registryRecords: PowIdRecord[];
+  registrySales: PowIdMarketplaceSale[];
+  onRefresh: () => void;
+}) {
+  const confirmedRecords = registryRecords.filter((record) => record.confirmed);
+  const pendingRecords = registryRecords.filter((record) => !record.confirmed);
+  const confirmedActivity = idActivity.filter((item) => item.confirmed);
+  const actualPoints = growthActualPowIdPoints(registryRecords);
+  const marketplaceStats = marketplaceStatsFromSales(registrySales);
+  const oneYear = GROWTH_MODEL_ROWS.find((row) => row.years === 1) ?? GROWTH_MODEL_ROWS[1];
+  const fiveYear = GROWTH_MODEL_ROWS.find((row) => row.years === 5) ?? GROWTH_MODEL_ROWS[3];
+  const currentActual = confirmedRecords.length;
+  const currentDelta = currentActual - GROWTH_MODEL_INPUTS.currentPowids;
+  const mailActions = confirmedActivity.filter((item) => item.kind === "mail" || item.kind === "reply").length;
+  const driveActions = confirmedActivity.filter((item) => item.kind === "file").length;
+
+  return (
+    <section className="growth-workspace">
+      <div className="growth-hero">
+        <div>
+          <span className="landing-kicker">Bitcoin Computer growth model</span>
+          <h2>Model the future. Measure the chain.</h2>
+          <p>
+            The blue line is the canonical success-case model. The green line is confirmed mainnet growth pulled from the registry and computer log.
+          </p>
+        </div>
+        <div className="growth-model-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <TrendingUp size={24} />
+            </div>
+            <div>
+              <h3>Canonical baseline</h3>
+              <p>Generated {GROWTH_MODEL_GENERATED_ON}. Model start {GROWTH_MODEL_START_DATE}.</p>
+            </div>
+          </div>
+          <dl className="growth-assumption-list">
+            <div>
+              <dt>Baseline IDs</dt>
+              <dd>{GROWTH_MODEL_INPUTS.currentPowids.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Node CAGR</dt>
+              <dd>{growthPercent(GROWTH_MODEL_INPUTS.nodeCagr)}</dd>
+            </div>
+            <div>
+              <dt>Agent share</dt>
+              <dd>{growthPercent(GROWTH_MODEL_INPUTS.agentShare)}</dd>
+            </div>
+            <div>
+              <dt>Canonical fee</dt>
+              <dd>{GROWTH_MODEL_INPUTS.canonicalFee.toLocaleString("en-US", { maximumFractionDigits: 5 })} sat/vB</dd>
+            </div>
+          </dl>
+          <button className="secondary small" disabled={busy} onClick={onRefresh} type="button">
+            <span className="button-content">
+              <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
+              <span>{busy ? "Refreshing" : "Refresh chain metrics"}</span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div className="growth-stat-grid" aria-label="Growth headline stats">
+        <div>
+          <strong>{currentActual.toLocaleString()}</strong>
+          <span>Confirmed IDs now</span>
+        </div>
+        <div>
+          <strong>{currentDelta >= 0 ? `+${currentDelta.toLocaleString()}` : currentDelta.toLocaleString()}</strong>
+          <span>IDs since model baseline</span>
+        </div>
+        <div>
+          <strong>{pendingRecords.length.toLocaleString()}</strong>
+          <span>Pending IDs</span>
+        </div>
+        <div>
+          <strong>{confirmedActivity.length.toLocaleString()}</strong>
+          <span>Confirmed computer actions</span>
+        </div>
+        <div>
+          <strong>{marketplaceStats.confirmedSales.toLocaleString()}</strong>
+          <span>Confirmed marketplace sales</span>
+        </div>
+      </div>
+
+      <section className="growth-chart-card">
+        <div className="id-launch-section-head">
+          <div>
+            <h3>Modeled PowIDs vs real confirmed PowIDs</h3>
+            <p>Log scale, 10-year window. Real data is chain-derived; model data is the success-case path.</p>
+          </div>
+          <div className="growth-chart-legend" aria-label="Chart legend">
+            <span><i className="model" /> Model</span>
+            <span><i className="actual" /> Real</span>
+          </div>
+        </div>
+        <GrowthLineChart actualPoints={actualPoints} />
+      </section>
+
+      <section className="growth-product-section" aria-label="Growth product metrics">
+        <div className="id-launch-section-head">
+          <div>
+            <h3>Products in the model</h3>
+            <p>Every product gets a real metric, a usage assumption, a value assumption, a fee elasticity, and blockspace accounting.</p>
+          </div>
+        </div>
+        <div className="growth-product-grid">
+          <GrowthProductCard
+            actual={currentActual.toLocaleString()}
+            actualLabel="confirmed IDs"
+            icon={<AtSign size={24} />}
+            modelFiveYear={Math.round(fiveYear.powids).toLocaleString()}
+            modelLabel="modeled PowIDs"
+            modelOneYear={Math.round(oneYear.powids).toLocaleString()}
+            name="IDs"
+            note="Network stock value: n squared against current ID value density."
+          />
+          <GrowthProductCard
+            actual={mailActions.toLocaleString()}
+            actualLabel="confirmed mail and replies"
+            icon={<Mail size={24} />}
+            modelFiveYear={growthCompactNumber(fiveYear.mailWrites)}
+            modelLabel="annual writes"
+            modelOneYear={growthCompactNumber(oneYear.mailWrites)}
+            name="Mail"
+            note="Relationship flow across the confirmed ID graph."
+          />
+          <GrowthProductCard
+            actual={driveActions.toLocaleString()}
+            actualLabel="confirmed file actions"
+            icon={<FileText size={24} />}
+            modelFiveYear={growthCompactNumber(fiveYear.driveWrites)}
+            modelLabel="annual writes"
+            modelOneYear={growthCompactNumber(oneYear.driveWrites)}
+            name="Drive"
+            note="File writes priced through the same fee-collapse and blockspace constraint."
+          />
+          <GrowthProductCard
+            actual={marketplaceStats.confirmedSales.toLocaleString()}
+            actualLabel={`${marketplaceStats.confirmedVolumeSats.toLocaleString()} sats volume · ${registryListings.length.toLocaleString()} active listings`}
+            icon={<Users size={24} />}
+            modelFiveYear={growthCompactNumber(fiveYear.marketplaceWrites)}
+            modelLabel="annual sales"
+            modelOneYear={growthCompactNumber(oneYear.marketplaceWrites)}
+            name="Marketplace"
+            note="Buyer-funded transfers become a first-class product in the Bitcoin Computer model."
+          />
+        </div>
+      </section>
+
+      <section className="growth-assumption-grid" aria-label="Model assumptions">
+        <article>
+          <h3>Product contract</h3>
+          <p>New products are not side quests. They enter the same model with real chain inputs, per-user usage, value multiple, fee elasticity, and vbyte cost.</p>
+        </article>
+        <article>
+          <h3>Blockspace constraint</h3>
+          <p>The model compounds until the current theoretical ceiling is binding: {growthCompactNumber(GROWTH_MODEL_INPUTS.blockspaceVbytesPerYear)} vB per year.</p>
+        </article>
+        <article>
+          <h3>Canonical path</h3>
+          <p>At 12 months the model reaches {Math.round(oneYear.powids).toLocaleString()} PowIDs and {growthSats(oneYear.totalSats)} total modeled Bitcoin Computer value.</p>
+        </article>
+      </section>
+    </section>
   );
 }
 

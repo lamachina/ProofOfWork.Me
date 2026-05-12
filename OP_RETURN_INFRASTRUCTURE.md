@@ -24,9 +24,10 @@ computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 marketplace.proofofwork.me  -> standalone ID marketplace
 log.proofofwork.me          -> public Bitcoin Computer log
+growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Marketplace, and Log from any production surface. Social links should include X, YouTube, GitHub, and Discord.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Marketplace, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -83,6 +84,7 @@ VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
+VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
 
 ## Endpoints
@@ -114,6 +116,12 @@ The log endpoint:
 - Crawls the ProofOfWork mail/file address graph by reading `pwm1:` transactions, discovering senders and recipients, and expanding until the configured safety cap.
 - Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, and attachments.
 - Reports total indexed ProofOfWork protocol data bytes across all discovered `pwm1:` and `pwid1:` OP_RETURN payloads, including marketplace listing/seal/buy/delist records.
+
+The Growth app:
+
+- Reads the same registry and log endpoints as Log and Marketplace.
+- Compares confirmed chain metrics to the canonical model in `output/bitcoin-computer-agent-adoption-model.md`.
+- Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
 
 The mail endpoint:
 
@@ -208,6 +216,7 @@ After changing the API or production build, verify:
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Log can load global Bitcoin Computer events and search an address, confirmed ProofOfWork ID, or txid.
+- Growth can load real chain metrics and render the modeled-vs-real line graph without layout overlap on desktop and mobile.
 - Known attachment transactions reconstruct with valid size and SHA-256.
 - Known pending txs return `pending`.
 - Known dropped txs return `dropped`.

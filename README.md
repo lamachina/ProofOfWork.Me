@@ -24,6 +24,7 @@ computer.proofofwork.me
 desktop.proofofwork.me
 marketplace.proofofwork.me
 log.proofofwork.me
+growth.proofofwork.me
 ```
 
 Production app roles:
@@ -34,9 +35,10 @@ Production app roles:
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `marketplace.proofofwork.me` is the standalone ProofOfWork ID listing and buyer-funded transfer app.
 - `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
+- `growth.proofofwork.me` is the standalone public growth dashboard comparing the canonical model with real chain metrics.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Marketplace, and Log. Public social links should include X, YouTube, GitHub, and Discord.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Marketplace, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
 
 Official YouTube:
 
@@ -115,6 +117,7 @@ Launch invariants for future developers/agents:
 - Lets current ID owners publish on-chain marketplace listings, delist them, and execute buyer-funded ID transfers.
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
+- Exposes Growth as a public dashboard for modeled adoption versus real confirmed registry, log, and marketplace metrics.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
@@ -144,6 +147,7 @@ https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
+https://growth.proofofwork.me/api/*
 ```
 
 Current production behavior:
@@ -157,6 +161,7 @@ Current production behavior:
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
 - Marketplace ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public marketplace stats.
 - The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, and attachments discovered from the ProofOfWork address graph. Address, confirmed ID, or txid search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across all `pwm1:` and `pwid1:` OP_RETURN records.
+- Growth reads the same registry and log endpoints, then compares real confirmed metrics with the canonical `output/bitcoin-computer-agent-adoption-model.md` assumptions. New products should enter the model with real inputs, a usage rate, a value assumption, a fee elasticity, and blockspace accounting.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which mempool.space reports as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
@@ -270,6 +275,12 @@ To preview the public Log locally:
 http://localhost:5173/?log=1
 ```
 
+To preview the public Growth dashboard locally:
+
+```text
+http://localhost:5173/?growth=1
+```
+
 To build a landing-page-only deployment for `proofofwork.me`:
 
 ```bash
@@ -304,6 +315,12 @@ To build the standalone Log app for production:
 
 ```bash
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
+```
+
+To build the standalone Growth app for production:
+
+```bash
+VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
 
 To run localhost against the production API:
@@ -359,6 +376,7 @@ Important implementation points:
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - Marketplace-only deploy switch: `VITE_MARKETPLACE_ONLY=1`.
+- Growth-only deploy switch: `VITE_GROWTH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, `ID_MUTATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
 - Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
@@ -373,6 +391,7 @@ Important implementation points:
 - Full app ID workspace: `IdsWorkspace`.
 - Standalone marketplace UI: `MarketplaceApp`.
 - Computer marketplace workspace: `MarketplaceWorkspace`.
+- Standalone growth dashboard: `GrowthApp`.
 - OP_RETURN API: `server/proof-api.mjs`.
 - OP_RETURN infrastructure notes: `OP_RETURN_INFRASTRUCTURE.md`.
 - ID refund log: `ID_REFUNDS.md`.

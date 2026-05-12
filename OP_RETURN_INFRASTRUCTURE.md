@@ -120,7 +120,8 @@ The log endpoint:
 The Growth app:
 
 - Reads the same registry and log endpoints as Log and Marketplace.
-- Compares confirmed chain metrics to the canonical model in `output/bitcoin-computer-agent-adoption-model.md`.
+- Compares modeled Bitcoin Computer network value to confirmed chain-derived value in sats and USD.
+- Auto-refreshes confirmed registry, log, file, and marketplace metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
 
 The mail endpoint:
@@ -216,7 +217,7 @@ After changing the API or production build, verify:
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Log can load global Bitcoin Computer events and search an address, confirmed ProofOfWork ID, or txid.
-- Growth can load real chain metrics and render the modeled-vs-real line graph without layout overlap on desktop and mobile.
+- Growth can load real chain metrics and render the modeled-vs-real sats/USD value graph without layout overlap on desktop and mobile.
 - Known attachment transactions reconstruct with valid size and SHA-256.
 - Known pending txs return `pending`.
 - Known dropped txs return `dropped`.

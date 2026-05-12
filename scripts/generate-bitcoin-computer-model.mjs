@@ -984,6 +984,15 @@ writeFileSync(
         bitnodesReachableNodes: inputs.bitnodes.reachableNodes,
         agentShare: inputs.scenario.agentShare,
         blockspaceVbytesPerYear,
+        btc: {
+          currentUsd: inputs.btc.currentUsd,
+          currentDate: inputs.btc.currentDate,
+          historicalUsd: inputs.btc.historicalUsd,
+          historicalDate: inputs.btc.historicalDate,
+          logGrowthMu: btcLogGrowth,
+          equivalentCagr: btcEquivalentCagr,
+          tenYearVolatility: inputs.btc.tenYearVolatility,
+        },
         canonicalFee: inputs.scenario.canonicalFee,
         currentPowids: inputs.pow.confirmedPowids,
         nodeCagr: inputs.scenario.nodeCagr,
@@ -1017,9 +1026,29 @@ writeFileSync(
           },
         },
       },
+      realBaseline: {
+        idSats: Math.round(inputs.pow.uniqueReceiveAddressBalanceSats),
+        mailSats: Math.round(inputs.pow.mailPaidAttentionFlowSats * inputs.scenario.mailValueMultiple),
+        driveSats: Math.round(inputs.pow.fileFlowSats * inputs.scenario.driveValueMultiple),
+        marketplaceSats: Math.round(inputs.pow.marketplaceVolumeSats * inputs.scenario.marketplaceValueMultiple),
+        totalSats: Math.round(
+          inputs.pow.uniqueReceiveAddressBalanceSats +
+            inputs.pow.mailPaidAttentionFlowSats * inputs.scenario.mailValueMultiple +
+            inputs.pow.fileFlowSats * inputs.scenario.driveValueMultiple +
+            inputs.pow.marketplaceVolumeSats * inputs.scenario.marketplaceValueMultiple,
+        ),
+        usdBase:
+          ((inputs.pow.uniqueReceiveAddressBalanceSats +
+            inputs.pow.mailPaidAttentionFlowSats * inputs.scenario.mailValueMultiple +
+            inputs.pow.fileFlowSats * inputs.scenario.driveValueMultiple +
+            inputs.pow.marketplaceVolumeSats * inputs.scenario.marketplaceValueMultiple) /
+            100_000_000) *
+          inputs.btc.currentUsd,
+      },
       canonicalRows: canonicalRows.map((row) => ({
         adoption: row.adoption,
         blockspaceUsageRatio: row.blockspaceUsageRatio,
+        btcUsdBase: row.btcUsdBase,
         driveSats: Math.round(row.driveSats),
         driveWrites: row.driveWrites,
         idSats: Math.round(row.idSats),
@@ -1031,6 +1060,7 @@ writeFileSync(
         marketplaceWrites: row.marketplaceWrites,
         powids: row.powids,
         totalSats: Math.round(row.totalSats),
+        usdBase: row.usdBase,
         totalWrites: row.idWrites + (row.mailWrites + row.driveWrites + row.marketplaceWrites) * row.blockspaceUsageRatio,
         years: row.years,
       })),

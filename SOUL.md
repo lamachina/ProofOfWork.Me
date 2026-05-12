@@ -73,7 +73,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `marketplace.proofofwork.me` is the standalone ID marketplace.
 - `log.proofofwork.me` is the public read-only Bitcoin Computer log for tx-backed ProofOfWork actions.
-- `growth.proofofwork.me` is the public read-only growth dashboard for the canonical model versus confirmed chain metrics.
+- `growth.proofofwork.me` is the public read-only growth dashboard for canonical Bitcoin Computer network value versus confirmed chain-derived value in sats and USD.
 - Canonical mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`
 - Registration price: `1000` sats.
 - Current ID event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`

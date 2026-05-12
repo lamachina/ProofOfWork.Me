@@ -35,7 +35,7 @@ Production app roles:
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `marketplace.proofofwork.me` is the standalone ProofOfWork ID listing and buyer-funded transfer app.
 - `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
-- `growth.proofofwork.me` is the standalone public growth dashboard comparing the canonical model with real chain metrics.
+- `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled Bitcoin Computer network value with real confirmed chain value in sats and USD.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
 
 Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Marketplace, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
@@ -117,7 +117,7 @@ Launch invariants for future developers/agents:
 - Lets current ID owners publish on-chain marketplace listings, delist them, and execute buyer-funded ID transfers.
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
-- Exposes Growth as a public dashboard for modeled adoption versus real confirmed registry, log, and marketplace metrics.
+- Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, and marketplace value metrics.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
@@ -161,7 +161,7 @@ Current production behavior:
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
 - Marketplace ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public marketplace stats.
 - The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, and attachments discovered from the ProofOfWork address graph. Address, confirmed ID, or txid search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across all `pwm1:` and `pwid1:` OP_RETURN records.
-- Growth reads the same registry and log endpoints, then compares real confirmed metrics with the canonical `output/bitcoin-computer-agent-adoption-model.md` assumptions. New products should enter the model with real inputs, a usage rate, a value assumption, a fee elasticity, and blockspace accounting.
+- Growth reads the same registry and log endpoints, then auto-refreshes real confirmed network value against the canonical `output/bitcoin-computer-agent-adoption-model.md` sats/USD assumptions. New products should enter the model with real inputs, a usage rate, a value assumption, a fee elasticity, and blockspace accounting.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which mempool.space reports as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.

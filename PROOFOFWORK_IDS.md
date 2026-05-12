@@ -112,7 +112,7 @@ The ID subdomain is the first onboarding experience and should stay focused on c
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
 The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers.
 The Log subdomain is read-only. It exposes a unified Bitcoin Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, and attachments.
-The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace model with confirmed registry, log, and marketplace metrics.
+The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace network-value model with confirmed registry, log, file, and marketplace value metrics in sats and USD.
 
 Local preview:
 

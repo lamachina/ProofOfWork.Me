@@ -11,6 +11,15 @@
     "bitnodesReachableNodes": 23984,
     "agentShare": 0.51,
     "blockspaceVbytesPerYear": 52560000000,
+    "btc": {
+      "currentUsd": 80879.33,
+      "currentDate": "2026-05-11",
+      "historicalUsd": 452.73,
+      "historicalDate": "2016-05-11",
+      "logGrowthMu": 0.5185417648484123,
+      "equivalentCagr": 0.6795766453588237,
+      "tenYearVolatility": 0.5673
+    },
     "canonicalFee": 0.00001,
     "currentPowids": 94,
     "nodeCagr": 0.25,
@@ -44,10 +53,19 @@
       }
     }
   },
+  "realBaseline": {
+    "idSats": 2374139,
+    "mailSats": 51010,
+    "driveSats": 10920,
+    "marketplaceSats": 5000,
+    "totalSats": 2441069,
+    "usdBase": 1974.3202520377
+  },
   "canonicalRows": [
     {
       "adoption": 0.1,
       "blockspaceUsageRatio": 1,
+      "btcUsdBase": 104818.38367241675,
       "driveSats": 7295718233,
       "driveWrites": 1459143.6466442943,
       "idSats": 2825816985,
@@ -59,12 +77,14 @@
       "marketplaceWrites": 8649.217010388862,
       "powids": 1367.5612864950517,
       "totalSats": 20058888187,
+      "usdBase": 21025402.380547263,
       "totalWrites": 4384944.179735491,
       "years": 0.5
     },
     {
       "adoption": 0.2,
       "blockspaceUsageRatio": 1,
+      "btcUsdBase": 135843.03376026926,
       "driveSats": 16313721914,
       "driveWrites": 3262744.3828335744,
       "idSats": 14129084927,
@@ -76,12 +96,14 @@
       "marketplaceWrites": 19340.237187377,
       "powids": 3057.9600000000005,
       "totalSats": 80030053724,
+      "usdBase": 108715252.89840896,
       "totalWrites": 17852470.07830388,
       "years": 1
     },
     {
       "adoption": 0.4,
       "blockspaceUsageRatio": 0.4236920105240822,
+      "btcUsdBase": 228158.7869384385,
       "driveSats": 17279984092,
       "driveWrites": 8156860.957083936,
       "idSats": 88306780793,
@@ -93,12 +115,14 @@
       "marketplaceWrites": 48350.59296844249,
       "powids": 7644.900000000001,
       "totalSats": 236769596287,
+      "usdBase": 540210638.7271625,
       "totalWrites": 42064974.65772033,
       "years": 2
     },
     {
       "adoption": 0.6,
       "blockspaceUsageRatio": 0.08468850451696275,
+      "btcUsdBase": 1081027.346838985,
       "driveSats": 10119028652,
       "driveWrites": 23897053.58520684,
       "idSats": 757943179259,
@@ -110,12 +134,14 @@
       "marketplaceWrites": 141652.12783723386,
       "powids": 22397.16796875,
       "totalSats": 993023493206,
+      "usdBase": 10734855522.09286,
       "totalWrites": 68296225.30684783,
       "years": 5
     },
     {
       "adoption": 0.8,
       "blockspaceUsageRatio": 0.007101242014505624,
+      "btcUsdBase": 14448934.290303037,
       "driveSats": 3452530130,
       "driveWrites": 97237359.96584815,
       "idSats": 12549148322130,
@@ -127,12 +153,14 @@
       "marketplaceWrites": 576383.9837127028,
       "powids": 91134.30976867676,
       "totalSats": 12864865281608,
+      "usdBase": 1858835931075.4988,
       "totalWrites": 93025541.37479475,
       "years": 10
     },
     {
       "adoption": 0.9,
       "blockspaceUsageRatio": 0.000007916193761980742,
+      "btcUsdBase": 34501122303.57417,
       "driveSats": 123061526,
       "driveWrites": 3109108489.570053,
       "idSats": 12829794126672018,
@@ -144,12 +172,14 @@
       "marketplaceWrites": 18429545.3685988,
       "powids": 2913966.9803089807,
       "totalSats": 12830150116224176,
+      "usdBase": 4426545783330667000,
       "totalWrites": 121057080.27419376,
       "years": 25
     },
     {
       "adoption": 1,
       "blockspaceUsageRatio": 9.192997814227497e-11,
+      "btcUsdBase": 14717325677724868,
       "driveSats": 420311,
       "driveWrites": 914415738629.8221,
       "idSats": 1.1097759757598183e+21,
@@ -161,6 +191,7 @@
       "marketplaceWrites": 5420288934.06982,
       "powids": 857022930.3933436,
       "totalSats": 1.1097759761172912e+21,
+      "usdBase": 1.6332934469833188e+29,
       "totalWrites": 4924512569.189388,
       "years": 50
     }

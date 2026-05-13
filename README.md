@@ -293,6 +293,19 @@ To preview the public Growth dashboard locally:
 http://localhost:5173/?growth=1
 ```
 
+When running on `localhost`, shared app navigation stays local instead of jumping to production domains:
+
+```text
+Home -> /?landing=1
+IDs -> /?id-launch=1
+Computer -> /
+Desktop -> /?desktop=1
+Browser -> /?browser=1
+Marketplace -> /?marketplace=1
+Log -> /?log=1
+Growth -> /?growth=1
+```
+
 To build a landing-page-only deployment for `proofofwork.me`:
 
 ```bash

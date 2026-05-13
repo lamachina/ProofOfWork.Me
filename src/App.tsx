@@ -634,6 +634,7 @@ const DISCORD_URL = "https://discord.com/invite/mRA4zbqB";
 const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
 const YOUTUBE_URL = "https://www.youtube.com/@proofofworkme";
+const HOME_APP_URL = "https://proofofwork.me";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
@@ -641,6 +642,14 @@ const BROWSER_APP_URL = "https://browser.proofofwork.me";
 const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 const LOG_APP_URL = "https://log.proofofwork.me";
 const GROWTH_APP_URL = "https://growth.proofofwork.me";
+const LOCAL_HOME_APP_URL = "/?landing=1";
+const LOCAL_ID_APP_URL = "/?id-launch=1";
+const LOCAL_COMPUTER_APP_URL = "/";
+const LOCAL_DESKTOP_APP_URL = "/?desktop=1";
+const LOCAL_BROWSER_APP_URL = "/?browser=1";
+const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
+const LOCAL_LOG_APP_URL = "/?log=1";
+const LOCAL_GROWTH_APP_URL = "/?growth=1";
 const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
 const LANDING_TESTIMONIAL_TXID = "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
 const LANDING_TESTIMONIAL_TX_URL = `https://mempool.space/tx/${LANDING_TESTIMONIAL_TXID}`;
@@ -679,14 +688,14 @@ const DEFAULT_MEMO = "";
 const MAX_RECIPIENTS = 10;
 
 const APP_LINKS = [
-  { href: "https://proofofwork.me", label: "Home" },
-  { href: ID_APP_URL, label: "IDs" },
-  { href: COMPUTER_APP_URL, label: "Computer" },
-  { href: DESKTOP_APP_URL, label: "Desktop" },
-  { href: BROWSER_APP_URL, label: "Browser" },
-  { href: MARKETPLACE_APP_URL, label: "Marketplace" },
-  { href: LOG_APP_URL, label: "Log" },
-  { href: GROWTH_APP_URL, label: "Growth" },
+  { href: HOME_APP_URL, label: "Home", localHref: LOCAL_HOME_APP_URL },
+  { href: ID_APP_URL, label: "IDs", localHref: LOCAL_ID_APP_URL },
+  { href: COMPUTER_APP_URL, label: "Computer", localHref: LOCAL_COMPUTER_APP_URL },
+  { href: DESKTOP_APP_URL, label: "Desktop", localHref: LOCAL_DESKTOP_APP_URL },
+  { href: BROWSER_APP_URL, label: "Browser", localHref: LOCAL_BROWSER_APP_URL },
+  { href: MARKETPLACE_APP_URL, label: "Marketplace", localHref: LOCAL_MARKETPLACE_APP_URL },
+  { href: LOG_APP_URL, label: "Log", localHref: LOCAL_LOG_APP_URL },
+  { href: GROWTH_APP_URL, label: "Growth", localHref: LOCAL_GROWTH_APP_URL },
 ];
 
 type GrowthModelRow = {
@@ -936,6 +945,15 @@ function isLandingRoute() {
   const hostname = window.location.hostname.toLowerCase();
   // Production front door: proofofwork.me. Local/dev preview: ?landing=1.
   return hostname === "proofofwork.me" || hostname === "www.proofofwork.me" || window.location.search.includes("landing=1");
+}
+
+function isLocalPreviewHost() {
+  const hostname = window.location.hostname.toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname.endsWith(".localhost");
+}
+
+function appHref(productionHref: string, localHref: string) {
+  return isLocalPreviewHost() ? localHref : productionHref;
 }
 
 function isDesktopRoute() {
@@ -9817,7 +9835,7 @@ function DomainNav({ compact = false }: { compact?: boolean }) {
   return (
     <nav className={compact ? "domain-nav compact" : "domain-nav"} aria-label="ProofOfWork.Me domains">
       {APP_LINKS.map((link) => (
-        <a href={link.href} key={link.href}>
+        <a href={appHref(link.href, link.localHref)} key={link.href}>
           {link.label}
         </a>
       ))}
@@ -11634,19 +11652,19 @@ function LandingApp({
             Claim a permanent on-chain ID, then use it as your Bitcoin-native inbox across the open network.
           </p>
           <div className="landing-actions">
-            <a className="primary link-button" href={ID_APP_URL}>
+            <a className="primary link-button" href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}>
               <span className="button-content">
                 <AtSign size={17} />
                 <span>Claim an ID</span>
               </span>
             </a>
-            <a className="secondary link-button" href={COMPUTER_APP_URL}>
+            <a className="secondary link-button" href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}>
               <span className="button-content">
                 <Mail size={17} />
                 <span>Open Computer</span>
               </span>
             </a>
-            <a className="secondary link-button" href={DESKTOP_APP_URL}>
+            <a className="secondary link-button" href={appHref(DESKTOP_APP_URL, LOCAL_DESKTOP_APP_URL)}>
               <span className="button-content">
                 <Monitor size={17} />
                 <span>Open Desktop</span>
@@ -11728,7 +11746,7 @@ function LandingApp({
                 Register <code>user@proofofwork.me</code> to your Bitcoin receive address through the canonical mainnet registry.
               </p>
             </div>
-            <a className="primary link-button" href={ID_APP_URL}>
+            <a className="primary link-button" href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}>
               <span className="button-content">
                 <AtSign size={16} />
                 <span>Go to IDs</span>
@@ -11744,7 +11762,7 @@ function LandingApp({
               <h3>Open Computer</h3>
               <p>Send and receive Bitcoin-native mail, replies, and small files with local drafts, archive, favorites, and backups.</p>
             </div>
-            <a className="secondary link-button" href={COMPUTER_APP_URL}>
+            <a className="secondary link-button" href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}>
               <span className="button-content">
                 <Mail size={16} />
                 <span>Open App</span>
@@ -11760,7 +11778,7 @@ function LandingApp({
               <h3>Open Desktop</h3>
               <p>Search an address or confirmed ProofOfWork ID and browse public confirmed files.</p>
             </div>
-            <a className="secondary link-button" href={DESKTOP_APP_URL}>
+            <a className="secondary link-button" href={appHref(DESKTOP_APP_URL, LOCAL_DESKTOP_APP_URL)}>
               <span className="button-content">
                 <Monitor size={16} />
                 <span>Open Desktop</span>

@@ -76,6 +76,19 @@ VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 
 Without `VITE_POW_API_BASE`, the app keeps using the previous browser-side mempool.space readers. This keeps local development simple while allowing production to use ProofOfWork-owned infrastructure.
 
+On `localhost` and `127.0.0.1`, shared app navigation uses local route flags instead of production domains:
+
+```text
+/?landing=1
+/?id-launch=1
+/
+/?desktop=1
+/?browser=1
+/?marketplace=1
+/?log=1
+/?growth=1
+```
+
 Production builds:
 
 ```bash

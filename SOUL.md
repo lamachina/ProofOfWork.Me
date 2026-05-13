@@ -163,7 +163,7 @@ These are strategic directions, not all current implementation:
 - Open Agent Development Standard (OADS): proposals sent to `openagentdevelopmentstandard@proofofwork.me`, ordered by sats and readable by agents.
 - On-chain app submission: developers submit applications or proposals to ProofOfWork IDs for agent review.
 - Autonomous micro-applications: small apps that can run, receive payments, and generate sats.
-- Bitcoin Browser: users paste a txid and render verified `text/html` attachments from the existing ProofOfWork file protocol in a sandboxed viewer.
+- Bitcoin Browser: users paste a txid and render HTML from ProofOfWork message bodies or verified `text/html` attachments in a sandboxed viewer.
 - On-chain comments, polls, voting, lotteries, and digital goods.
 - Encrypted media or files with on-chain permission records.
 - Concatenated/linker transactions for content larger than one OP_RETURN budget.

@@ -1787,6 +1787,20 @@ function totalProtocolDataBytes(items) {
   return [...bytesByTxid.values()].reduce((total, bytes) => total + bytes, 0);
 }
 
+function isBrowserHtmlMessageBody(value) {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return false;
+  }
+
+  return (
+    /^<!doctype\s+html[\s>]/iu.test(text) ||
+    /^<html[\s>]/iu.test(text) ||
+    /<\/(?:html|head|body)>/iu.test(text) ||
+    /^<(?:a|article|body|button|canvas|code|div|form|h[1-6]|head|img|input|main|ol|p|pre|script|section|span|style|svg|table|ul)(?:\s|>|\/)/iu.test(text)
+  );
+}
+
 function mailActivityItemFromTransaction(tx, network) {
   const vin = Array.isArray(tx.vin) ? tx.vin : [];
   const vout = Array.isArray(tx.vout) ? tx.vout : [];
@@ -1830,6 +1844,7 @@ function mailActivityItemFromTransaction(tx, network) {
       activityStatusTag(confirmed),
       networkLabel(network),
       isFile ? "Attachment" : isReply ? "Reply" : "Message",
+      isBrowserHtmlMessageBody(protocolMessage.memo) ? "HTML body" : "",
       recipients.length > 1 ? `${recipients.length} recipients` : "1 recipient",
       amountSats > 0 ? `${amountSats.toLocaleString()} sats` : "",
     ].filter(Boolean),

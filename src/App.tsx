@@ -144,6 +144,7 @@ type BrowserPage = {
   network: BitcoinNetwork;
   protocolBytes: number;
   sender: string;
+  source: "attachment" | "message";
   txid: string;
 };
 
@@ -4503,6 +4504,34 @@ function isBrowserHtmlAttachment(attachment: MailAttachment) {
   return mime === "text/html" || mime === "application/xhtml+xml" || /\.x?html?$/u.test(name);
 }
 
+function isBrowserHtmlMessageBody(value: string) {
+  const text = value.trim();
+  if (!text) {
+    return false;
+  }
+
+  return (
+    /^<!doctype\s+html[\s>]/iu.test(text) ||
+    /^<html[\s>]/iu.test(text) ||
+    /<\/(?:html|head|body)>/iu.test(text) ||
+    /^<(?:a|article|body|button|canvas|code|div|form|h[1-6]|head|img|input|main|ol|p|pre|script|section|span|style|svg|table|ul)(?:\s|>|\/)/iu.test(text)
+  );
+}
+
+function browserMessageBodyAttachment(html: string, subject?: string): MailAttachment {
+  const bytes = new TextEncoder().encode(html);
+  const safeSubject = (subject ?? "").trim().replace(/[^\w.-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
+  const name = safeSubject ? (safeSubject.toLowerCase().endsWith(".html") ? safeSubject : `${safeSubject}.html`) : "message-body.html";
+
+  return {
+    data: base64UrlEncodeBytes(bytes),
+    mime: "text/html",
+    name,
+    sha256: sha256Hex(bytes),
+    size: bytes.byteLength,
+  };
+}
+
 function browserPageFromTransaction(tx: Record<string, unknown>, targetNetwork: BitcoinNetwork): BrowserPage {
   const txid = typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid) ? tx.txid.toLowerCase() : "";
   if (!txid) {
@@ -4512,18 +4541,26 @@ function browserPageFromTransaction(tx: Record<string, unknown>, targetNetwork: 
   const vin = Array.isArray(tx.vin) ? (tx.vin as Array<Record<string, unknown>>) : [];
   const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
   const protocolMessage = extractProtocolMemo(vout);
-  const attachment = protocolMessage?.attachment;
+  if (!protocolMessage) {
+    throw new Error("This transaction does not contain a ProofOfWork message.");
+  }
+
+  const htmlAttachment = protocolMessage.attachment && isBrowserHtmlAttachment(protocolMessage.attachment) ? protocolMessage.attachment : undefined;
+  const htmlBody = isBrowserHtmlMessageBody(protocolMessage.memo) ? protocolMessage.memo : "";
+  const attachment = htmlAttachment ?? (htmlBody ? browserMessageBodyAttachment(htmlBody, protocolMessage.subject) : undefined);
+  const source: BrowserPage["source"] = htmlAttachment ? "attachment" : "message";
+
   if (!attachment) {
-    throw new Error("This transaction does not contain a verified ProofOfWork file attachment.");
+    throw new Error(
+      protocolMessage.attachment
+        ? `This transaction contains ${protocolMessage.attachment.name}, but no Browser-readable HTML attachment or message body.`
+        : "This transaction does not contain Browser-readable HTML in its attachment or message body.",
+    );
   }
 
-  if (!isBrowserHtmlAttachment(attachment)) {
-    throw new Error(`This transaction contains ${attachment.name}, not a Browser HTML page.`);
-  }
-
-  const html = attachmentText(attachment);
+  const html = htmlAttachment ? attachmentText(attachment) : htmlBody;
   if (!html.trim()) {
-    throw new Error("The verified HTML attachment is empty.");
+    throw new Error("The Browser HTML content is empty.");
   }
 
   const status = tx.status as Record<string, unknown> | undefined;
@@ -4540,6 +4577,7 @@ function browserPageFromTransaction(tx: Record<string, unknown>, targetNetwork: 
     network: targetNetwork,
     protocolBytes: proofProtocolDataBytesForVout(vout),
     sender: inputAddresses[0] ?? "Unknown",
+    source,
     txid,
   };
 }
@@ -4721,6 +4759,7 @@ function activityItemsFromAddressMail(inboxMessages: InboxMessage[], sentMessage
         "Inbound",
         `${message.amountSats.toLocaleString()} sats`,
         isFile ? "File" : isReply ? "Reply" : "Mail",
+        isBrowserHtmlMessageBody(message.memo) ? "HTML body" : "",
         message.attachment?.mime ?? "",
         message.attachment?.name ?? "",
       ].filter(Boolean),
@@ -4750,6 +4789,7 @@ function activityItemsFromAddressMail(inboxMessages: InboxMessage[], sentMessage
         "Outbound",
         `${message.amountSats.toLocaleString()} sats`,
         isFile ? "File" : isReply ? "Reply" : "Mail",
+        isBrowserHtmlMessageBody(message.memo) ? "HTML body" : "",
         message.attachment?.mime ?? "",
         message.attachment?.name ?? "",
       ].filter(Boolean),
@@ -6640,9 +6680,9 @@ export default function App() {
     [allMail],
   );
   const desktopFileMessages = useMemo(() => desktopMail.filter(hasAttachment), [desktopMail]);
-  const browserFileMessages = useMemo(
-    () => allFileMessages.filter((message) => message.attachment && isBrowserHtmlAttachment(message.attachment)),
-    [allFileMessages],
+  const browserPageMessages = useMemo(
+    () => allMail.filter((message) => (message.attachment && isBrowserHtmlAttachment(message.attachment)) || isBrowserHtmlMessageBody(message.memo)),
+    [allMail],
   );
   const fileMessages = useMemo(
     () => allFileMessages.filter((message) => message.attachment && (fileFilter === "all" || attachmentKind(message.attachment) === fileFilter)),
@@ -9362,7 +9402,7 @@ export default function App() {
                 <FileText size={17} />
                 <span>Browser</span>
               </span>
-              <strong>{browserFileMessages.length}</strong>
+              <strong>{browserPageMessages.length}</strong>
             </button>
             <button aria-current={activeFolder === "ids"} onClick={() => openFolder("ids")} type="button">
               <span className="folder-label">
@@ -9796,7 +9836,7 @@ function htmlText(value: string) {
 function browserTemplateHtml(title: string, kicker: string, body: string) {
   const pageTitle = title.trim() || "Proof Page";
   const pageKicker = kicker.trim() || "Published on the Bitcoin Computer";
-  const pageBody = body.trim() || "This page is an HTML file carried by ProofOfWork.Me OP_RETURN attachments and verified by txid.";
+  const pageBody = body.trim() || "This page is HTML carried by ProofOfWork.Me OP_RETURN data and verified by txid.";
 
   return `<!doctype html>
 <html lang="en">
@@ -9834,7 +9874,7 @@ function browserTemplateHtml(title: string, kicker: string, body: string) {
       <div><span>Format</span><strong>text/html</strong></div>
       <div><span>Truth</span><strong>Bitcoin txid</strong></div>
     </section>
-    <footer>Rendered by browser.proofofwork.me from a verified OP_RETURN attachment.</footer>
+    <footer>Rendered by browser.proofofwork.me from ProofOfWork OP_RETURN HTML.</footer>
   </main>
 </body>
 </html>`;
@@ -9867,7 +9907,7 @@ function BrowserApp({
   const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({ tone: "idle", text: "Ready" });
   const [templateTitle, setTemplateTitle] = useState("My Bitcoin Page");
   const [templateKicker, setTemplateKicker] = useState("ProofOfWork.Me Browser");
-  const [templateBody, setTemplateBody] = useState("This page lives as a verified HTML attachment on the Bitcoin Computer.");
+  const [templateBody, setTemplateBody] = useState("This page lives as HTML carried by the Bitcoin Computer.");
   const [templateCopied, setTemplateCopied] = useState(false);
   const initialLoadRef = useRef(false);
   const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
@@ -9957,7 +9997,7 @@ function BrowserApp({
           <div>
             <span className="browser-kicker">Bitcoin-native browser</span>
             <h2>Paste a txid. Render the page.</h2>
-            <p>HTML pages are verified ProofOfWork file attachments, reconstructed from OP_RETURN chunks and rendered inside a sandbox.</p>
+            <p>HTML pages are ProofOfWork message bodies or file attachments, reconstructed from OP_RETURN chunks and rendered inside a sandbox.</p>
           </div>
           <form
             className="browser-search-card"
@@ -10025,6 +10065,10 @@ function BrowserApp({
                   <dd>{networkLabel(page.network)}</dd>
                 </div>
                 <div>
+                  <dt>Source</dt>
+                  <dd>{page.source === "attachment" ? "HTML attachment" : "Message body"}</dd>
+                </div>
+                <div>
                   <dt>Size</dt>
                   <dd>{formatBytes(page.attachment.size)}</dd>
                 </div>
@@ -10073,7 +10117,7 @@ function BrowserApp({
               <Monitor size={26} />
             </div>
             <h3>No page loaded</h3>
-            <p>Browser reads the current ProofOfWork file format and accepts confirmed or pending txids with verified HTML attachments.</p>
+            <p>Browser accepts confirmed or pending txids with HTML in the message body or a verified HTML attachment.</p>
           </section>
         )}
 
@@ -10145,7 +10189,7 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
   });
   const [templateTitle, setTemplateTitle] = useState("My Bitcoin Page");
   const [templateKicker, setTemplateKicker] = useState("ProofOfWork.Me Browser");
-  const [templateBody, setTemplateBody] = useState("This page lives as a verified HTML attachment on the Bitcoin Computer.");
+  const [templateBody, setTemplateBody] = useState("This page lives as HTML carried by the Bitcoin Computer.");
   const [templateCopied, setTemplateCopied] = useState(false);
   const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
   const templateBytes = useMemo(() => byteLength(template), [template]);
@@ -10201,7 +10245,7 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
         <div>
           <span className="browser-kicker">Bitcoin-native browser</span>
           <h2>Browser</h2>
-          <p>Paste a txid to render verified HTML files from the same OP_RETURN attachment protocol used by Files and Desktop.</p>
+          <p>Paste a txid to render HTML from a ProofOfWork message body or the same verified attachment protocol used by Files and Desktop.</p>
         </div>
         <form
           className="browser-search-card"
@@ -10269,6 +10313,10 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
                 <dd>{networkLabel(page.network)}</dd>
               </div>
               <div>
+                <dt>Source</dt>
+                <dd>{page.source === "attachment" ? "HTML attachment" : "Message body"}</dd>
+              </div>
+              <div>
                 <dt>Size</dt>
                 <dd>{formatBytes(page.attachment.size)}</dd>
               </div>
@@ -10317,7 +10365,7 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
             <Monitor size={26} />
           </div>
           <h3>No page loaded</h3>
-          <p>Browser reads the current ProofOfWork file format and accepts confirmed or pending txids with verified HTML attachments.</p>
+          <p>Browser accepts confirmed or pending txids with HTML in the message body or a verified HTML attachment.</p>
         </section>
       )}
 
@@ -10834,12 +10882,11 @@ function growthPercent(value: number) {
 }
 
 function isBrowserActivityItem(item: PowActivityItem) {
-  if (item.kind !== "file") {
-    return false;
-  }
-
   const searchText = [item.title, item.detail, item.description, ...item.tags].join(" ").toLowerCase();
-  return searchText.includes("text/html") || searchText.includes("application/xhtml+xml") || /\.x?html?\b/u.test(searchText);
+  const hasHtmlAttachment = searchText.includes("text/html") || searchText.includes("application/xhtml+xml") || /\.x?html?\b/u.test(searchText);
+  const hasHtmlBody = item.tags.some((tag) => tag.toLowerCase() === "html body") || isBrowserHtmlMessageBody(item.detail ?? "");
+
+  return item.kind === "file" ? hasHtmlAttachment : item.kind === "mail" || item.kind === "reply" ? hasHtmlBody : false;
 }
 
 function growthActualNetworkValue(
@@ -10853,7 +10900,7 @@ function growthActualNetworkValue(
   const confirmedSales = publicMarketplaceSales(sales).filter((sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs);
   const powids = confirmedRecords.length;
   const mailFlowSats = confirmedActivity
-    .filter((item) => item.kind === "mail" || item.kind === "reply")
+    .filter((item) => (item.kind === "mail" || item.kind === "reply") && !isBrowserActivityItem(item))
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
   const browserFlowSats = confirmedActivity.filter(isBrowserActivityItem).reduce((total, item) => total + (item.amountSats ?? 0), 0);
   const driveFlowSats = confirmedActivity
@@ -11514,7 +11561,7 @@ function GrowthWorkspace({
             modelOneYear={growthSats(oneYear.browserSats)}
             modelOneYearLabel={growthUsd(growthSatsToUsdAtYears(oneYear.browserSats, oneYear.years))}
             name="Browser"
-            note="HTML pages rendered from verified OP_RETURN file attachments by txid."
+            note="HTML pages rendered from OP_RETURN message bodies or verified file attachments by txid."
           />
         </div>
       </section>

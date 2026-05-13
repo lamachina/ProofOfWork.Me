@@ -146,7 +146,7 @@ The tx status endpoint:
 The tx endpoint:
 
 - Returns a normalized transaction payload from the same local/pending source order.
-- Lets Browser reconstruct and verify `pwm1:a` attachments by txid without depending on public mempool.space from production browsers.
+- Lets Browser reconstruct HTML from `pwm1:m` message bodies or verified `pwm1:a` attachments by txid without depending on public mempool.space from production browsers.
 - Does not turn pending transactions into canonical history; Browser labels pending pages as pending.
 
 ## Confirmed vs Pending
@@ -224,10 +224,11 @@ After changing the API or production build, verify:
 - Duplicate/pending IDs cannot be routed.
 - Sent, inbox, incoming, files, outbox, and dropped status all work through the API.
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
-- Browser can load a txid with a verified `text/html` attachment, render it in a sandbox, and reject non-HTML or unverified attachment data.
+- Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Log can load global Bitcoin Computer events and search an address, confirmed ProofOfWork ID, or txid.
 - Growth can load real chain metrics and render the modeled-vs-real sats/USD value graph without layout overlap on desktop and mobile.
 - Known attachment transactions reconstruct with valid size and SHA-256.
+- Known HTML message-body transactions render through Browser from `pwm1:m`.
 - Known pending txs return `pending`.
 - Known dropped txs return `dropped`.

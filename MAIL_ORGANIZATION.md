@@ -31,7 +31,7 @@ Mail organization features that are already implemented in the full app:
 - Reply All for multi-recipient mail.
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
-- Browser view for verified `text/html` attachments by txid, rendered in a sandboxed iframe.
+- Browser view for HTML message bodies or verified `text/html` attachments by txid, rendered in a sandboxed iframe.
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, and attachment actions.
@@ -44,7 +44,7 @@ Future developers should keep `id.proofofwork.me` narrow. Do not pull the full m
 Marketplace actions should stay outside the mailbox folders. Keep ID trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders.
 Log is not a mailbox folder. It is a read-only Bitcoin Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, and attachments.
 Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical Bitcoin Computer growth model in sats and USD.
-Browser is not a mailbox folder. It is a read-only HTML viewer over the same verified file attachment protocol used by Files and Desktop. It should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
+Browser is not a mailbox folder. It is a read-only HTML viewer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. It should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
 
 ## Core Idea
 
@@ -147,7 +147,7 @@ The Computer app may still keep an internal Desktop folder for signed-in users. 
 
 ## Browser
 
-Browser is the public read-only HTML renderer for Files. On `browser.proofofwork.me`, users paste a txid and the app reconstructs a verified `text/html` attachment from the existing `pwm1:a` chunks.
+Browser is the public read-only HTML renderer for the Bitcoin Computer. On `browser.proofofwork.me`, users paste a txid and the app renders HTML from the existing `pwm1:m` message body or reconstructs a verified `text/html` attachment from `pwm1:a` chunks.
 
 The full Computer app also exposes Browser as a sidebar workspace. New products should follow this pattern: a standalone public surface when useful, a Computer workspace when it belongs inside the full machine, and a matching entry in the growth model.
 
@@ -155,11 +155,12 @@ Behavior:
 
 - Accept a Bitcoin txid on mainnet, testnet4, or testnet3.
 - Fetch the transaction through the ProofOfWork API when configured.
-- Reconstruct the attachment through the same size and SHA-256 checks as Files/Desktop.
-- Render only HTML-like attachments (`text/html`, `application/xhtml+xml`, or `.html`/`.xhtml` names).
+- Render HTML-like message bodies directly from `pwm1:m` chunks.
+- Reconstruct HTML attachments through the same size and SHA-256 checks as Files/Desktop.
+- Render only HTML-like content: message bodies that look like HTML, or attachments marked `text/html`, `application/xhtml+xml`, `.html`, or `.xhtml`.
 - Render inside a sandboxed iframe with scripts disabled by default.
 - Show proof metadata: txid, status, network, sender, sats, protocol bytes, size, and SHA-256.
-- Expose a simple Computer-native HTML template users can copy or download before publishing as a normal ProofOfWork file attachment.
+- Expose a simple Computer-native HTML template users can copy before publishing as a message body or download before publishing as a normal ProofOfWork file attachment.
 - Treat pending pages as pending visibility, not final truth.
 
 Production route:
@@ -168,7 +169,7 @@ Production route:
 browser.proofofwork.me
 ```
 
-This route should stay compatible with the current Computer file protocol. HTML pages are files, not a new external carrier.
+This route should stay compatible with the current Computer mail/file protocol. HTML pages are messages or files, not a new external carrier.
 
 ## Outbox
 

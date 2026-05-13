@@ -634,7 +634,7 @@ const DISCORD_URL = "https://discord.com/invite/mRA4zbqB";
 const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
 const YOUTUBE_URL = "https://www.youtube.com/@proofofworkme";
-const HOME_APP_URL = "https://proofofwork.me";
+const HOME_APP_URL = "https://www.proofofwork.me/";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
@@ -642,7 +642,7 @@ const BROWSER_APP_URL = "https://browser.proofofwork.me";
 const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 const LOG_APP_URL = "https://log.proofofwork.me";
 const GROWTH_APP_URL = "https://growth.proofofwork.me";
-const LOCAL_HOME_APP_URL = "/?landing=1";
+const LOCAL_HOME_APP_URL = HOME_APP_URL;
 const LOCAL_ID_APP_URL = "/?id-launch=1";
 const LOCAL_COMPUTER_APP_URL = "/";
 const LOCAL_DESKTOP_APP_URL = "/?desktop=1";
@@ -10078,7 +10078,7 @@ function BrowserApp({
   return (
     <main className="desktop-public-app browser-public-app">
       <header className="desktop-public-header">
-        <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
+        <a className="landing-brand" href={HOME_APP_URL} aria-label="ProofOfWork.Me home">
           <div className="brand-mark" aria-hidden="true">
             PoW
           </div>
@@ -10579,7 +10579,7 @@ function DesktopApp({
   return (
     <main className={`desktop-public-app ${status.tone !== "idle" ? "has-route-status" : ""}`}>
       <header className="desktop-public-header">
-        <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
+        <a className="landing-brand" href={HOME_APP_URL} aria-label="ProofOfWork.Me home">
           <div className="brand-mark" aria-hidden="true">
             PoW
           </div>
@@ -10665,7 +10665,7 @@ function ActivityApp({
   return (
     <main className="desktop-public-app activity-public-app">
       <header className="desktop-public-header">
-        <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
+        <a className="landing-brand" href={HOME_APP_URL} aria-label="ProofOfWork.Me home">
           <div className="brand-mark" aria-hidden="true">
             PoW
           </div>
@@ -11363,7 +11363,7 @@ function GrowthApp({
   return (
     <main className="desktop-public-app activity-public-app growth-public-app">
       <header className="desktop-public-header">
-        <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
+        <a className="landing-brand" href={HOME_APP_URL} aria-label="ProofOfWork.Me home">
           <div className="brand-mark" aria-hidden="true">
             PoW
           </div>
@@ -11716,7 +11716,7 @@ function LandingApp({
   return (
     <main className="landing-app">
       <header className="landing-topbar">
-        <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
+        <a className="landing-brand" href={HOME_APP_URL} aria-label="ProofOfWork.Me home">
           <div className="brand-mark" aria-hidden="true">
             PoW
           </div>
@@ -11742,10 +11742,10 @@ function LandingApp({
 
       <section className="landing-hero">
         <div className="landing-hero-content">
-          <span className="landing-kicker">Bitcoin-native identity, mail, and files</span>
+          <span className="landing-kicker">Bitcoin-native identity, mail, files, pages, markets, logs, and growth</span>
           <h2>ProofOfWork.Me</h2>
           <p>
-            Claim a permanent on-chain ID, then use it as your Bitcoin-native inbox across the open network.
+            Claim a permanent on-chain ID, then use the Bitcoin Computer for mail, files, HTML pages, marketplace actions, and chain-readable proof.
           </p>
           <div className="landing-actions">
             <a className="primary link-button" href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}>
@@ -11764,6 +11764,18 @@ function LandingApp({
               <span className="button-content">
                 <Monitor size={17} />
                 <span>Open Desktop</span>
+              </span>
+            </a>
+            <a className="secondary link-button" href={appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}>
+              <span className="button-content">
+                <FileText size={17} />
+                <span>Open Browser</span>
+              </span>
+            </a>
+            <a className="secondary link-button" href={appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL)}>
+              <span className="button-content">
+                <Users size={17} />
+                <span>Marketplace</span>
               </span>
             </a>
           </div>
@@ -11878,6 +11890,70 @@ function LandingApp({
               <span className="button-content">
                 <Monitor size={16} />
                 <span>Open Desktop</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <FileText size={24} />
+            </div>
+            <div>
+              <h3>Open Browser</h3>
+              <p>Paste a txid and render HTML from ProofOfWork message bodies or verified <code>text/html</code> attachments.</p>
+            </div>
+            <a className="secondary link-button" href={appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}>
+              <span className="button-content">
+                <FileText size={16} />
+                <span>Open Browser</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <Users size={24} />
+            </div>
+            <div>
+              <h3>Open Marketplace</h3>
+              <p>List confirmed ProofOfWork IDs, delist them, and execute buyer-funded ownership transfers on chain.</p>
+            </div>
+            <a className="secondary link-button" href={appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL)}>
+              <span className="button-content">
+                <Users size={16} />
+                <span>Open Marketplace</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <Clock size={24} />
+            </div>
+            <div>
+              <h3>Open Log</h3>
+              <p>Read the public Bitcoin Computer activity feed for IDs, mail, replies, files, Browser pages, and marketplace events.</p>
+            </div>
+            <a className="secondary link-button" href={appHref(LOG_APP_URL, LOCAL_LOG_APP_URL)}>
+              <span className="button-content">
+                <Clock size={16} />
+                <span>Open Log</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <TrendingUp size={24} />
+            </div>
+            <div>
+              <h3>Open Growth</h3>
+              <p>Compare the canonical Bitcoin Computer growth model against real confirmed network value in sats and USD.</p>
+            </div>
+            <a className="secondary link-button" href={appHref(GROWTH_APP_URL, LOCAL_GROWTH_APP_URL)}>
+              <span className="button-content">
+                <TrendingUp size={16} />
+                <span>Open Growth</span>
               </span>
             </a>
           </article>

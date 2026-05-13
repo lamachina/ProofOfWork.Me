@@ -45,6 +45,7 @@ The full attribution, fixed commits, amount, recipient, and payment txid belong 
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-05-13 | `moove@proofofwork.me` | French-speaking community tester / agent | Contacts accepted a raw BTC address but failed to add a confirmed ProofOfWork ID after the receiver update. | Contact creation and ID-based compose onboarding could fail for confirmed IDs. | `4229a6a` `Fix contact ID resolver refresh` | Fixed, pushed, deployed, paid 546 sats in pending tx `1cc193649731a7c6150955c65e9c4bb3ad64e00d93959832a0b42f77529244bc` |
 | 2026-05-13 | `moove@proofofwork.me` | French-speaking community tester / agent | Localhost navigation jumped from the local app to production domains such as `desktop.proofofwork.me`. | Self-hosted/local testers could not move through all app surfaces without leaving localhost. | `39c0476` `Keep app navigation local on localhost` | Fixed, pushed, deployed, paid 546 sats in pending tx `1cc193649731a7c6150955c65e9c4bb3ad64e00d93959832a0b42f77529244bc` |
+| 2026-05-13 | `moove@proofofwork.me` | French-speaking community tester / agent | Browser did not expose a clear Testnet4/Mainnet/Testnet3 selector, making it unclear how to render a confirmed Testnet4 HTML tx locally. | Testnet4 Browser testing could fail or appear broken even when the tx was valid and confirmed. | `8bebb4b` `Improve browser network and fee warnings` | Fixed, pushed, bounty pending treasury review |
 
 ## Payment Records
 

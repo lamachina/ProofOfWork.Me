@@ -653,6 +653,12 @@ const LOCAL_GROWTH_APP_URL = "/?growth=1";
 const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
 const LANDING_TESTIMONIAL_TXID = "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
 const LANDING_TESTIMONIAL_TX_URL = `https://mempool.space/tx/${LANDING_TESTIMONIAL_TXID}`;
+const CANONICAL_WELCOME_TXID = "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b";
+const CANONICAL_WELCOME_HTML =
+  '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Welcome to ProofOfWork.Me</title><main style="font-family:system-ui,sans-serif;max-width:680px;margin:40px auto;padding:0 18px;line-height:1.55;color:#111"><p style="color:#06c;font-weight:800;text-transform:uppercase">Bitcoin Computer</p><h1>Welcome to ProofOfWork.Me</h1><p><b>ProofOfWork.Me is a computer built on Bitcoin.</b></p><p>It turns transactions into identity, mail, files, pages, marketplace actions, logs, and proof.</p><p>Your ProofOfWork ID is your Bitcoin-native name. Your Computer is where your ID, messages, files, contacts, pages, and history become usable.</p><p>Most apps ask you to trust a server. ProofOfWork.Me asks you to check the chain. Bitcoin history is the source of truth.</p><p>Claim an ID. Send mail. Save a file. Open a txid in the Browser. Watch the Log.</p><p><b>This is the Bitcoin Computer. Small today. Already real.</b></p><p><code>ProofOfWork.Me</code></p></main>\n';
+const CANONICAL_WELCOME_SENDER = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+const CANONICAL_WELCOME_RECIPIENT = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
+const CANONICAL_WELCOME_CREATED_AT = "2026-05-13T17:58:01.000Z";
 const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "").trim().replace(/\/+$/u, "");
 const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
@@ -4536,6 +4542,64 @@ function isBrowserHtmlMessageBody(value: string) {
   );
 }
 
+function canonicalWelcomeAttachment(): MailAttachment {
+  const bytes = new TextEncoder().encode(CANONICAL_WELCOME_HTML);
+  return {
+    data: base64UrlEncodeBytes(bytes),
+    mime: "text/html",
+    name: "Welcome to ProofOfWork.Me.html",
+    sha256: sha256Hex(bytes),
+    size: bytes.byteLength,
+  };
+}
+
+function canonicalWelcomeFileMessage(): MailMessage & { attachment: MailAttachment } {
+  return {
+    amountSats: DEFAULT_AMOUNT_SATS,
+    attachment: canonicalWelcomeAttachment(),
+    confirmed: true,
+    createdAt: CANONICAL_WELCOME_CREATED_AT,
+    folder: "inbox",
+    from: CANONICAL_WELCOME_SENDER,
+    memo: CANONICAL_WELCOME_HTML,
+    network: "livenet",
+    recipients: [
+      {
+        address: CANONICAL_WELCOME_RECIPIENT,
+        amountSats: DEFAULT_AMOUNT_SATS,
+        display: shortAddress(CANONICAL_WELCOME_RECIPIENT),
+      },
+    ],
+    replyTo: CANONICAL_WELCOME_SENDER,
+    subject: "Welcome to ProofOfWork.Me",
+    to: CANONICAL_WELCOME_RECIPIENT,
+    txid: CANONICAL_WELCOME_TXID,
+  };
+}
+
+function withCanonicalWelcomeFile(messages: MailMessage[], network: BitcoinNetwork) {
+  if (network !== "livenet") {
+    return messages;
+  }
+
+  const withoutExistingWelcome = messages.filter((message) => message.txid !== CANONICAL_WELCOME_TXID);
+  return [canonicalWelcomeFileMessage(), ...withoutExistingWelcome];
+}
+
+function browserTxUrl(txid: string, network: BitcoinNetwork) {
+  const params = new URLSearchParams();
+  params.set("txid", txid);
+  if (network !== "livenet") {
+    params.set("network", network);
+  }
+
+  if (isLocalPreviewHost()) {
+    return `${LOCAL_BROWSER_APP_URL}&${params.toString()}`;
+  }
+
+  return `${BROWSER_APP_URL}/tx/${txid}${network === "livenet" ? "" : `?network=${encodeURIComponent(network)}`}`;
+}
+
 function browserMessageBodyAttachment(html: string, subject?: string): MailAttachment {
   const bytes = new TextEncoder().encode(html);
   const safeSubject = (subject ?? "").trim().replace(/[^\w.-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
@@ -6717,8 +6781,8 @@ export default function App() {
     [allMail, customFolders, mailPreferences],
   );
   const allFileMessages = useMemo(
-    () => allMail.filter((message) => message.attachment && (message.folder !== "inbox" || message.confirmed)),
-    [allMail],
+    () => withCanonicalWelcomeFile(allMail.filter((message) => message.attachment && (message.folder !== "inbox" || message.confirmed)), network),
+    [allMail, network],
   );
   const desktopFileMessages = useMemo(() => desktopMail.filter(hasAttachment), [desktopMail]);
   const browserPageMessages = useMemo(
@@ -7722,7 +7786,7 @@ export default function App() {
       }
 
       const { inboxMessages, sentMessages } = await fetchAddressMail(resolved.paymentAddress, network);
-      const publicMail = publicDesktopMail(inboxMessages, sentMessages);
+      const publicMail = withCanonicalWelcomeFile(publicDesktopMail(inboxMessages, sentMessages), network);
       const files = publicMail.filter(hasAttachment);
       const profile: DesktopProfile = {
         address: resolved.paymentAddress,
@@ -9934,6 +9998,12 @@ function txidFromBrowserLocation() {
   return fromPath && /^[0-9a-fA-F]{64}$/u.test(fromPath) ? fromPath.toLowerCase() : "";
 }
 
+function networkFromBrowserLocation(): BitcoinNetwork {
+  const params = new URLSearchParams(window.location.search);
+  const network = params.get("network");
+  return network === "testnet4" || network === "testnet" || network === "livenet" ? network : "livenet";
+}
+
 function BrowserApp({
   setTheme,
   theme,
@@ -9941,7 +10011,7 @@ function BrowserApp({
   setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   theme: ThemeMode;
 }) {
-  const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
+  const [network, setNetwork] = useState<BitcoinNetwork>(() => networkFromBrowserLocation());
   const [query, setQuery] = useState(() => txidFromBrowserLocation());
   const [page, setPage] = useState<BrowserPage | undefined>();
   const [loading, setLoading] = useState(false);
@@ -14454,6 +14524,14 @@ function FileInspector({
       </div>
       <AttachmentViewer attachment={attachment} />
       <div className="file-detail-actions">
+        {isBrowserHtmlAttachment(attachment) ? (
+          <a className="primary link-button" href={browserTxUrl(message.txid, explorerNetwork)} rel="noreferrer" target="_blank">
+            <span className="button-content">
+              <Monitor size={15} />
+              <span>Open in Browser</span>
+            </span>
+          </a>
+        ) : null}
         <a className="primary link-button" download={attachment.name} href={attachmentHref(attachment)}>
           <span className="button-content">
             <Download size={15} />

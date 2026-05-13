@@ -162,6 +162,15 @@ The tx endpoint:
 - Lets Browser reconstruct HTML from `pwm1:m` message bodies or verified `pwm1:a` attachments by txid without depending on public mempool.space from production browsers.
 - Does not turn pending transactions into canonical history; Browser labels pending pages as pending.
 
+Canonical welcome page:
+
+```text
+txid: 8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b
+carrier: pwm1:m HTML message body
+surface: pinned system file in Computer Files and public Desktop
+open behavior: Browser by txid
+```
+
 ## Confirmed vs Pending
 
 Confirmed Bitcoin history is canonical. Pending mempool state is not.

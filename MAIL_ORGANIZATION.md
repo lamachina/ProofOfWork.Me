@@ -32,6 +32,7 @@ Mail organization features that are already implemented in the full app:
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Browser view for HTML message bodies or verified `text/html` attachments by txid, rendered in a sandboxed iframe.
+- Canonical `Welcome to ProofOfWork.Me.html` system file pinned by txid and shown by default in Files/Desktop.
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, and attachment actions.
@@ -132,6 +133,7 @@ Behavior:
 - Do not require wallet connection for browsing.
 - Do not show local-only metadata such as drafts, folders, favorites, archives, or contacts.
 - Do not show pending Incoming or Outbox transactions as public files.
+- Always include the canonical `Welcome to ProofOfWork.Me.html` system file so every searched address has a starting document. It should open through Browser by txid, not pretend to be a user-owned attachment.
 - Do not expose `Open Message` as a private mailbox action in the public inspector; link to the source transaction instead.
 - Do not show the Computer sidebar, compose tools, wallet controls, inbox/sent folders, or local account state on the public Desktop route.
 
@@ -162,6 +164,14 @@ Behavior:
 - Show proof metadata: txid, status, network, sender, sats, protocol bytes, size, and SHA-256.
 - Expose a simple Computer-native HTML template users can copy before publishing as a message body or download before publishing as a normal ProofOfWork file attachment.
 - Treat pending pages as pending visibility, not final truth.
+
+Canonical welcome page:
+
+```text
+txid: 8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b
+name: Welcome to ProofOfWork.Me.html
+carrier: pwm1:m HTML message body
+```
 
 Production route:
 

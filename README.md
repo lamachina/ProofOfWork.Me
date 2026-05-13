@@ -395,6 +395,8 @@ The audit scans the full canonical registry history, merges mempool transactions
 
 Before issuing refunds, check `ID_REFUNDS.md` so old confirmed duplicates that were already refunded are not paid twice.
 
+For public accounting, duplicate or failed registration payments should be treated as refund liabilities, not net registry revenue. Gross registry flow can include every confirmed paid registry event, but net registry revenue should subtract refunded or refund-owed non-canonical registrations.
+
 ## Developer Map
 
 Important implementation points:

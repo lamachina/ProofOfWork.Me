@@ -2137,6 +2137,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
   const records = new Map();
   const listings = new Map();
   const confirmedSales = [];
+  const acceptedActivityEvents = [];
 
   function invalidateListingsForId(id) {
     for (const [listingId, listing] of listings) {
@@ -2164,6 +2165,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         receiveAddress: event.receiveAddress,
         txid: event.txid,
       });
+      acceptedActivityEvents.push(event);
       continue;
     }
 
@@ -2175,6 +2177,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
       if (listing && current && event.inputAddresses.includes(current.ownerAddress) && anchorOk) {
         listings.delete(event.listingId);
+        acceptedActivityEvents.push(event);
       }
       continue;
     }
@@ -2206,6 +2209,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         },
         sealTxid: event.txid,
       });
+      acceptedActivityEvents.push(event);
       continue;
     }
 
@@ -2252,6 +2256,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           transferVersion: event.transferVersion,
           txid: event.txid,
         });
+        acceptedActivityEvents.push(event);
         invalidateListingsForId(listing.id);
         continue;
       }
@@ -2294,6 +2299,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           transferVersion: event.transferVersion,
           txid: event.txid,
         });
+        acceptedActivityEvents.push(event);
         invalidateListingsForId(event.id);
       }
       continue;
@@ -2341,6 +2347,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         sellerPublicKey: event.saleAuthorization.sellerPublicKey,
         txid: event.txid,
       });
+      acceptedActivityEvents.push(event);
       continue;
     }
 
@@ -2356,6 +2363,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         receiveAddress: event.receiveAddress,
         txid: event.txid,
       });
+      acceptedActivityEvents.push(event);
       continue;
     }
 
@@ -2367,6 +2375,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       receiveAddress: event.receiveAddress,
       txid: event.txid,
     });
+    acceptedActivityEvents.push(event);
     invalidateListingsForId(event.id);
   }
 
@@ -2614,8 +2623,10 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       txid: event.txid,
     }));
 
+  const pendingRegistrationIds = new Set(records.keys());
+  const pendingRegistrationActivityEvents = [];
   for (const event of pendingRegistrations) {
-    if (!records.has(event.id)) {
+    if (!pendingRegistrationIds.has(event.id)) {
       accepted.push({
         amountSats: event.amountSats,
         confirmed: false,
@@ -2627,11 +2638,21 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         receiveAddress: event.receiveAddress,
         txid: event.txid,
       });
+      pendingRegistrationActivityEvents.push(event);
+      pendingRegistrationIds.add(event.id);
     }
   }
 
+  const pendingEventTxids = new Set(pendingEvents.map((event) => event.txid));
+  const pendingMutationActivityEvents = events.filter((event) => !event.confirmed && event.kind !== "register" && pendingEventTxids.has(event.txid));
+  const activityEvents = [
+    ...acceptedActivityEvents,
+    ...pendingRegistrationActivityEvents,
+    ...pendingMutationActivityEvents,
+  ];
+
   return {
-    activity: idActivityItemsFromEvents(events).sort(compareActivityItems),
+    activity: idActivityItemsFromEvents(activityEvents).sort(compareActivityItems),
     listings: [...listings.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid)),
     pendingEvents,
     records: accepted,

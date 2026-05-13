@@ -4995,6 +4995,7 @@ function idRegistryStateFromTransactions(
   const records = new Map<string, PowIdRecord>();
   const listings = new Map<string, PowIdListing>();
   const confirmedSales: PowIdMarketplaceSale[] = [];
+  const acceptedActivityEvents: PowIdEvent[] = [];
 
   function invalidateListingsForId(id: string) {
     for (const [listingId, listing] of listings) {
@@ -5022,6 +5023,7 @@ function idRegistryStateFromTransactions(
         receiveAddress: event.receiveAddress,
         txid: event.txid,
       });
+      acceptedActivityEvents.push(event);
       continue;
     }
 
@@ -5033,6 +5035,7 @@ function idRegistryStateFromTransactions(
         (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
       if (listing && current && event.inputAddresses.includes(current.ownerAddress) && anchorOk) {
         listings.delete(event.listingId);
+        acceptedActivityEvents.push(event);
       }
       continue;
     }
@@ -5064,6 +5067,7 @@ function idRegistryStateFromTransactions(
         },
         sealTxid: event.txid,
       });
+      acceptedActivityEvents.push(event);
       continue;
     }
 
@@ -5110,6 +5114,7 @@ function idRegistryStateFromTransactions(
           transferVersion: event.transferVersion,
           txid: event.txid,
         });
+        acceptedActivityEvents.push(event);
         invalidateListingsForId(listing.id);
         continue;
       }
@@ -5152,6 +5157,7 @@ function idRegistryStateFromTransactions(
           transferVersion: event.transferVersion,
           txid: event.txid,
         });
+        acceptedActivityEvents.push(event);
         invalidateListingsForId(event.id);
       }
       continue;
@@ -5199,6 +5205,7 @@ function idRegistryStateFromTransactions(
         sellerPublicKey: event.saleAuthorization.sellerPublicKey,
         txid: event.txid,
       });
+      acceptedActivityEvents.push(event);
       continue;
     }
 
@@ -5214,6 +5221,7 @@ function idRegistryStateFromTransactions(
         receiveAddress: event.receiveAddress,
         txid: event.txid,
       });
+      acceptedActivityEvents.push(event);
       continue;
     }
 
@@ -5225,6 +5233,7 @@ function idRegistryStateFromTransactions(
       receiveAddress: event.receiveAddress,
       txid: event.txid,
     });
+    acceptedActivityEvents.push(event);
     invalidateListingsForId(event.id);
   }
 
@@ -5480,8 +5489,10 @@ function idRegistryStateFromTransactions(
       txid: event.txid,
     }));
 
+  const pendingRegistrationIds = new Set(records.keys());
+  const pendingRegistrationActivityEvents: PowIdEvent[] = [];
   for (const event of pendingRegistrations) {
-    if (!records.has(event.id)) {
+    if (!pendingRegistrationIds.has(event.id)) {
       accepted.push({
         amountSats: event.amountSats,
         confirmed: false,
@@ -5493,11 +5504,23 @@ function idRegistryStateFromTransactions(
         receiveAddress: event.receiveAddress,
         txid: event.txid,
       });
+      pendingRegistrationActivityEvents.push(event);
+      pendingRegistrationIds.add(event.id);
     }
   }
 
+  const pendingEventTxids = new Set(pendingEvents.map((event) => event.txid));
+  const pendingMutationActivityEvents = events.filter(
+    (event) => !event.confirmed && event.kind !== "register" && pendingEventTxids.has(event.txid),
+  );
+  const activityEvents = [
+    ...acceptedActivityEvents,
+    ...pendingRegistrationActivityEvents,
+    ...pendingMutationActivityEvents,
+  ];
+
   return {
-    activity: activityItemsFromIdEvents(events).sort(compareActivityItems),
+    activity: activityItemsFromIdEvents(activityEvents).sort(compareActivityItems),
     listings: [...listings.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid)),
     pendingEvents,
     records: accepted,

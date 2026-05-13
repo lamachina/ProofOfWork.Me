@@ -2,6 +2,44 @@
 
 Operational notes for refunds issued against duplicate or failed ProofOfWork ID registry payments.
 
+## Accounting Rule
+
+Duplicate, failed, or otherwise non-canonical registration payments are not net registry revenue once the project has committed to refunding them.
+
+Use this distinction:
+
+```text
+gross registry flow = every confirmed paid registry event visible on chain
+canonical ID supply = first-confirmed valid registration per ID
+refund liability = confirmed paid registration events that did not become canonical IDs
+net registry revenue = gross registry flow - refunded or refund-owed non-canonical registration payments
+```
+
+Confirmed duplicate rows may keep appearing in registry audits forever because Bitcoin history is permanent. They should be tracked as refunded or refund liabilities here, not counted as current unpaid revenue.
+
+When paying future ID refunds from ProofOfWork Mail, keep the on-chain marker small:
+
+```text
+Subject: blank
+Message: rr:<count>
+```
+
+Examples:
+
+```text
+rr:1
+rr:3
+```
+
+Meaning:
+
+```text
+rr = registry refund
+count = number of refund rows covered by this tx
+```
+
+The full IDs, original registration txids, refund addresses, amounts, and refund txids belong in this log.
+
 ## 2026-05-09 Confirmed Refund Batch
 
 These refunds were reported as issued by the project operator after running the ID registry audit.
@@ -13,6 +51,8 @@ These refunds were reported as issued by the project operator after running the 
 | `bc1p8m24m3ycx2awggnlp4ljh0m8l54985scfwshet9zdg4qtf80udhqkwrx0c` | 1,000 sats | 1 | `trump` |
 
 Total issued in this batch: **14,000 sats**.
+
+Accounting status: these 14 duplicate registration payments are historical gross registry flow, but they are not net registry revenue after this refund batch.
 
 ## 2026-05-11 Pending Marketplace Refund
 

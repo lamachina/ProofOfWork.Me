@@ -6793,10 +6793,6 @@ export default function App() {
     [allMail, network],
   );
   const desktopFileMessages = useMemo(() => desktopMail.filter(hasAttachment), [desktopMail]);
-  const browserPageMessages = useMemo(
-    () => allMail.filter((message) => (message.attachment && isBrowserHtmlAttachment(message.attachment)) || isBrowserHtmlMessageBody(message.memo)),
-    [allMail],
-  );
   const fileMessages = useMemo(
     () => allFileMessages.filter((message) => message.attachment && (fileFilter === "all" || attachmentKind(message.attachment) === fileFilter)),
     [allFileMessages, fileFilter],
@@ -9515,7 +9511,6 @@ export default function App() {
                 <FileText size={17} />
                 <span>Browser</span>
               </span>
-              <strong>{browserPageMessages.length}</strong>
             </button>
             <button aria-current={activeFolder === "ids"} onClick={() => openFolder("ids")} type="button">
               <span className="folder-label">

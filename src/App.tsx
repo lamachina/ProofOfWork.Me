@@ -3333,6 +3333,41 @@ function upsertContact(contacts: ContactRecord[], contact: ContactRecord) {
   return sortContacts([...next.values()]);
 }
 
+function refreshRegistryContactsFromRecords(
+  contacts: ContactRecord[],
+  registryRecords: PowIdRecord[],
+  targetNetwork: BitcoinNetwork,
+) {
+  const confirmedReceivers = new Map(
+    registryRecords
+      .filter((record) => record.network === targetNetwork && record.confirmed)
+      .map((record) => [record.id, record.receiveAddress]),
+  );
+  const refreshedAt = new Date().toISOString();
+  let changed = false;
+
+  const refreshed = contacts.map((contact) => {
+    if (!contact.powId || contact.network !== targetNetwork) {
+      return contact;
+    }
+
+    const receiveAddress = confirmedReceivers.get(contact.powId);
+    if (!receiveAddress || receiveAddress === contact.address) {
+      return contact;
+    }
+
+    changed = true;
+    return {
+      ...contact,
+      address: receiveAddress,
+      source: "registry" as const,
+      updatedAt: refreshedAt,
+    };
+  });
+
+  return changed ? sortContacts(refreshed) : contacts;
+}
+
 function contactFromRegistryRecord(record: PowIdRecord): ContactRecord {
   const target = `${record.id}@proofofwork.me`;
   return {
@@ -6674,7 +6709,7 @@ export default function App() {
   const refreshInProgress = refreshing || checkingBroadcasts;
   const refreshDisabled =
     activeFolder === "contacts"
-      ? true
+      ? busy || refreshInProgress || !registryAddress
       : activeFolder === "desktop"
         ? desktopLoading || !desktopProfile
         : activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log"
@@ -6821,7 +6856,7 @@ export default function App() {
       return;
     }
 
-    if (activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log") {
+    if (activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log" || activeFolder === "contacts") {
       void refreshIds(true);
     }
   }, [activeFolder, activityMode, growthMode, network]);
@@ -7275,19 +7310,55 @@ export default function App() {
   }
 
   function saveContact(contact: ContactRecord) {
-    const nextContacts = upsertContact(contacts, contact);
-    setContacts(nextContacts);
-    saveContacts(nextContacts);
+    setContacts((current) => {
+      const nextContacts = upsertContact(current, contact);
+      saveContacts(nextContacts);
+      return nextContacts;
+    });
     setStatus({ tone: "good", text: `${contact.name} saved to Contacts.` });
   }
 
-  function addManualContact(name: string, target: string) {
+  async function addManualContact(name: string, target: string) {
+    const trimmedTarget = target.trim();
     try {
-      saveContact(contactFromInput(name, target, network, idRegistry, registryAddress));
+      saveContact(contactFromInput(name, trimmedTarget, network, idRegistry, registryAddress));
       return true;
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Contact could not be saved.") });
-      return false;
+      if (!trimmedTarget || isValidBitcoinAddress(trimmedTarget, network) || !normalizePowId(trimmedTarget) || !registryAddress) {
+        setStatus({ tone: "bad", text: errorMessage(error, "Contact could not be saved.") });
+        return false;
+      }
+
+      const id = normalizePowId(trimmedTarget);
+      setBusy(true);
+      setStatus({ tone: "idle", text: `Refreshing confirmed registry for ${id}@proofofwork.me...` });
+
+      try {
+        const latestState = await fetchIdRegistryState(network);
+        setIdRegistry(latestState.records);
+        setIdListings(latestState.listings);
+        setIdPendingEvents(latestState.pendingEvents);
+        setIdSales(latestState.sales);
+        setIdActivity(latestState.activity);
+        setContacts((current) => {
+          const nextContacts = refreshRegistryContactsFromRecords(current, latestState.records, network);
+          if (nextContacts !== current) {
+            saveContacts(nextContacts);
+          }
+          return nextContacts;
+        });
+
+        saveContact(contactFromInput(name, trimmedTarget, network, latestState.records, registryAddress));
+        return true;
+      } catch (refreshError) {
+        setStatus({
+          tone: "bad",
+          text: errorMessage(refreshError, errorMessage(error, "Contact could not be saved.")),
+        });
+        return false;
+      } finally {
+        setBusy(false);
+      }
     }
   }
 
@@ -7752,6 +7823,13 @@ export default function App() {
       setIdPendingEvents(state.pendingEvents);
       setIdSales(state.sales);
       setIdActivity(activity);
+      setContacts((current) => {
+        const nextContacts = refreshRegistryContactsFromRecords(current, state.records, network);
+        if (nextContacts !== current) {
+          saveContacts(nextContacts);
+        }
+        return nextContacts;
+      });
 
       if (!silent) {
         const confirmed = state.records.filter((record) => record.confirmed).length;
@@ -8933,7 +9011,7 @@ export default function App() {
             className="secondary"
             disabled={refreshDisabled}
             onClick={() => {
-              if (activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log") {
+              if (activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log" || activeFolder === "contacts") {
                 void refreshIds();
                 if (activeFolder === "log" && activityProfile) {
                   void loadActivityTarget(activityProfile.query);
@@ -11782,18 +11860,28 @@ function ContactsWorkspace({
 }: {
   contacts: ContactRecord[];
   network: BitcoinNetwork;
-  onAdd: (name: string, target: string) => boolean;
+  onAdd: (name: string, target: string) => boolean | Promise<boolean>;
   onCompose: (contact: ContactRecord) => void;
   onRemove: (contact: ContactRecord) => void;
 }) {
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (onAdd(name, target)) {
-      setName("");
-      setTarget("");
+    if (saving) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (await onAdd(name, target)) {
+        setName("");
+        setTarget("");
+      }
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -11834,10 +11922,10 @@ function ContactsWorkspace({
             />
           </label>
 
-          <button className="primary" type="submit">
+          <button className="primary" disabled={saving} type="submit">
             <span className="button-content">
               <UserPlus size={16} />
-              <span>Save Contact</span>
+              <span>{saving ? "Saving" : "Save Contact"}</span>
             </span>
           </button>
         </form>

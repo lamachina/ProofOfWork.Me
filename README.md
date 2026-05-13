@@ -409,6 +409,8 @@ Before issuing refunds, check `ID_REFUNDS.md` so old confirmed duplicates that w
 
 For public accounting, duplicate or failed registration payments should be treated as refund liabilities, not net registry revenue. Gross registry flow can include every confirmed paid registry event, but net registry revenue should subtract refunded or refund-owed non-canonical registrations.
 
+Confirmed registry treasury sweeps are tracked in `TREASURY_LEDGER.md`.
+
 ## Developer Map
 
 Important implementation points:

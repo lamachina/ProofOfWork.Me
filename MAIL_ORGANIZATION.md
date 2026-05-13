@@ -33,6 +33,7 @@ Mail organization features that are already implemented in the full app:
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Browser view for HTML message bodies or verified `text/html` attachments by txid, rendered in a sandboxed iframe.
 - Canonical `Welcome to ProofOfWork.Me.html` system file pinned by txid and shown by default in Files/Desktop.
+- Browser-readable HTML message bodies appear in Files/Desktop as derived `.html` files, even when no attachment exists.
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, and attachment actions.
@@ -95,6 +96,8 @@ Folder behavior:
 Files is a derived view, not a separate storage layer.
 
 The app should scan confirmed known mail and show only messages with attachments. Pending Incoming messages or pending/dropped Outbox attempts should not appear in Files by default because they are not durable on-chain records.
+
+Browser-readable HTML message bodies are also files for UX purposes. If a confirmed `pwm1:m` body looks like HTML and has no attachment, Files/Desktop should synthesize a `.html` file from the message body and open it through Browser by txid. This is a derived view only; it does not create a new protocol or pretend an attachment exists on-chain.
 
 The default Files experience should feel more like a desktop/file manager than an email reader:
 

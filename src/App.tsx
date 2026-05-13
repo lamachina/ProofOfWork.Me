@@ -4586,6 +4586,14 @@ function withCanonicalWelcomeFile(messages: MailMessage[], network: BitcoinNetwo
   return [canonicalWelcomeFileMessage(), ...withoutExistingWelcome];
 }
 
+function fileSurfaceMessages(messages: MailMessage[]) {
+  return messages
+    .filter((message) => Boolean(message.attachment) || isBrowserHtmlMessageBody(message.memo))
+    .map((message): MailMessage & { attachment: MailAttachment } =>
+      message.attachment ? { ...message, attachment: message.attachment } : { ...message, attachment: browserMessageBodyAttachment(message.memo, message.subject) },
+    );
+}
+
 function browserTxUrl(txid: string, network: BitcoinNetwork) {
   const params = new URLSearchParams();
   params.set("txid", txid);
@@ -6781,7 +6789,7 @@ export default function App() {
     [allMail, customFolders, mailPreferences],
   );
   const allFileMessages = useMemo(
-    () => withCanonicalWelcomeFile(allMail.filter((message) => message.attachment && (message.folder !== "inbox" || message.confirmed)), network),
+    () => withCanonicalWelcomeFile(fileSurfaceMessages(allMail.filter((message) => message.folder !== "inbox" || message.confirmed)), network),
     [allMail, network],
   );
   const desktopFileMessages = useMemo(() => desktopMail.filter(hasAttachment), [desktopMail]);
@@ -7786,7 +7794,7 @@ export default function App() {
       }
 
       const { inboxMessages, sentMessages } = await fetchAddressMail(resolved.paymentAddress, network);
-      const publicMail = withCanonicalWelcomeFile(publicDesktopMail(inboxMessages, sentMessages), network);
+      const publicMail = withCanonicalWelcomeFile(fileSurfaceMessages(publicDesktopMail(inboxMessages, sentMessages)), network);
       const files = publicMail.filter(hasAttachment);
       const profile: DesktopProfile = {
         address: resolved.paymentAddress,
@@ -14055,9 +14063,7 @@ function DesktopWorkspace({
   onSelect: (message: MailMessage) => void;
 }) {
   const fileMessages = sortMessages(
-    messages
-      .filter(hasAttachment)
-      .filter((message) => fileFilter === "all" || attachmentKind(message.attachment) === fileFilter),
+    fileSurfaceMessages(messages).filter((message) => fileFilter === "all" || attachmentKind(message.attachment) === fileFilter),
     sortMode,
   ).filter(hasAttachment);
   const selectedFile = fileMessages.find((message) => mailKey(message) === selectedKey) ?? fileMessages[0];
@@ -14222,7 +14228,7 @@ function FilesWorkspace({
   onRefresh: () => void;
   onSelect: (message: MailMessage) => void;
 }) {
-  const fileMessages = messages.filter(hasAttachment);
+  const fileMessages = fileSurfaceMessages(messages);
   const selectedFile = selectedMessage ?? fileMessages[0];
 
   if (fileMessages.length === 0) {

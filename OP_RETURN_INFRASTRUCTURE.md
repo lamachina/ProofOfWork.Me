@@ -162,6 +162,12 @@ The tx endpoint:
 - Lets Browser reconstruct HTML from `pwm1:m` message bodies or verified `pwm1:a` attachments by txid without depending on public mempool.space from production browsers.
 - Does not turn pending transactions into canonical history; Browser labels pending pages as pending.
 
+Files/Desktop projection:
+
+- A verified `pwm1:a` attachment appears as the file it declares.
+- A Browser-readable `pwm1:m` HTML message body appears as a derived `.html` file for the Files/Desktop UI.
+- The derived file opens in Browser by txid. The chain record is still the message body; no attachment is invented in protocol history.
+
 Canonical welcome page:
 
 ```text

@@ -10577,7 +10577,7 @@ function DesktopApp({
   onSelect: (message: MailMessage) => void;
 }) {
   return (
-    <main className="desktop-public-app">
+    <main className={`desktop-public-app ${status.tone !== "idle" ? "has-route-status" : ""}`}>
       <header className="desktop-public-header">
         <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
           <div className="brand-mark" aria-hidden="true">
@@ -14065,7 +14065,7 @@ function DesktopWorkspace({
 
   if (!profile) {
     return (
-      <section className="desktop-workspace">
+      <section className="desktop-workspace desktop-workspace-empty">
         <div className="desktop-screensaver">
           <div className="desktop-screen-card">
             <div className="brand-mark" aria-hidden="true">
@@ -14101,7 +14101,7 @@ function DesktopWorkspace({
   }
 
   return (
-    <section className="desktop-workspace">
+    <section className="desktop-workspace desktop-workspace-loaded">
       <div className="desktop-toolbar">
         <div>
           <h2>{profile.label} Desktop</h2>

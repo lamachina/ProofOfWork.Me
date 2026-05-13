@@ -817,6 +817,14 @@ select {
   grid-template-rows: minmax(0, 1fr);
 }
 
+.desktop-workspace-loaded {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.desktop-workspace-empty {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .desktop-public-app {
   background: #030508;
   color: #edf2f7;
@@ -869,6 +877,17 @@ select {
   right: 0;
   top: 64px;
   z-index: 2;
+}
+
+.desktop-public-app.has-route-status {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.desktop-public-app.has-route-status .desktop-route-status {
+  left: auto;
+  position: static;
+  right: auto;
+  top: auto;
 }
 
 .desktop-public-app .app-footer {

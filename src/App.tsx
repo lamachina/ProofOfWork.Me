@@ -565,6 +565,7 @@ type MempoolUtxo = {
 };
 
 type UtxoSelection = {
+  dustFeeSats: number;
   selected: MempoolUtxo[];
   feeSats: number;
   changeSats: number;
@@ -634,6 +635,8 @@ const DISCORD_URL = "https://discord.com/invite/mRA4zbqB";
 const GITHUB_URL = "https://github.com/proofofworkme";
 const X_URL = "https://x.com/proofofworkme";
 const YOUTUBE_URL = "https://www.youtube.com/@proofofworkme";
+const LANDING_VIDEO_URL = "https://www.youtube.com/watch?v=Tx28MqnxoUA";
+const LANDING_VIDEO_EMBED_URL = "https://www.youtube.com/embed/Tx28MqnxoUA";
 const HOME_APP_URL = "https://www.proofofwork.me/";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
@@ -1482,6 +1485,59 @@ function networkLabel(network: BitcoinNetwork) {
   }
 
   return network === "livenet" ? "Mainnet" : "Testnet3";
+}
+
+function confirmDustFeeAbsorption({
+  dustFeeSats,
+  feeRate,
+  feeSats,
+}: {
+  dustFeeSats?: number;
+  feeRate: number;
+  feeSats: number;
+}) {
+  const extraFeeSats = Math.max(0, Math.floor(dustFeeSats ?? 0));
+  if (extraFeeSats <= 0) {
+    return true;
+  }
+
+  return window.confirm(
+    [
+      `${extraFeeSats.toLocaleString()} sats of below-dust change will be added to the miner fee.`,
+      `Selected fee rate: ${feeRate} sat/vB.`,
+      `Estimated fee: ${feeSats.toLocaleString()} sats.`,
+      "Use a larger confirmed UTXO or batch payments to avoid this. Continue signing?",
+    ].join("\n\n"),
+  );
+}
+
+function dustFeeAbsorptionCanceledText() {
+  return "Signing canceled. Use a larger confirmed UTXO or batch payments to avoid below-dust change becoming fee.";
+}
+
+function BrowserNetworkTabs({
+  network,
+  onChange,
+}: {
+  network: BitcoinNetwork;
+  onChange: (network: BitcoinNetwork) => void;
+}) {
+  return (
+    <div className="browser-network-control">
+      <span>Network</span>
+      <div className="network-tabs browser-network-tabs" aria-label="Browser Bitcoin network">
+        <button aria-pressed={network === "livenet"} onClick={() => onChange("livenet")} type="button">
+          Mainnet
+        </button>
+        <button aria-pressed={network === "testnet4"} onClick={() => onChange("testnet4")} type="button">
+          Testnet4
+        </button>
+        <button aria-pressed={network === "testnet"} onClick={() => onChange("testnet")} type="button">
+          Testnet3
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function shortAddress(value: string) {
@@ -5859,6 +5915,7 @@ function selectUtxos(
     if (changeWithChange >= DUST_SATS) {
       return {
         selected,
+        dustFeeSats: 0,
         feeSats: feeWithChange,
         changeSats: changeWithChange,
       };
@@ -5869,6 +5926,7 @@ function selectUtxos(
     if (remainder >= 0) {
       return {
         selected,
+        dustFeeSats: remainder,
         feeSats: feeWithoutChange + remainder,
         changeSats: 0,
       };
@@ -6068,6 +6126,7 @@ async function buildPaymentPsbt({
 
   return {
     changeSats: selection.changeSats,
+    dustFeeSats: selection.dustFeeSats,
     feeSats: selection.feeSats,
     inputCount: selection.selected.length,
     outputCount: normalizedPayments.length + opReturnScripts.length + normalizedPostProtocolPayments.length + (selection.changeSats >= DUST_SATS ? 1 : 0),
@@ -6538,6 +6597,7 @@ async function buildAnchoredMarketplacePsbt({
   return {
     anchorInputCount: 1,
     changeSats: selection.changeSats,
+    dustFeeSats: selection.dustFeeSats,
     feeSats: selection.feeSats,
     inputCount: selection.selected.length + 1,
     outputCount: normalizedPayments.length + opReturnScripts.length + (selection.changeSats >= DUST_SATS ? 1 : 0),
@@ -8227,6 +8287,10 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
+      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
 
       const txid = await signAndBroadcastPsbt({
         inputCount: paymentPsbt.inputCount,
@@ -8329,6 +8393,10 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
+      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
 
       const txid = await signAndBroadcastPsbt({
         inputCount: paymentPsbt.inputCount,
@@ -8455,6 +8523,10 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
+      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
 
       const txid = await signAndBroadcastPsbt({
         inputCount: paymentPsbt.inputCount,
@@ -8560,6 +8632,10 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
+      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
 
       const txid = await signAndBroadcastPsbt({
         inputCount: paymentPsbt.inputCount,
@@ -8652,6 +8728,10 @@ export default function App() {
           protocolPayloads: [payload],
           requireConfirmedUtxos: true,
         });
+        if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+          setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+          return;
+        }
 
         const txid = await signAndBroadcastPsbt({
           inputCount: paymentPsbt.inputCount,
@@ -8805,6 +8885,10 @@ export default function App() {
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
       });
+      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
 
       const txid = await signAndBroadcastPsbt({
         inputCount: paymentPsbt.inputCount,
@@ -9026,6 +9110,10 @@ export default function App() {
         })),
         protocolPayloads,
       });
+      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
 
       setStatus({
         tone: "idle",
@@ -10131,11 +10219,7 @@ function BrowserApp({
               />
             </label>
             <div className="browser-form-row">
-              <select aria-label="Bitcoin network" onChange={(event) => setNetwork(event.target.value as BitcoinNetwork)} value={network}>
-                <option value="livenet">Mainnet</option>
-                <option value="testnet4">Testnet4</option>
-                <option value="testnet">Testnet3</option>
-              </select>
+              <BrowserNetworkTabs network={network} onChange={setNetwork} />
               <button className="primary" disabled={loading} type="submit">
                 <span className="button-content">
                   <Search size={16} />
@@ -10379,11 +10463,7 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
             />
           </label>
           <div className="browser-form-row">
-            <select aria-label="Bitcoin network" onChange={(event) => setNetwork(event.target.value as BitcoinNetwork)} value={network}>
-              <option value="livenet">Mainnet</option>
-              <option value="testnet4">Testnet4</option>
-              <option value="testnet">Testnet3</option>
-            </select>
+            <BrowserNetworkTabs network={network} onChange={setNetwork} />
             <button className="primary" disabled={loading} type="submit">
               <span className="button-content">
                 <Search size={16} />
@@ -11783,6 +11863,30 @@ function LandingApp({
       </section>
 
       <section className="landing-main" aria-label="ProofOfWork.Me onboarding">
+        <section className="landing-video" aria-label="ProofOfWork.Me overview video">
+          <div className="landing-video-copy">
+            <span className="landing-kicker">Video overview</span>
+            <h3>The Bitcoin Computer is live</h3>
+            <p>Watch the current walkthrough, then open the apps below and verify the records from Bitcoin.</p>
+            <a className="secondary link-button" href={LANDING_VIDEO_URL} rel="noreferrer" target="_blank">
+              <span className="button-content">
+                <ArrowUpRight size={16} />
+                <span>Open on YouTube</span>
+              </span>
+            </a>
+          </div>
+          <div className="landing-video-frame">
+            <iframe
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              loading="lazy"
+              referrerPolicy="strict-origin-when-cross-origin"
+              src={LANDING_VIDEO_EMBED_URL}
+              title="ProofOfWork.Me Bitcoin Computer overview"
+            />
+          </div>
+        </section>
+
         <section className="landing-deck" aria-label="ProofOfWork.Me general deck">
           <div className="landing-deck-copy">
             <span className="landing-kicker">General deck</span>

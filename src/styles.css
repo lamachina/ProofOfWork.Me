@@ -1025,8 +1025,28 @@ select {
   gap: 10px;
 }
 
-.browser-form-row select {
-  flex: 1 1 150px;
+.browser-network-control {
+  display: grid;
+  flex: 1 1 250px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.browser-network-control > span {
+  color: #a8b3c1;
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
+.browser-network-tabs {
+  background: #030508;
+  border-color: rgba(237, 242, 247, 0.16);
+  width: 100%;
+}
+
+.browser-network-tabs button {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .browser-page-grid {
@@ -3001,6 +3021,7 @@ pre {
 .landing-choice p,
 .landing-protocol p,
 .landing-testimonial p,
+.landing-video-copy p,
 .landing-deck-copy p,
 .landing-deck-panel p {
   color: var(--text-muted);
@@ -3096,6 +3117,47 @@ pre {
   margin: 0 auto;
   max-width: 1180px;
   padding: 18px 18px 36px;
+}
+
+.landing-video {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 0.58fr) minmax(360px, 1.42fr);
+  min-width: 0;
+  padding: 18px;
+}
+
+.landing-video-copy {
+  align-content: center;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.landing-video-copy h3 {
+  font-size: clamp(1.8rem, 4vw, 3.4rem);
+  letter-spacing: 0;
+  line-height: 0.95;
+}
+
+.landing-video-frame {
+  aspect-ratio: 16 / 9;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.landing-video-frame iframe {
+  border: 0;
+  display: block;
+  height: 100%;
+  width: 100%;
 }
 
 .landing-stats {
@@ -3535,6 +3597,7 @@ pre {
     grid-template-columns: 1fr;
   }
 
+  .landing-video,
   .landing-deck {
     grid-template-columns: 1fr;
   }

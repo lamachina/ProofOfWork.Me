@@ -1,6 +1,6 @@
 # ProofOfWork.Me Bitcoin Computer Model
 
-Generated on 2026-05-12.
+Generated on 2026-05-13.
 
 This is the singular forward model for ProofOfWork.Me.
 
@@ -10,7 +10,8 @@ All prior standalone charts, product-only markdown models, and old projection fi
 2. ProofOfWork Mail
 3. ProofOfWork Files / Bitcoin Drive
 4. ProofOfWork Marketplace
-5. The aggregate Bitcoin Computer
+5. ProofOfWork Browser
+6. The aggregate Bitcoin Computer
 
 The model is success-case by design:
 
@@ -21,7 +22,7 @@ BTC/USD follows Bitcoin's backward-facing log-growth benchmark
 BTC/USD includes a one-standard-deviation volatility cone
 lower relay fees unlock exponentially more agent usage
 Bitcoin Computer write demand grows exponentially until today's blockspace ceiling
-IDs, Mail, Drive, and Marketplace reinforce each other
+IDs, Mail, Drive, Marketplace, and Browser reinforce each other
 ```
 
 ## Visual Read
@@ -34,7 +35,7 @@ They are written for normal human pattern recognition: big labels, plain words, 
 
 ![Dollar growth in human words](bitcoin-computer-model-dollar-growth.png)
 
-![IDs Mail Drive Marketplace product split](bitcoin-computer-model-product-split.png)
+![IDs Mail Drive Marketplace Browser product split](bitcoin-computer-model-product-split.png)
 
 ![Blockspace ceiling](bitcoin-computer-model-blockspace.png)
 
@@ -44,7 +45,7 @@ SVG versions:
 
 - [What is compounding](bitcoin-computer-model-compounding.svg)
 - [Dollar growth in human words](bitcoin-computer-model-dollar-growth.svg)
-- [IDs Mail Drive Marketplace product split](bitcoin-computer-model-product-split.svg)
+- [IDs Mail Drive Marketplace Browser product split](bitcoin-computer-model-product-split.svg)
 - [Blockspace ceiling](bitcoin-computer-model-blockspace.svg)
 - [Bitcoin volatility translation](bitcoin-computer-model-volatility.svg)
 
@@ -124,6 +125,15 @@ Average sats per sale: 1,000 sats
 Canonical forward sales per ID per year: 0.2
 ```
 
+Browser:
+
+```text
+Confirmed browser page txids: 0
+Confirmed browser page flow: 0 sats
+Average sats per browser page: 1,000 sats
+Canonical forward browser pages per ID per year: 1
+```
+
 ## Bitcoin Growth Benchmark
 
 Backward-facing Bitcoin log growth:
@@ -154,7 +164,7 @@ The volatility band changes only the USD translation. It does not change the sat
 
 This version adds the blockspace constraint.
 
-The success case assumes Bitcoin Computer usage compounds exponentially as agents, PowIDs, fee collapse, Mail, and Drive reinforce each other. That usage cannot grow through infinite blockspace. It compounds until it hits the current theoretical Bitcoin blockspace ceiling.
+The success case assumes Bitcoin Computer usage compounds exponentially as agents, PowIDs, fee collapse, Mail, Drive, Marketplace, and Browser reinforce each other. That usage cannot grow through infinite blockspace. It compounds until it hits the current theoretical Bitcoin blockspace ceiling.
 
 Protocol-derived ceiling:
 
@@ -181,6 +191,7 @@ Mail write size: 500 vB
 Average current file payload: 9,321 bytes
 Drive write size: 9,621 vB
 Marketplace sale write size: 1,500 vB
+Browser page write size: 15,000 vB
 ```
 
 Important boundary:
@@ -231,6 +242,7 @@ ID elasticity = 0.25
 Mail elasticity = 0.5
 Drive elasticity = 0.75
 Marketplace elasticity = 0.5
+Browser elasticity = 0.75
 ```
 
 ## Growth Engine
@@ -255,6 +267,7 @@ raw_blockspace_demand_vbytes =
   + mail_writes * mail_write_vbytes
   + drive_writes * drive_write_vbytes
   + marketplace_writes * marketplace_sale_vbytes
+  + browser_writes * browser_page_vbytes
 
 executable_blockspace_vbytes =
   min(raw_blockspace_demand_vbytes, annual_theoretical_blockspace_ceiling)
@@ -265,12 +278,12 @@ blockspace_usage_fulfillment_ratio =
 
 | Horizon | Raw annual demand | Executable blockspace | Ceiling used | Usage fulfilled | Capped? |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 6 months | 15.5 billion vB | 15.5 billion vB | 29.51% | 100.00% | no |
-| 12 months | 38.7 billion vB | 38.7 billion vB | 73.63% | 100.00% | no |
-| 24 months | 124 billion vB | 52.6 billion vB | 100.00% | 42.37% | yes |
-| 5 years | 621 billion vB | 52.6 billion vB | 100.00% | 8.47% | yes |
-| 10 years | 7.4 trillion vB | 52.6 billion vB | 100.00% | 0.71% | yes |
-| 25 years | 6.64 quadrillion vB | 52.6 billion vB | 100.00% | <0.01% | yes |
+| 6 months | 19.2 billion vB | 19.2 billion vB | 36.45% | 100.00% | no |
+| 12 months | 46.9 billion vB | 46.9 billion vB | 89.15% | 100.00% | no |
+| 24 months | 144 billion vB | 52.6 billion vB | 100.00% | 36.39% | yes |
+| 5 years | 680 billion vB | 52.6 billion vB | 100.00% | 7.73% | yes |
+| 10 years | 7.64 trillion vB | 52.6 billion vB | 100.00% | 0.69% | yes |
+| 25 years | 6.65 quadrillion vB | 52.6 billion vB | 100.00% | <0.01% | yes |
 | 50 years | 572 quintillion vB | 52.6 billion vB | 100.00% | <0.01% | yes |
 
 ## Product Formulas
@@ -324,6 +337,18 @@ marketplace_value_sats =
   * blockspace_usage_fulfillment_ratio
 ```
 
+### Browser
+
+```text
+browser_value_sats =
+  projected_powids
+  * browser_pages_per_id_per_year
+  * average_browser_page_sats
+  * value_multiple
+  * browser_fee_multiplier
+  * blockspace_usage_fulfillment_ratio
+```
+
 ### Bitcoin Computer
 
 ```text
@@ -332,6 +357,7 @@ bitcoin_computer_value_sats =
   + mail_value_sats
   + drive_value_sats
   + marketplace_value_sats
+  + browser_value_sats
 ```
 
 The BTC column is a sats-denominated valuation converted into BTC as a unit of account. It is not a claim that those sats are locked in the protocol.
@@ -340,15 +366,15 @@ The BTC column is a sats-denominated valuation converted into BTC as a unit of a
 
 This is the canonical lowest-fee success path at 0.00001 sat/vB.
 
-| Horizon | PowIDs | ID sats | Mail sats | Drive sats | Marketplace sats | Total sats | BTC | Base USD | Volatility USD range |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 6 months | 1,368 | 2,825,816,985 | 9,894,106,884 | 7,295,718,233 | 43,246,085 | 20,058,888,187 | 200.5889 | $21,025,402 ($21 million) | $14.1 million to $31.4 million |
-| 12 months | 3,058 | 14,129,084,927 | 49,490,545,697 | 16,313,721,914 | 96,701,186 | 80,030,053,724 | 800.3005 | $108,715,253 ($109 million) | $61.6 million to $192 million |
-| 24 months | 7,645 | 88,306,780,793 | 131,080,402,602 | 17,279,984,092 | 102,428,800 | 236,769,596,287 | 2,367.70 | $540,210,639 ($540 million) | $242 million to $1.21 billion |
-| 5 years | 22,397 | 757,943,179,259 | 224,901,303,760 | 10,119,028,652 | 59,981,534 | 993,023,493,206 | 9,930.23 | $10,734,855,522 ($10.7 billion) | $3.02 billion to $38.2 billion |
-| 10 years | 91,134 | 12,549,148,322,130 | 312,243,964,137 | 3,452,530,130 | 20,465,211 | 12,864,865,281,608 | 128,648.65 | $1,858,835,931,075 ($1.86 trillion) | $309 billion to $11.2 trillion |
-| 25 years | 2,913,967 | 12,829,794,126,672,018 | 355,865,761,172 | 123,061,526 | 729,459 | 12,830,150,116,224,176 | 128,301,501.16 | $4,426,545,783,330,667,000 ($4.43 quintillion) | $260 quadrillion to $75.5 quintillion |
-| 50 years | 857,022,930 | 1,109,775,975,759,818,300,000 | 357,472,573,198 | 420,311 | 2,491 | 1,109,775,976,117,291,200,000 | 11,097,759,761,172.91 | $163,329,344,698,331,880,000,000,000,000 ($163 octillion) | $2.96 octillion to $9.02 nonillion |
+| Horizon | PowIDs | ID sats | Mail sats | Drive sats | Marketplace sats | Browser sats | Total sats | BTC | Base USD | Volatility USD range |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 6 months | 1,368 | 2,825,816,985 | 9,894,106,884 | 7,295,718,233 | 43,246,085 | 1,215,953,039 | 21,274,841,226 | 212.7484 | $22,299,945 ($22.3 million) | $14.9 million to $33.3 million |
+| 12 months | 3,058 | 14,129,084,927 | 49,490,545,697 | 16,313,721,914 | 96,701,186 | 2,718,953,652 | 82,749,007,376 | 827.4901 | $112,408,762 ($112 million) | $63.7 million to $198 million |
+| 24 months | 7,645 | 88,306,780,793 | 112,574,948,630 | 14,840,458,855 | 87,968,275 | 2,473,409,809 | 218,283,566,362 | 2,182.84 | $498,033,137 ($498 million) | $223 million to $1.11 billion |
+| 5 years | 22,397 | 757,943,179,259 | 205,152,935,839 | 9,230,486,445 | 54,714,613 | 1,538,414,408 | 973,919,730,564 | 9,739.20 | $10,528,338,624 ($10.5 billion) | $2.96 billion to $37.4 billion |
+| 10 years | 91,134 | 12,549,148,322,130 | 302,314,825,590 | 3,342,742,099 | 19,814,431 | 557,123,683 | 12,855,382,827,934 | 128,553.83 | $1,857,465,817,575 ($1.86 trillion) | $309 billion to $11.2 trillion |
+| 25 years | 2,913,967 | 12,829,794,126,672,018 | 355,449,644,584 | 122,917,629 | 728,606 | 20,486,272 | 12,830,149,720,449,110 | 128,301,497.20 | $4,426,545,646,783,827,000 ($4.43 quintillion) | $260 quadrillion to $75.5 quintillion |
+| 50 years | 857,022,930 | 1,109,775,975,759,818,300,000 | 357,471,143,888 | 420,309 | 2,491 | 70,052 | 1,109,775,976,117,289,900,000 | 11,097,759,761,172.90 | $163,329,344,698,331,700,000,000,000,000 ($163 octillion) | $2.96 octillion to $9.02 nonillion |
 
 ## Aggregate Fee Sensitivity
 
@@ -358,34 +384,34 @@ Every fee tier also runs through the same annual blockspace ceiling.
 
 | Horizon | Fee tier | PowIDs | Total sats | BTC | Base USD | Low USD | High USD |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 6 months | 0.01 sat/vB | 1,368 | 857,782,748 | 8.5778 | $899 thousand | $602 thousand | $1.34 million |
-| 6 months | 0.001 sat/vB | 1,368 | 2,118,047,957 | 21.1805 | $2.22 million | $1.49 million | $3.32 million |
-| 6 months | 0.0001 sat/vB | 1,368 | 6,028,923,149 | 60.2892 | $6.32 million | $4.23 million | $9.44 million |
-| 6 months | 0.00001 sat/vB | 1,368 | 20,058,888,187 | 200.5889 | $21 million | $14.1 million | $31.4 million |
-| 12 months | 0.01 sat/vB | 3,058 | 4,172,371,311 | 41.7237 | $5.67 million | $3.21 million | $10 million |
-| 12 months | 0.001 sat/vB | 3,058 | 9,942,618,834 | 99.4262 | $13.5 million | $7.66 million | $23.8 million |
-| 12 months | 0.0001 sat/vB | 3,058 | 26,527,268,224 | 265.2727 | $36 million | $20.4 million | $63.5 million |
-| 12 months | 0.00001 sat/vB | 3,058 | 80,030,053,724 | 800.3005 | $109 million | $61.6 million | $192 million |
-| 24 months | 0.01 sat/vB | 7,645 | 25,723,752,680 | 257.2375 | $58.7 million | $26.3 million | $131 million |
-| 24 months | 0.001 sat/vB | 7,645 | 60,176,606,380 | 601.7661 | $137 million | $61.6 million | $306 million |
-| 24 months | 0.0001 sat/vB | 7,645 | 154,821,067,827 | 1,548.21 | $353 million | $158 million | $788 million |
-| 24 months | 0.00001 sat/vB | 7,645 | 236,769,596,287 | 2,367.70 | $540 million | $242 million | $1.21 billion |
-| 5 years | 0.01 sat/vB | 22,397 | 219,456,170,388 | 2,194.56 | $2.37 billion | $667 million | $8.44 billion |
-| 5 years | 0.001 sat/vB | 22,397 | 509,094,925,522 | 5,090.95 | $5.5 billion | $1.55 billion | $19.6 billion |
-| 5 years | 0.0001 sat/vB | 22,397 | 701,488,644,299 | 7,014.89 | $7.58 billion | $2.13 billion | $27 billion |
-| 5 years | 0.00001 sat/vB | 22,397 | 993,023,493,206 | 9,930.23 | $10.7 billion | $3.02 billion | $38.2 billion |
-| 10 years | 0.01 sat/vB | 91,134 | 2,580,708,623,932 | 25,807.09 | $373 billion | $62 billion | $2.24 trillion |
-| 10 years | 0.001 sat/vB | 91,134 | 4,311,369,784,896 | 43,113.70 | $623 billion | $104 billion | $3.75 trillion |
-| 10 years | 0.0001 sat/vB | 91,134 | 7,389,503,091,414 | 73,895.03 | $1.07 trillion | $178 billion | $6.42 trillion |
-| 10 years | 0.00001 sat/vB | 91,134 | 12,864,865,281,608 | 128,648.65 | $1.86 trillion | $309 billion | $11.2 trillion |
-| 25 years | 0.01 sat/vB | 2,913,967 | 2,281,853,083,130,944 | 22,818,530.83 | $787 quadrillion | $46.2 quadrillion | $13.4 quintillion |
-| 25 years | 0.001 sat/vB | 2,913,967 | 4,057,494,139,643,868 | 40,574,941.40 | $1.4 quintillion | $82.1 quadrillion | $23.9 quintillion |
-| 25 years | 0.0001 sat/vB | 2,913,967 | 7,215,080,069,769,186 | 72,150,800.70 | $2.49 quintillion | $146 quadrillion | $42.5 quintillion |
-| 25 years | 0.00001 sat/vB | 2,913,967 | 12,830,150,116,224,176 | 128,301,501.16 | $4.43 quintillion | $260 quadrillion | $75.5 quintillion |
-| 50 years | 0.01 sat/vB | 857,022,930 | 197,349,177,102,431,100,000 | 1,973,491,771,024.31 | $29 octillion | $526 septillion | $1.6 nonillion |
-| 50 years | 0.001 sat/vB | 857,022,930 | 350,941,977,951,160,240,000 | 3,509,419,779,511.60 | $51.6 octillion | $935 septillion | $2.85 nonillion |
-| 50 years | 0.0001 sat/vB | 857,022,930 | 624,072,893,230,664,100,000 | 6,240,728,932,306.64 | $91.8 octillion | $1.66 octillion | $5.07 nonillion |
-| 50 years | 0.00001 sat/vB | 857,022,930 | 1,109,775,976,117,291,200,000 | 11,097,759,761,172.91 | $163 octillion | $2.96 octillion | $9.02 nonillion |
+| 6 months | 0.01 sat/vB | 1,368 | 864,620,554 | 8.6462 | $906 thousand | $607 thousand | $1.35 million |
+| 6 months | 0.001 sat/vB | 1,368 | 2,156,499,768 | 21.5650 | $2.26 million | $1.51 million | $3.38 million |
+| 6 months | 0.0001 sat/vB | 1,368 | 6,245,153,575 | 62.4515 | $6.55 million | $4.38 million | $9.78 million |
+| 6 months | 0.00001 sat/vB | 1,368 | 21,274,841,226 | 212.7484 | $22.3 million | $14.9 million | $33.3 million |
+| 12 months | 0.01 sat/vB | 3,058 | 4,187,661,111 | 41.8766 | $5.69 million | $3.23 million | $10 million |
+| 12 months | 0.001 sat/vB | 3,058 | 10,028,599,698 | 100.2860 | $13.6 million | $7.73 million | $24 million |
+| 12 months | 0.0001 sat/vB | 3,058 | 27,010,774,154 | 270.1077 | $36.7 million | $20.8 million | $64.7 million |
+| 12 months | 0.00001 sat/vB | 3,058 | 82,749,007,376 | 827.4901 | $112 million | $63.7 million | $198 million |
+| 24 months | 0.01 sat/vB | 7,645 | 25,761,977,180 | 257.6198 | $58.8 million | $26.4 million | $131 million |
+| 24 months | 0.001 sat/vB | 7,645 | 60,391,558,539 | 603.9156 | $138 million | $61.8 million | $307 million |
+| 24 months | 0.0001 sat/vB | 7,645 | 156,029,832,651 | 1,560.30 | $356 million | $160 million | $794 million |
+| 24 months | 0.00001 sat/vB | 7,645 | 218,283,566,362 | 2,182.84 | $498 million | $223 million | $1.11 billion |
+| 5 years | 0.01 sat/vB | 22,397 | 219,568,156,228 | 2,195.68 | $2.37 billion | $668 million | $8.44 billion |
+| 5 years | 0.001 sat/vB | 22,397 | 509,724,668,177 | 5,097.25 | $5.51 billion | $1.55 billion | $19.6 billion |
+| 5 years | 0.0001 sat/vB | 22,397 | 685,848,039,292 | 6,858.48 | $7.41 billion | $2.09 billion | $26.4 billion |
+| 5 years | 0.00001 sat/vB | 22,397 | 973,919,730,564 | 9,739.20 | $10.5 billion | $2.96 billion | $37.4 billion |
+| 10 years | 0.01 sat/vB | 91,134 | 2,578,561,568,828 | 25,785.62 | $373 billion | $62 billion | $2.24 trillion |
+| 10 years | 0.001 sat/vB | 91,134 | 4,307,711,540,585 | 43,077.12 | $622 billion | $104 billion | $3.74 trillion |
+| 10 years | 0.0001 sat/vB | 91,134 | 7,383,461,271,496 | 73,834.61 | $1.07 trillion | $177 billion | $6.42 trillion |
+| 10 years | 0.00001 sat/vB | 91,134 | 12,855,382,827,934 | 128,553.83 | $1.86 trillion | $309 billion | $11.2 trillion |
+| 25 years | 0.01 sat/vB | 2,913,967 | 2,281,853,012,166,798 | 22,818,530.12 | $787 quadrillion | $46.2 quadrillion | $13.4 quintillion |
+| 25 years | 0.001 sat/vB | 2,913,967 | 4,057,494,013,625,229 | 40,574,940.14 | $1.4 quintillion | $82.1 quadrillion | $23.9 quintillion |
+| 25 years | 0.0001 sat/vB | 2,913,967 | 7,215,079,846,227,189 | 72,150,798.46 | $2.49 quintillion | $146 quadrillion | $42.5 quintillion |
+| 25 years | 0.00001 sat/vB | 2,913,967 | 12,830,149,720,449,110 | 128,301,497.20 | $4.43 quintillion | $260 quadrillion | $75.5 quintillion |
+| 50 years | 0.01 sat/vB | 857,022,930 | 197,349,177,102,430,830,000 | 1,973,491,771,024.31 | $29 octillion | $526 septillion | $1.6 nonillion |
+| 50 years | 0.001 sat/vB | 857,022,930 | 350,941,977,951,159,800,000 | 3,509,419,779,511.60 | $51.6 octillion | $935 septillion | $2.85 nonillion |
+| 50 years | 0.0001 sat/vB | 857,022,930 | 624,072,893,230,663,300,000 | 6,240,728,932,306.63 | $91.8 octillion | $1.66 octillion | $5.07 nonillion |
+| 50 years | 0.00001 sat/vB | 857,022,930 | 1,109,775,976,117,289,900,000 | 11,097,759,761,172.90 | $163 octillion | $2.96 octillion | $9.02 nonillion |
 
 ## Plain Read
 
@@ -393,20 +419,20 @@ At the canonical deep-fee success path:
 
 ```text
 6 months:
-20,058,888,187 sats
-200.5889 BTC
-$21 million base USD
-$14.1 million to $31.4 million volatility range
+21,274,841,226 sats
+212.7484 BTC
+$22.3 million base USD
+$14.9 million to $33.3 million volatility range
 
 10 years:
-12,864,865,281,608 sats
-128,648.65 BTC
+12,855,382,827,934 sats
+128,553.83 BTC
 $1.86 trillion base USD
 $309 billion to $11.2 trillion volatility range
 
 50 years:
-1,109,775,976,117,291,200,000 sats
-11,097,759,761,172.91 BTC
+1,109,775,976,117,289,900,000 sats
+11,097,759,761,172.90 BTC
 $163 octillion base USD
 $2.96 octillion to $9.02 nonillion volatility range
 ```

@@ -2815,6 +2815,30 @@ async function txStatusPayload(txid, network) {
   };
 }
 
+async function txPayload(txid, network) {
+  const tx = await fetchTransactionWithPendingFallback(txid, network);
+  if (!tx) {
+    return {
+      confirmed: false,
+      indexedAt: new Date().toISOString(),
+      network,
+      status: "dropped",
+      tx: null,
+      txid,
+    };
+  }
+
+  const confirmed = transactionConfirmed(tx);
+  return {
+    confirmed,
+    indexedAt: new Date().toISOString(),
+    network,
+    status: confirmed ? "confirmed" : "pending",
+    tx,
+    txid,
+  };
+}
+
 async function healthPayload() {
   let tipHeight = null;
   let backend = null;
@@ -2915,6 +2939,23 @@ async function handleRequest(request, response) {
       }
 
       jsonResponse(response, 200, await txStatusPayload(txid, network), "no-store");
+      return;
+    }
+
+    if (pathParts.length === 4 && pathParts[0] === "api" && pathParts[1] === "v1" && pathParts[2] === "tx") {
+      const txid = pathParts[3].toLowerCase();
+      if (!/^[0-9a-f]{64}$/u.test(txid)) {
+        errorResponse(response, 400, "Invalid txid.");
+        return;
+      }
+
+      const payload = await txPayload(txid, network);
+      if (!payload.tx) {
+        errorResponse(response, 404, "Transaction not found.");
+        return;
+      }
+
+      jsonResponse(response, 200, payload, "no-store");
       return;
     }
 

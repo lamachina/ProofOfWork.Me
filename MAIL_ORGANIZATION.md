@@ -11,6 +11,7 @@ proofofwork.me              landing page
 id.proofofwork.me           focused ProofOfWork ID registry onboarding app
 computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
+browser.proofofwork.me      public read-only HTML browser by txid
 marketplace.proofofwork.me  standalone ID marketplace
 log.proofofwork.me          public Bitcoin Computer log
 growth.proofofwork.me       public growth model dashboard
@@ -30,6 +31,7 @@ Mail organization features that are already implemented in the full app:
 - Reply All for multi-recipient mail.
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
+- Browser view for verified `text/html` attachments by txid, rendered in a sandboxed iframe.
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, and attachment actions.
 - Growth surface for canonical modeled network value versus real confirmed registry, log, file, and marketplace value metrics.
@@ -41,6 +43,7 @@ Future developers should keep `id.proofofwork.me` narrow. Do not pull the full m
 Marketplace actions should stay outside the mailbox folders. Keep ID trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders.
 Log is not a mailbox folder. It is a read-only Bitcoin Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, and attachments.
 Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical Bitcoin Computer growth model in sats and USD.
+Browser is not a mailbox folder. It is a read-only HTML viewer over the same verified file attachment protocol used by Files and Desktop. It should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
 
 ## Core Idea
 
@@ -140,6 +143,29 @@ desktop.proofofwork.me
 This route should use the same OP_RETURN parser/API as the full Computer app. It is a presentation surface, not a new protocol.
 
 The Computer app may still keep an internal Desktop folder for signed-in users. That internal view can live inside the Computer shell; the public Desktop domain should stay focused on search and public file browsing.
+
+## Browser
+
+Browser is the public read-only HTML renderer for Files. On `browser.proofofwork.me`, users paste a txid and the app reconstructs a verified `text/html` attachment from the existing `pwm1:a` chunks.
+
+Behavior:
+
+- Accept a Bitcoin txid on mainnet, testnet4, or testnet3.
+- Fetch the transaction through the ProofOfWork API when configured.
+- Reconstruct the attachment through the same size and SHA-256 checks as Files/Desktop.
+- Render only HTML-like attachments (`text/html`, `application/xhtml+xml`, or `.html`/`.xhtml` names).
+- Render inside a sandboxed iframe with scripts disabled by default.
+- Show proof metadata: txid, status, network, sender, sats, protocol bytes, size, and SHA-256.
+- Expose a simple Computer-native HTML template users can copy or download before publishing as a normal ProofOfWork file attachment.
+- Treat pending pages as pending visibility, not final truth.
+
+Production route:
+
+```text
+browser.proofofwork.me
+```
+
+This route should stay compatible with the current Computer file protocol. HTML pages are files, not a new external carrier.
 
 ## Outbox
 

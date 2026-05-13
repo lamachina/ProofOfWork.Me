@@ -22,12 +22,13 @@ proofofwork.me              -> landing page
 id.proofofwork.me           -> ID registry app
 computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
+browser.proofofwork.me      -> public read-only HTML browser by txid
 marketplace.proofofwork.me  -> standalone ID marketplace
 log.proofofwork.me          -> public Bitcoin Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Marketplace, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -82,6 +83,7 @@ VITE_LANDING_ONLY=1 VITE_POW_API_BASE=https://proofofwork.me npm run build
 VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
 VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
+VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
@@ -96,6 +98,7 @@ GET /api/v1/log?network=livenet
 GET /api/v1/ids?network=livenet
 GET /api/v1/ids/:id?network=livenet
 GET /api/v1/address/:address/mail?network=livenet
+GET /api/v1/tx/:txid?network=livenet
 GET /api/v1/tx/:txid/status?network=livenet
 ```
 
@@ -139,6 +142,12 @@ The tx status endpoint:
 - Returns `confirmed`, `pending`, or `dropped`.
 - Checks local infrastructure first and the pending fallback second.
 - Lets Outbox stop showing dropped transactions as forever-pending.
+
+The tx endpoint:
+
+- Returns a normalized transaction payload from the same local/pending source order.
+- Lets Browser reconstruct and verify `pwm1:a` attachments by txid without depending on public mempool.space from production browsers.
+- Does not turn pending transactions into canonical history; Browser labels pending pages as pending.
 
 ## Confirmed vs Pending
 
@@ -215,6 +224,7 @@ After changing the API or production build, verify:
 - Duplicate/pending IDs cannot be routed.
 - Sent, inbox, incoming, files, outbox, and dropped status all work through the API.
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
+- Browser can load a txid with a verified `text/html` attachment, render it in a sandbox, and reject non-HTML or unverified attachment data.
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Log can load global Bitcoin Computer events and search an address, confirmed ProofOfWork ID, or txid.
 - Growth can load real chain metrics and render the modeled-vs-real sats/USD value graph without layout overlap on desktop and mobile.

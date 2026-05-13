@@ -134,6 +134,18 @@ type DesktopProfile = {
   resolvedId?: string;
 };
 
+type BrowserPage = {
+  amountSats: number;
+  attachment: MailAttachment;
+  confirmed: boolean;
+  createdAt: string;
+  html: string;
+  network: BitcoinNetwork;
+  protocolBytes: number;
+  sender: string;
+  txid: string;
+};
+
 type LocalBackupPayload = {
   app: "ProofOfWork.Me";
   version: 1;
@@ -623,6 +635,7 @@ const YOUTUBE_URL = "https://www.youtube.com/@proofofworkme";
 const ID_APP_URL = "https://id.proofofwork.me";
 const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
+const BROWSER_APP_URL = "https://browser.proofofwork.me";
 const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 const LOG_APP_URL = "https://log.proofofwork.me";
 const GROWTH_APP_URL = "https://growth.proofofwork.me";
@@ -668,6 +681,7 @@ const APP_LINKS = [
   { href: ID_APP_URL, label: "IDs" },
   { href: COMPUTER_APP_URL, label: "Computer" },
   { href: DESKTOP_APP_URL, label: "Desktop" },
+  { href: BROWSER_APP_URL, label: "Browser" },
   { href: MARKETPLACE_APP_URL, label: "Marketplace" },
   { href: LOG_APP_URL, label: "Log" },
   { href: GROWTH_APP_URL, label: "Growth" },
@@ -675,6 +689,8 @@ const APP_LINKS = [
 
 type GrowthModelRow = {
   adoption: number;
+  browserSats: number;
+  browserWrites: number;
   blockspaceUsageRatio: number;
   btcUsdBase: number;
   driveSats: number;
@@ -701,6 +717,8 @@ type GrowthValuePoint = {
 };
 
 type GrowthActualNetworkValue = {
+  browserFlowSats: number;
+  browserSats: number;
   driveFlowSats: number;
   driveSats: number;
   mailFlowSats: number;
@@ -724,7 +742,7 @@ type GrowthRealEvent = {
 };
 
 const GROWTH_MODEL_START_DATE = "2026-05-11";
-const GROWTH_MODEL_GENERATED_ON = "2026-05-12";
+const GROWTH_MODEL_GENERATED_ON = "2026-05-13";
 const GROWTH_MODEL_INPUTS = {
   bitnodesReachableNodes: 23_984,
   agentShare: 0.51,
@@ -737,9 +755,11 @@ const GROWTH_MODEL_INPUTS = {
   baselineMailFlowSats: 10_202,
   baselineFileFlowSats: 2_184,
   baselineMarketplaceVolumeSats: 1_000,
+  baselineBrowserFlowSats: 0,
   mailEdgeDensity: 0.012307692307692308,
   mailSatsPerDelivery: 680.1333333333333,
   marketplaceAverageSaleSats: 1000,
+  browserAveragePageSats: 1000,
   satsPerFile: 1000,
   canonicalFee: 0.00001,
   blockspaceVbytesPerYear: 52_560_000_000,
@@ -747,15 +767,18 @@ const GROWTH_MODEL_INPUTS = {
   mailVbytesPerWrite: 500,
   driveVbytesPerWrite: 9_621,
   marketplaceVbytesPerSale: 1_500,
+  browserVbytesPerPage: 15_000,
   mailMessagesPerPairPerYear: 4,
   driveFilesPerIdPerYear: 6,
   marketplaceSalesPerIdPerYear: 0.2,
+  browserPagesPerIdPerYear: 1,
   valueMultiple: 5,
   elasticities: {
     id: 0.25,
     mail: 0.5,
     drive: 0.75,
     marketplace: 0.5,
+    browser: 0.75,
   },
   horizons: [
     { label: "6 months", years: 0.5, adoption: 0.1 },
@@ -790,6 +813,7 @@ function growthModelRow(horizon: { label: string; years: number; adoption: numbe
   const mailMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.mail);
   const driveMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.drive);
   const marketplaceMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.marketplace);
+  const browserMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.browser);
   const rawIdSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 * idMultiplier;
   const rawMailSats =
     directedPairs *
@@ -810,27 +834,38 @@ function growthModelRow(horizon: { label: string; years: number; adoption: numbe
     GROWTH_MODEL_INPUTS.marketplaceAverageSaleSats *
     GROWTH_MODEL_INPUTS.valueMultiple *
     marketplaceMultiplier;
+  const rawBrowserSats =
+    powids *
+    GROWTH_MODEL_INPUTS.browserPagesPerIdPerYear *
+    GROWTH_MODEL_INPUTS.browserAveragePageSats *
+    GROWTH_MODEL_INPUTS.valueMultiple *
+    browserMultiplier;
   const idWrites = powids * idMultiplier;
   const mailWrites = directedPairs * GROWTH_MODEL_INPUTS.mailEdgeDensity * GROWTH_MODEL_INPUTS.mailMessagesPerPairPerYear * mailMultiplier;
   const driveWrites = powids * GROWTH_MODEL_INPUTS.driveFilesPerIdPerYear * driveMultiplier;
   const marketplaceWrites = powids * GROWTH_MODEL_INPUTS.marketplaceSalesPerIdPerYear * marketplaceMultiplier;
+  const browserWrites = powids * GROWTH_MODEL_INPUTS.browserPagesPerIdPerYear * browserMultiplier;
   const rawBlockspaceVbytes =
     idWrites * GROWTH_MODEL_INPUTS.idVbytesPerWrite +
     mailWrites * GROWTH_MODEL_INPUTS.mailVbytesPerWrite +
     driveWrites * GROWTH_MODEL_INPUTS.driveVbytesPerWrite +
-    marketplaceWrites * GROWTH_MODEL_INPUTS.marketplaceVbytesPerSale;
+    marketplaceWrites * GROWTH_MODEL_INPUTS.marketplaceVbytesPerSale +
+    browserWrites * GROWTH_MODEL_INPUTS.browserVbytesPerPage;
   const blockspaceUsageRatio =
     rawBlockspaceVbytes > 0 ? Math.min(rawBlockspaceVbytes, GROWTH_MODEL_INPUTS.blockspaceVbytesPerYear) / rawBlockspaceVbytes : 1;
   const idSats = rawIdSats;
   const mailSats = rawMailSats * blockspaceUsageRatio;
   const driveSats = rawDriveSats * blockspaceUsageRatio;
   const marketplaceSats = rawMarketplaceSats * blockspaceUsageRatio;
-  const totalSats = idSats + mailSats + driveSats + marketplaceSats;
+  const browserSats = rawBrowserSats * blockspaceUsageRatio;
+  const totalSats = idSats + mailSats + driveSats + marketplaceSats + browserSats;
   const btcUsdBase = growthBtcUsdAtYears(horizon.years);
 
   return {
     ...horizon,
     blockspaceUsageRatio,
+    browserSats,
+    browserWrites: browserWrites * blockspaceUsageRatio,
     btcUsdBase,
     driveSats,
     driveWrites: driveWrites * blockspaceUsageRatio,
@@ -843,7 +878,7 @@ function growthModelRow(horizon: { label: string; years: number; adoption: numbe
     powids,
     totalSats,
     totalUsdBase: (totalSats / 100_000_000) * btcUsdBase,
-    totalWrites: idWrites + (mailWrites + driveWrites + marketplaceWrites) * blockspaceUsageRatio,
+    totalWrites: idWrites + (mailWrites + driveWrites + marketplaceWrites + browserWrites) * blockspaceUsageRatio,
   };
 }
 
@@ -852,11 +887,14 @@ function growthModelStartRow(): GrowthModelRow {
   const mailSats = GROWTH_MODEL_INPUTS.baselineMailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = GROWTH_MODEL_INPUTS.baselineFileFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const marketplaceSats = GROWTH_MODEL_INPUTS.baselineMarketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const totalSats = idSats + mailSats + driveSats + marketplaceSats;
+  const browserSats = GROWTH_MODEL_INPUTS.baselineBrowserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const totalSats = idSats + mailSats + driveSats + marketplaceSats + browserSats;
   const btcUsdBase = growthBtcUsdAtYears(0);
   return {
     adoption: 0,
     blockspaceUsageRatio: 1,
+    browserSats,
+    browserWrites: 0,
     btcUsdBase,
     driveSats,
     driveWrites: 0,
@@ -906,6 +944,16 @@ function isDesktopRoute() {
   const hostname = window.location.hostname.toLowerCase();
   // Production public file desktop: desktop.proofofwork.me. Local/dev preview: ?desktop=1.
   return hostname === "desktop.proofofwork.me" || window.location.search.includes("desktop=1");
+}
+
+function isBrowserRoute() {
+  if (import.meta.env.VITE_BROWSER_ONLY === "1") {
+    return true;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  // Production Bitcoin Browser: browser.proofofwork.me. Local/dev preview: ?browser=1.
+  return hostname === "browser.proofofwork.me" || window.location.search.includes("browser=1");
 }
 
 function isMarketplaceRoute() {
@@ -4412,6 +4460,85 @@ async function fetchAddressMail(targetAddress: string, targetNetwork: BitcoinNet
   };
 }
 
+async function fetchTransactionJson(txid: string, targetNetwork: BitcoinNetwork) {
+  const normalizedTxid = txid.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    throw new Error("Enter a valid Bitcoin txid.");
+  }
+
+  if (POW_API_BASE) {
+    const payload = await fetchProofApiJson<{ tx?: Record<string, unknown> | null }>(`/api/v1/tx/${encodeURIComponent(normalizedTxid)}`, targetNetwork);
+    if (!payload.tx) {
+      throw new Error("Transaction not found.");
+    }
+
+    return payload.tx;
+  }
+
+  const response = await fetch(`${mempoolBase(targetNetwork)}/api/tx/${normalizedTxid}`, {
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(response.status === 404 ? "Transaction not found." : `Transaction lookup returned ${response.status}.`);
+  }
+
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+function isBrowserHtmlAttachment(attachment: MailAttachment) {
+  const mime = attachment.mime.toLowerCase().split(";")[0].trim();
+  const name = attachment.name.toLowerCase();
+  return mime === "text/html" || mime === "application/xhtml+xml" || /\.x?html?$/u.test(name);
+}
+
+function browserPageFromTransaction(tx: Record<string, unknown>, targetNetwork: BitcoinNetwork): BrowserPage {
+  const txid = typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid) ? tx.txid.toLowerCase() : "";
+  if (!txid) {
+    throw new Error("Transaction payload did not include a valid txid.");
+  }
+
+  const vin = Array.isArray(tx.vin) ? (tx.vin as Array<Record<string, unknown>>) : [];
+  const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
+  const protocolMessage = extractProtocolMemo(vout);
+  const attachment = protocolMessage?.attachment;
+  if (!attachment) {
+    throw new Error("This transaction does not contain a verified ProofOfWork file attachment.");
+  }
+
+  if (!isBrowserHtmlAttachment(attachment)) {
+    throw new Error(`This transaction contains ${attachment.name}, not a Browser HTML page.`);
+  }
+
+  const html = attachmentText(attachment);
+  if (!html.trim()) {
+    throw new Error("The verified HTML attachment is empty.");
+  }
+
+  const status = tx.status as Record<string, unknown> | undefined;
+  const blockTime = typeof status?.block_time === "number" ? status.block_time * 1000 : Date.now();
+  const recipients = protocolPaymentOutputs(vout);
+  const inputAddresses = transactionInputAddresses(vin);
+
+  return {
+    amountSats: totalRecipientSats(recipients),
+    attachment,
+    confirmed: Boolean(status?.confirmed),
+    createdAt: new Date(blockTime).toISOString(),
+    html,
+    network: targetNetwork,
+    protocolBytes: proofProtocolDataBytesForVout(vout),
+    sender: inputAddresses[0] ?? "Unknown",
+    txid,
+  };
+}
+
+async function fetchBrowserPage(txid: string, targetNetwork: BitcoinNetwork) {
+  return browserPageFromTransaction(await fetchTransactionJson(txid, targetNetwork), targetNetwork);
+}
+
 function publicDesktopMail(inboxMessages: InboxMessage[], sentMessages: SentMessage[]): MailMessage[] {
   return [
     ...inboxMessages
@@ -4579,7 +4706,15 @@ function activityItemsFromAddressMail(inboxMessages: InboxMessage[], sentMessage
       detail: message.attachment ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}` : messageSubject(message),
       kind: isFile ? "file" : isReply ? "reply" : "mail",
       network: message.network,
-      tags: [activityStatusTag(message.confirmed), networkLabel(message.network), "Inbound", `${message.amountSats.toLocaleString()} sats`, isFile ? "File" : isReply ? "Reply" : "Mail"],
+      tags: [
+        activityStatusTag(message.confirmed),
+        networkLabel(message.network),
+        "Inbound",
+        `${message.amountSats.toLocaleString()} sats`,
+        isFile ? "File" : isReply ? "Reply" : "Mail",
+        message.attachment?.mime ?? "",
+        message.attachment?.name ?? "",
+      ].filter(Boolean),
       title: isFile ? "File received" : isReply ? "Reply received" : "Mail received",
       txid: message.txid,
     };
@@ -4600,7 +4735,15 @@ function activityItemsFromAddressMail(inboxMessages: InboxMessage[], sentMessage
       detail: message.attachment ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}` : messageSubject(message),
       kind: isFile ? "file" : isReply ? "reply" : "mail",
       network: message.network,
-      tags: [confirmed ? "Confirmed" : deliveryStatus === "dropped" ? "Dropped" : "Pending", networkLabel(message.network), "Outbound", `${message.amountSats.toLocaleString()} sats`, isFile ? "File" : isReply ? "Reply" : "Mail"],
+      tags: [
+        confirmed ? "Confirmed" : deliveryStatus === "dropped" ? "Dropped" : "Pending",
+        networkLabel(message.network),
+        "Outbound",
+        `${message.amountSats.toLocaleString()} sats`,
+        isFile ? "File" : isReply ? "Reply" : "Mail",
+        message.attachment?.mime ?? "",
+        message.attachment?.name ?? "",
+      ].filter(Boolean),
       title: isFile ? "File sent" : isReply ? "Reply sent" : "Mail sent",
       txid: message.txid,
     };
@@ -6333,6 +6476,7 @@ export default function App() {
   const idLaunchMode = isIdLaunchRoute();
   const landingMode = isLandingRoute();
   const desktopRoute = isDesktopRoute();
+  const browserRoute = isBrowserRoute();
   const marketplaceMode = isMarketplaceRoute();
   const activityMode = isActivityRoute();
   const growthMode = isGrowthRoute();
@@ -6930,7 +7074,7 @@ export default function App() {
   }, [ccRecipient, network, recipient, registryAddress]);
 
   useEffect(() => {
-    if (landingMode || desktopRoute || activityMode || growthMode) {
+    if (landingMode || desktopRoute || browserRoute || activityMode || growthMode) {
       return;
     }
 
@@ -6950,10 +7094,10 @@ export default function App() {
         }
       })
       .catch(() => undefined);
-  }, [activityMode, desktopRoute, growthMode, hasUnisat, landingMode, mainnetRegistryMode]);
+  }, [activityMode, browserRoute, desktopRoute, growthMode, hasUnisat, landingMode, mainnetRegistryMode]);
 
   useEffect(() => {
-    if (landingMode || desktopRoute || activityMode || growthMode) {
+    if (landingMode || desktopRoute || browserRoute || activityMode || growthMode) {
       return;
     }
 
@@ -7021,7 +7165,7 @@ export default function App() {
       window.unisat?.removeListener?.("networkChanged", networkChanged);
       window.unisat?.removeListener?.("chainChanged", chainChanged);
     };
-  }, [activityMode, desktopRoute, growthMode, hasUnisat, landingMode, mainnetRegistryMode, network]);
+  }, [activityMode, browserRoute, desktopRoute, growthMode, hasUnisat, landingMode, mainnetRegistryMode, network]);
 
   function applyDraft(draft: DraftMessage) {
     setRecipient(draft.recipient);
@@ -8937,6 +9081,10 @@ export default function App() {
     );
   }
 
+  if (browserRoute) {
+    return <BrowserApp setTheme={setTheme} theme={theme} />;
+  }
+
   if (activityMode) {
     return (
       <ActivityApp
@@ -9613,6 +9761,355 @@ function DomainNav({ compact = false }: { compact?: boolean }) {
   );
 }
 
+function htmlText(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function browserTemplateHtml(title: string, kicker: string, body: string) {
+  const pageTitle = title.trim() || "Proof Page";
+  const pageKicker = kicker.trim() || "Published on the Bitcoin Computer";
+  const pageBody = body.trim() || "This page is an HTML file carried by ProofOfWork.Me OP_RETURN attachments and verified by txid.";
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${htmlText(pageTitle)}</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #030508; color: #edf2f7; display: grid; place-items: center; padding: 32px; }
+    main { width: min(760px, 100%); border: 1px solid rgba(237,242,247,.16); border-radius: 14px; background: #10151c; padding: 52px; box-shadow: 0 24px 70px rgba(0,0,0,.35); }
+    .kicker { color: #4aa3ff; font-size: 13px; font-weight: 850; letter-spacing: 0; text-transform: uppercase; }
+    h1 { font-size: 4.6rem; letter-spacing: 0; line-height: .92; margin: 10px 0 18px; overflow-wrap: anywhere; }
+    p { color: #a8b3c1; font-size: 1.05rem; line-height: 1.55; margin: 0; }
+    section { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top: 30px; }
+    div { border: 1px solid rgba(237,242,247,.12); border-radius: 10px; padding: 14px; }
+    span { color: #8b98a8; display: block; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+    strong { display: block; font-size: 1.1rem; margin-top: 4px; }
+    footer { color: #64748b; font-size: 13px; margin-top: 34px; }
+    @media (max-width: 640px) {
+      body { padding: 18px; }
+      main { padding: 28px; }
+      h1 { font-size: 2.7rem; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="kicker">${htmlText(pageKicker)}</p>
+    <h1>${htmlText(pageTitle)}</h1>
+    <p>${htmlText(pageBody)}</p>
+    <section aria-label="Proof fields">
+      <div><span>Carrier</span><strong>ProofOfWork.Me</strong></div>
+      <div><span>Format</span><strong>text/html</strong></div>
+      <div><span>Truth</span><strong>Bitcoin txid</strong></div>
+    </section>
+    <footer>Rendered by browser.proofofwork.me from a verified OP_RETURN attachment.</footer>
+  </main>
+</body>
+</html>`;
+}
+
+function txidFromBrowserLocation() {
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = params.get("txid") ?? params.get("tx");
+  if (fromQuery && /^[0-9a-fA-F]{64}$/u.test(fromQuery.trim())) {
+    return fromQuery.trim().toLowerCase();
+  }
+
+  const pathParts = window.location.pathname.split("/").filter(Boolean);
+  const txIndex = pathParts.findIndex((part) => part.toLowerCase() === "tx");
+  const fromPath = txIndex >= 0 ? pathParts[txIndex + 1] : pathParts[0];
+  return fromPath && /^[0-9a-fA-F]{64}$/u.test(fromPath) ? fromPath.toLowerCase() : "";
+}
+
+function BrowserApp({
+  setTheme,
+  theme,
+}: {
+  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
+  theme: ThemeMode;
+}) {
+  const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
+  const [query, setQuery] = useState(() => txidFromBrowserLocation());
+  const [page, setPage] = useState<BrowserPage | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({ tone: "idle", text: "Ready" });
+  const [templateTitle, setTemplateTitle] = useState("My Bitcoin Page");
+  const [templateKicker, setTemplateKicker] = useState("ProofOfWork.Me Browser");
+  const [templateBody, setTemplateBody] = useState("This page lives as a verified HTML attachment on the Bitcoin Computer.");
+  const [templateCopied, setTemplateCopied] = useState(false);
+  const initialLoadRef = useRef(false);
+  const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
+  const templateBytes = useMemo(() => byteLength(template), [template]);
+  const templateSha256 = useMemo(() => sha256Hex(new TextEncoder().encode(template)), [template]);
+  const templateHref = `data:text/html;charset=utf-8,${encodeURIComponent(template)}`;
+
+  const loadPage = useCallback(
+    async (target = query) => {
+      const txid = target.trim().toLowerCase();
+      if (!/^[0-9a-f]{64}$/u.test(txid)) {
+        setStatus({ tone: "bad", text: "Enter a valid Bitcoin txid." });
+        return;
+      }
+
+      setLoading(true);
+      setStatus({ tone: "idle", text: "Loading verified page from Bitcoin..." });
+      try {
+        const loadedPage = await fetchBrowserPage(txid, network);
+        setPage(loadedPage);
+        setQuery(txid);
+        setStatus({
+          tone: loadedPage.confirmed ? "good" : "idle",
+          text: loadedPage.confirmed ? "Verified confirmed HTML page." : "Verified pending HTML page. Confirmation is still final truth.",
+        });
+      } catch (error) {
+        setPage(undefined);
+        setStatus({ tone: "bad", text: errorMessage(error, "Could not load Browser page.") });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [network, query],
+  );
+
+  useEffect(() => {
+    if (initialLoadRef.current) {
+      return;
+    }
+
+    initialLoadRef.current = true;
+    const initialTxid = txidFromBrowserLocation();
+    if (initialTxid) {
+      void loadPage(initialTxid);
+    }
+  }, [loadPage]);
+
+  async function copyTemplate() {
+    await copyTextToClipboard(template);
+    setTemplateCopied(true);
+    window.setTimeout(() => setTemplateCopied(false), 1600);
+  }
+
+  return (
+    <main className="desktop-public-app browser-public-app">
+      <header className="desktop-public-header">
+        <a className="landing-brand" href="https://proofofwork.me" aria-label="ProofOfWork.Me home">
+          <div className="brand-mark" aria-hidden="true">
+            PoW
+          </div>
+          <div>
+            <h1>ProofOfWork Browser</h1>
+            <span>HTML from Bitcoin</span>
+          </div>
+        </a>
+        <DomainNav />
+        <div className="desktop-public-actions">
+          <button
+            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
+            className="icon-button"
+            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            type="button"
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+        </div>
+      </header>
+
+      <div className={`status desktop-route-status ${status.tone}`}>
+        <span className="status-dot" aria-hidden="true" />
+        <span>{status.text}</span>
+      </div>
+
+      <section className="browser-workspace">
+        <section className="browser-hero">
+          <div>
+            <span className="browser-kicker">Bitcoin-native browser</span>
+            <h2>Paste a txid. Render the page.</h2>
+            <p>HTML pages are verified ProofOfWork file attachments, reconstructed from OP_RETURN chunks and rendered inside a sandbox.</p>
+          </div>
+          <form
+            className="browser-search-card"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void loadPage();
+            }}
+          >
+            <label>
+              Transaction ID
+              <input
+                autoComplete="off"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="64 character txid"
+                spellCheck={false}
+                value={query}
+              />
+            </label>
+            <div className="browser-form-row">
+              <select aria-label="Bitcoin network" onChange={(event) => setNetwork(event.target.value as BitcoinNetwork)} value={network}>
+                <option value="livenet">Mainnet</option>
+                <option value="testnet4">Testnet4</option>
+                <option value="testnet">Testnet3</option>
+              </select>
+              <button className="primary" disabled={loading} type="submit">
+                <span className="button-content">
+                  <Search size={16} />
+                  <span>{loading ? "Loading" : "View Page"}</span>
+                </span>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        {page ? (
+          <section className="browser-page-grid">
+            <article className="browser-preview-card">
+              <div className="browser-card-head">
+                <div>
+                  <span>Sandboxed preview</span>
+                  <h3>{page.attachment.name}</h3>
+                </div>
+                <a className="secondary small link-button" href={mempoolTxUrl(page.txid, page.network)} rel="noreferrer" target="_blank">
+                  <span className="button-content">
+                    <span>View TX</span>
+                    <ArrowUpRight size={14} />
+                  </span>
+                </a>
+              </div>
+              <iframe referrerPolicy="no-referrer" sandbox="" srcDoc={page.html} title={`${page.attachment.name} rendered from ${page.txid}`} />
+            </article>
+
+            <aside className="browser-proof-card">
+              <div className="empty-icon" aria-hidden="true">
+                <CheckCircle2 size={24} />
+              </div>
+              <h3>Verified page</h3>
+              <dl>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{page.confirmed ? "Confirmed" : "Pending"}</dd>
+                </div>
+                <div>
+                  <dt>Network</dt>
+                  <dd>{networkLabel(page.network)}</dd>
+                </div>
+                <div>
+                  <dt>Size</dt>
+                  <dd>{formatBytes(page.attachment.size)}</dd>
+                </div>
+                <div>
+                  <dt>Protocol bytes</dt>
+                  <dd>{formatBytes(page.protocolBytes)}</dd>
+                </div>
+                <div>
+                  <dt>Sender</dt>
+                  <dd>{shortAddress(page.sender)}</dd>
+                </div>
+                <div>
+                  <dt>Payment</dt>
+                  <dd>{page.amountSats.toLocaleString()} sats</dd>
+                </div>
+                <div>
+                  <dt>SHA-256</dt>
+                  <dd>{page.attachment.sha256}</dd>
+                </div>
+                <div>
+                  <dt>TXID</dt>
+                  <dd>{page.txid}</dd>
+                </div>
+              </dl>
+            </aside>
+
+            <article className="browser-source-card">
+              <div className="browser-card-head">
+                <div>
+                  <span>Source</span>
+                  <h3>Verified HTML</h3>
+                </div>
+                <button className="secondary small" onClick={() => void copyTextToClipboard(page.html)} type="button">
+                  <span className="button-content">
+                    <Copy size={14} />
+                    <span>Copy</span>
+                  </span>
+                </button>
+              </div>
+              <pre>{page.html}</pre>
+            </article>
+          </section>
+        ) : (
+          <section className="browser-empty">
+            <div className="empty-icon" aria-hidden="true">
+              <Monitor size={26} />
+            </div>
+            <h3>No page loaded</h3>
+            <p>Browser reads the current ProofOfWork file format and accepts confirmed or pending txids with verified HTML attachments.</p>
+          </section>
+        )}
+
+        <section className="browser-template-card">
+          <div className="browser-card-head">
+            <div>
+              <span>Page template</span>
+              <h3>Computer-native HTML</h3>
+            </div>
+            <div className="browser-template-actions">
+              <button className="secondary small" onClick={() => void copyTemplate()} type="button">
+                <span className="button-content">
+                  <Copy size={14} />
+                  <span>{templateCopied ? "Copied" : "Copy HTML"}</span>
+                </span>
+              </button>
+              <a className="secondary small link-button" download="proof-page.html" href={templateHref}>
+                <span className="button-content">
+                  <Download size={14} />
+                  <span>Download</span>
+                </span>
+              </a>
+            </div>
+          </div>
+
+          <div className="browser-template-grid">
+            <div className="browser-template-fields">
+              <label>
+                Title
+                <input onChange={(event) => setTemplateTitle(event.target.value)} value={templateTitle} />
+              </label>
+              <label>
+                Kicker
+                <input onChange={(event) => setTemplateKicker(event.target.value)} value={templateKicker} />
+              </label>
+              <label>
+                Body
+                <textarea onChange={(event) => setTemplateBody(event.target.value)} rows={5} value={templateBody} />
+              </label>
+              <dl className="browser-template-meta">
+                <div>
+                  <dt>Bytes</dt>
+                  <dd>{formatBytes(templateBytes)}</dd>
+                </div>
+                <div>
+                  <dt>SHA-256</dt>
+                  <dd>{templateSha256}</dd>
+                </div>
+              </dl>
+            </div>
+            <textarea className="browser-template-source" readOnly rows={18} value={template} />
+          </div>
+        </section>
+      </section>
+
+      <SocialFooter />
+    </main>
+  );
+}
+
 function DesktopApp({
   activeNetwork,
   busy,
@@ -10071,6 +10568,15 @@ function growthPercent(value: number) {
   return `${Math.round(value * 100).toLocaleString()}%`;
 }
 
+function isBrowserActivityItem(item: PowActivityItem) {
+  if (item.kind !== "file") {
+    return false;
+  }
+
+  const searchText = [item.title, item.detail, item.description, ...item.tags].join(" ").toLowerCase();
+  return searchText.includes("text/html") || searchText.includes("application/xhtml+xml") || /\.x?html?\b/u.test(searchText);
+}
+
 function growthActualNetworkValue(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
@@ -10084,18 +10590,22 @@ function growthActualNetworkValue(
   const mailFlowSats = confirmedActivity
     .filter((item) => item.kind === "mail" || item.kind === "reply")
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
+  const browserFlowSats = confirmedActivity.filter(isBrowserActivityItem).reduce((total, item) => total + (item.amountSats ?? 0), 0);
   const driveFlowSats = confirmedActivity
-    .filter((item) => item.kind === "file")
+    .filter((item) => item.kind === "file" && !isBrowserActivityItem(item))
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
   const marketplaceVolumeSats = confirmedSales.reduce((total, sale) => total + sale.priceSats, 0);
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const marketplaceSats = marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const totalSats = idSats + mailSats + driveSats + marketplaceSats;
+  const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const totalSats = idSats + mailSats + driveSats + marketplaceSats + browserSats;
   const years = Math.max(0, (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR);
 
   return {
+    browserFlowSats,
+    browserSats,
     driveFlowSats,
     driveSats,
     mailFlowSats,
@@ -10257,7 +10767,7 @@ function growthRealEventItems(records: PowIdRecord[], idActivity: PowActivityIte
       createdAt: item.createdAt,
       detail: item.detail || item.description,
       key: item.txid,
-      kind: growthActivityKindLabel(item.kind),
+      kind: isBrowserActivityItem(item) ? "Browser" : growthActivityKindLabel(item.kind),
       network: item.network,
       title: item.id ? `${item.title}: ${item.id}@proofofwork.me` : item.title,
       txid: item.txid,
@@ -10501,7 +11011,8 @@ function GrowthWorkspace({
   const valueDeltaSats = actualValue.totalSats - modelNow.sats;
   const valueDeltaPct = modelNow.sats > 0 ? valueDeltaSats / modelNow.sats : 0;
   const mailActions = confirmedActivity.filter((item) => item.kind === "mail" || item.kind === "reply").length;
-  const driveActions = confirmedActivity.filter((item) => item.kind === "file").length;
+  const browserActions = confirmedActivity.filter(isBrowserActivityItem).length;
+  const driveActions = confirmedActivity.filter((item) => item.kind === "file" && !isBrowserActivityItem(item)).length;
 
   return (
     <section className="growth-workspace">
@@ -10510,7 +11021,7 @@ function GrowthWorkspace({
           <span className="landing-kicker">Bitcoin Computer growth model</span>
           <h2>Model the future. Measure the chain.</h2>
           <p>
-            The blue line is modeled Bitcoin Computer network value. The green line is real confirmed mainnet value from IDs, Mail, Drive, and Marketplace.
+            The blue line is modeled Bitcoin Computer network value. The green line is real confirmed mainnet value from IDs, Mail, Drive, Marketplace, and Browser.
           </p>
         </div>
         <div className="growth-model-card">
@@ -10586,28 +11097,28 @@ function GrowthWorkspace({
           <span>Plain read</span>
           <h3>Blue is the success case. Green is Bitcoin history.</h3>
           <p>
-            The model asks what the Bitcoin Computer can become if IDs, Mail, Drive, and Marketplace compound together. The real line only counts confirmed mainnet records that already exist.
+            The model asks what the Bitcoin Computer can become if IDs, Mail, Drive, Marketplace, and Browser compound together. The real line only counts confirmed mainnet records that already exist.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>Network value</span>
           <h3>Everything is valued in sats first.</h3>
           <p>
-            IDs use n squared network value. Mail, Drive, and Marketplace use confirmed payment flow multiplied by the same value multiple, then translated to USD with the Bitcoin benchmark.
+            IDs use n squared network value. Mail, Drive, Marketplace, and Browser use confirmed payment flow multiplied by the same value multiple, then translated to USD with the Bitcoin benchmark.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>Real events</span>
           <h3>The green line moves when Bitcoin confirms.</h3>
           <p>
-            Registrations, messages, replies, file writes, and buyer-funded marketplace sales are pulled from the live registry and log endpoints. Pending mempool events wait until they confirm.
+            Registrations, messages, replies, file writes, HTML page writes, and buyer-funded marketplace sales are pulled from the live registry and log endpoints. Pending mempool events wait until they confirm.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>New products</span>
           <h3>Every product joins the same model.</h3>
           <p>
-            A product needs real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace cost. That keeps Marketplace beside IDs, Mail, and Drive instead of bolted on.
+            A product needs real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace cost. That keeps Browser beside IDs, Mail, Drive, and Marketplace instead of bolted on.
           </p>
         </article>
       </section>
@@ -10727,6 +11238,18 @@ function GrowthWorkspace({
             modelOneYearLabel={growthUsd(growthSatsToUsdAtYears(oneYear.marketplaceSats, oneYear.years))}
             name="Marketplace"
             note="Buyer-funded transfers become a first-class product in the Bitcoin Computer model."
+          />
+          <GrowthProductCard
+            actual={growthSats(actualValue.browserSats)}
+            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.browserSats, elapsedYears))} · ${actualValue.browserFlowSats.toLocaleString()} page sats · ${browserActions.toLocaleString()} actions`}
+            icon={<Monitor size={24} />}
+            modelFiveYear={growthSats(fiveYear.browserSats)}
+            modelFiveYearLabel={growthUsd(growthSatsToUsdAtYears(fiveYear.browserSats, fiveYear.years))}
+            modelLabel="network value"
+            modelOneYear={growthSats(oneYear.browserSats)}
+            modelOneYearLabel={growthUsd(growthSatsToUsdAtYears(oneYear.browserSats, oneYear.years))}
+            name="Browser"
+            note="HTML pages rendered from verified OP_RETURN file attachments by txid."
           />
         </div>
       </section>

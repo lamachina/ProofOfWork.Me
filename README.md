@@ -22,6 +22,7 @@ The root domain renders a focused landing page that routes users to the producti
 id.proofofwork.me
 computer.proofofwork.me
 desktop.proofofwork.me
+browser.proofofwork.me
 marketplace.proofofwork.me
 log.proofofwork.me
 growth.proofofwork.me
@@ -33,12 +34,13 @@ Production app roles:
 - `id.proofofwork.me` is the focused Phase 1 ID registry onboarding app.
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
+- `browser.proofofwork.me` is the standalone public HTML viewer for verified ProofOfWork file attachments by txid.
 - `marketplace.proofofwork.me` is the standalone ProofOfWork ID listing and buyer-funded transfer app.
 - `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled Bitcoin Computer network value with real confirmed chain value in sats and USD.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Marketplace, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
 
 Official YouTube:
 
@@ -107,6 +109,7 @@ Launch invariants for future developers/agents:
 - Adds a desktop-style Files section for confirmed attachment-only browsing, filtering, sorting, in-app previews, download, and opening the source message.
 - Previews images, PDFs, audio, video, text, Markdown, JSON, and code files directly in the app, with copy support for text/code content.
 - Adds a standalone public Desktop app that searches any Bitcoin address or confirmed ProofOfWork ID and displays/previews confirmed public attachments without a wallet connection.
+- Adds a standalone public Browser app that loads a txid, verifies a `text/html` attachment, renders it in a sandbox, and exposes a Computer-native HTML template.
 - Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
 - Uses the correct mempool.space explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
@@ -145,6 +148,7 @@ https://proofofwork.me/api/*
 https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
+https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*
@@ -161,6 +165,7 @@ Current production behavior:
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
 - Marketplace ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public marketplace stats.
 - The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, and attachments discovered from the ProofOfWork address graph. Address, confirmed ID, or txid search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across all `pwm1:` and `pwid1:` OP_RETURN records.
+- Browser renders verified `text/html` ProofOfWork file attachments by txid. It does not introduce an outside protocol; HTML pages use the same `pwm1:a` attachment format, size/SHA-256 verification, and confirmed-vs-pending boundary as Files/Desktop.
 - Growth reads the same registry and log endpoints, then auto-refreshes real confirmed network value against the canonical `output/bitcoin-computer-agent-adoption-model.md` sats/USD assumptions. New products should enter the model with real inputs, a usage rate, a value assumption, a fee elasticity, and blockspace accounting.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which mempool.space reports as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
@@ -263,6 +268,12 @@ To preview the public Desktop locally:
 http://localhost:5173/?desktop=1
 ```
 
+To preview the public Browser locally:
+
+```text
+http://localhost:5173/?browser=1
+```
+
 To preview the standalone ID Marketplace locally:
 
 ```text
@@ -303,6 +314,12 @@ To build the public Desktop app for production:
 
 ```bash
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
+```
+
+To build the public Browser app for production:
+
+```bash
+VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 ```
 
 To build the standalone ID Marketplace app for production:
@@ -372,14 +389,17 @@ Important implementation points:
 - ID launch route switch: `isIdLaunchRoute()` in `src/App.tsx`.
 - Root landing route switch: `isLandingRoute()` in `src/App.tsx`.
 - Public Desktop route switch: `isDesktopRoute()` in `src/App.tsx`.
+- Public Browser route switch: `isBrowserRoute()` in `src/App.tsx`.
 - Standalone Marketplace route switch: `isMarketplaceRoute()` in `src/App.tsx`.
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
+- Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
 - Marketplace-only deploy switch: `VITE_MARKETPLACE_ONLY=1`.
 - Growth-only deploy switch: `VITE_GROWTH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, `ID_MUTATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
 - Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
+- Public Browser UI: `BrowserApp`, `fetchBrowserPage()`, `browserPageFromTransaction()`, and `browserTemplateHtml()` in `src/App.tsx`.
 - In-app file preview UI: `AttachmentViewer`, `FileInspector`, `attachmentPreviewKind()`, and `attachmentText()` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.
 - ID mutation formats: `buildIdReceiverUpdatePayload()` and `buildIdTransferPayload()`.

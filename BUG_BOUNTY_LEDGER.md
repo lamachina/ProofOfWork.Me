@@ -7,6 +7,7 @@ Important boundary:
 ```text
 tracked = preserved for future treasury review
 paid = a payout txid has been added
+confirmed paid = the payout txid is confirmed on chain
 ```
 
 Tracking an item here is not an immediate payout promise. It preserves attribution so ProofOfWork.Me can pay contributors later when the treasury has enough BTC and the founder approves the bounty amount.
@@ -15,12 +16,14 @@ Tracking an item here is not an immediate payout promise. It preserves attributi
 
 | Date tracked | Reporter | Attribution | Bug report | Impact | Fixed in | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-05-13 | `moove@proofofwork.me` | French-speaking community tester / agent | Contacts accepted a raw BTC address but failed to add a confirmed ProofOfWork ID after the receiver update. | Contact creation and ID-based compose onboarding could fail for confirmed IDs. | `4229a6a` `Fix contact ID resolver refresh` | Fixed, pushed, deployed, bounty pending treasury review |
-| 2026-05-13 | `moove@proofofwork.me` | French-speaking community tester / agent | Localhost navigation jumped from the local app to production domains such as `desktop.proofofwork.me`. | Self-hosted/local testers could not move through all app surfaces without leaving localhost. | `39c0476` `Keep app navigation local on localhost` | Fixed, pushed, deployed, bounty pending treasury review |
+| 2026-05-13 | `moove@proofofwork.me` | French-speaking community tester / agent | Contacts accepted a raw BTC address but failed to add a confirmed ProofOfWork ID after the receiver update. | Contact creation and ID-based compose onboarding could fail for confirmed IDs. | `4229a6a` `Fix contact ID resolver refresh` | Fixed, pushed, deployed, paid 546 sats in pending tx `1cc193649731a7c6150955c65e9c4bb3ad64e00d93959832a0b42f77529244bc` |
+| 2026-05-13 | `moove@proofofwork.me` | French-speaking community tester / agent | Localhost navigation jumped from the local app to production domains such as `desktop.proofofwork.me`. | Self-hosted/local testers could not move through all app surfaces without leaving localhost. | `39c0476` `Keep app navigation local on localhost` | Fixed, pushed, deployed, paid 546 sats in pending tx `1cc193649731a7c6150955c65e9c4bb3ad64e00d93959832a0b42f77529244bc` |
 
 ## Payment Records
 
-No bug bounty payouts have been recorded yet.
+| Date recorded | Reporter | Paid sats | Treasury txid | Recipient | Covered ledger rows | Tx status at review | Notes |
+| --- | --- | ---: | --- | --- | --- | --- | --- |
+| 2026-05-13 | `moove@proofofwork.me` | 1,092 total; 546 per bounty | [`1cc193649731a7c6150955c65e9c4bb3ad64e00d93959832a0b42f77529244bc`](https://mempool.space/tx/1cc193649731a7c6150955c65e9c4bb3ad64e00d93959832a0b42f77529244bc) | `moove@proofofwork.me` current confirmed receive address `bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc` | `4229a6a`, `39c0476` | Pending confirmation at review time | Transaction pays one 1,092 sat output to Moove's confirmed receive address and carries OP_RETURN memo `BUG BOUNTY PROGRAM PAYMENT FOR FIRST 2 BUG FIXES`. |
 
 When a bounty is paid, add:
 
@@ -32,4 +35,3 @@ paid date:
 covered ledger row(s):
 notes:
 ```
-

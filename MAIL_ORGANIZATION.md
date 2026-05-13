@@ -32,6 +32,7 @@ Mail organization features that are already implemented in the full app:
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Browser view for verified `text/html` attachments by txid, rendered in a sandboxed iframe.
+- Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, and attachment actions.
 - Growth surface for canonical modeled network value versus real confirmed registry, log, file, and marketplace value metrics.
@@ -147,6 +148,8 @@ The Computer app may still keep an internal Desktop folder for signed-in users. 
 ## Browser
 
 Browser is the public read-only HTML renderer for Files. On `browser.proofofwork.me`, users paste a txid and the app reconstructs a verified `text/html` attachment from the existing `pwm1:a` chunks.
+
+The full Computer app also exposes Browser as a sidebar workspace. New products should follow this pattern: a standalone public surface when useful, a Computer workspace when it belongs inside the full machine, and a matching entry in the growth model.
 
 Behavior:
 

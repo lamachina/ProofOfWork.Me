@@ -60,6 +60,7 @@ type Folder =
   | "archive"
   | "files"
   | "desktop"
+  | "browser"
   | "ids"
   | "marketplace"
   | "log"
@@ -2084,6 +2085,10 @@ function folderLabel(folder: Folder) {
     return "Desktop";
   }
 
+  if (folder === "browser") {
+    return "Browser";
+  }
+
   if (folder === "contacts") {
     return "Contacts";
   }
@@ -2130,6 +2135,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "desktop") {
     return "Public file desktop";
+  }
+
+  if (folder === "browser") {
+    return "Verified HTML pages";
   }
 
   if (folder === "contacts") {
@@ -6631,6 +6640,10 @@ export default function App() {
     [allMail],
   );
   const desktopFileMessages = useMemo(() => desktopMail.filter(hasAttachment), [desktopMail]);
+  const browserFileMessages = useMemo(
+    () => allFileMessages.filter((message) => message.attachment && isBrowserHtmlAttachment(message.attachment)),
+    [allFileMessages],
+  );
   const fileMessages = useMemo(
     () => allFileMessages.filter((message) => message.attachment && (fileFilter === "all" || attachmentKind(message.attachment) === fileFilter)),
     [allFileMessages, fileFilter],
@@ -6856,6 +6869,8 @@ export default function App() {
       ? busy || refreshInProgress || !registryAddress
       : activeFolder === "desktop"
         ? desktopLoading || !desktopProfile
+        : activeFolder === "browser"
+          ? true
         : activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log"
           ? busy || refreshInProgress || !registryAddress
           : !address || busy || refreshInProgress;
@@ -9342,6 +9357,13 @@ export default function App() {
               </span>
               <strong>{desktopFileMessages.length}</strong>
             </button>
+            <button aria-current={activeFolder === "browser"} onClick={() => openFolder("browser")} type="button">
+              <span className="folder-label">
+                <FileText size={17} />
+                <span>Browser</span>
+              </span>
+              <strong>{browserFileMessages.length}</strong>
+            </button>
             <button aria-current={activeFolder === "ids"} onClick={() => openFolder("ids")} type="button">
               <span className="folder-label">
                 <AtSign size={17} />
@@ -9526,6 +9548,8 @@ export default function App() {
             }}
             onSelect={(message) => setDesktopSelectedKey(mailKey(message))}
           />
+        ) : activeFolder === "browser" ? (
+          <BrowserWorkspace activeNetwork={network} />
         ) : activeFolder === "log" ? (
           <ActivityWorkspace
             activeNetwork={network}
@@ -10107,6 +10131,247 @@ function BrowserApp({
 
       <SocialFooter />
     </main>
+  );
+}
+
+function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) {
+  const [network, setNetwork] = useState<BitcoinNetwork>(activeNetwork);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState<BrowserPage | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({
+    tone: "idle",
+    text: "Ready. Paste a txid to render verified HTML from the Bitcoin Computer.",
+  });
+  const [templateTitle, setTemplateTitle] = useState("My Bitcoin Page");
+  const [templateKicker, setTemplateKicker] = useState("ProofOfWork.Me Browser");
+  const [templateBody, setTemplateBody] = useState("This page lives as a verified HTML attachment on the Bitcoin Computer.");
+  const [templateCopied, setTemplateCopied] = useState(false);
+  const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
+  const templateBytes = useMemo(() => byteLength(template), [template]);
+  const templateSha256 = useMemo(() => sha256Hex(new TextEncoder().encode(template)), [template]);
+  const templateHref = `data:text/html;charset=utf-8,${encodeURIComponent(template)}`;
+
+  useEffect(() => {
+    setNetwork(activeNetwork);
+  }, [activeNetwork]);
+
+  const loadPage = useCallback(
+    async (target = query) => {
+      const txid = target.trim().toLowerCase();
+      if (!/^[0-9a-f]{64}$/u.test(txid)) {
+        setStatus({ tone: "bad", text: "Enter a valid Bitcoin txid." });
+        return;
+      }
+
+      setLoading(true);
+      setStatus({ tone: "idle", text: "Loading verified page from Bitcoin..." });
+      try {
+        const loadedPage = await fetchBrowserPage(txid, network);
+        setPage(loadedPage);
+        setQuery(txid);
+        setStatus({
+          tone: loadedPage.confirmed ? "good" : "idle",
+          text: loadedPage.confirmed ? "Verified confirmed HTML page." : "Verified pending HTML page. Confirmation is still final truth.",
+        });
+      } catch (error) {
+        setPage(undefined);
+        setStatus({ tone: "bad", text: errorMessage(error, "Could not load Browser page.") });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [network, query],
+  );
+
+  async function copyTemplate() {
+    await copyTextToClipboard(template);
+    setTemplateCopied(true);
+    window.setTimeout(() => setTemplateCopied(false), 1600);
+  }
+
+  return (
+    <section className="browser-workspace browser-computer-workspace">
+      <div className={`status browser-workspace-status ${status.tone}`}>
+        <span className="status-dot" aria-hidden="true" />
+        <span>{status.text}</span>
+      </div>
+
+      <section className="browser-hero">
+        <div>
+          <span className="browser-kicker">Bitcoin-native browser</span>
+          <h2>Browser</h2>
+          <p>Paste a txid to render verified HTML files from the same OP_RETURN attachment protocol used by Files and Desktop.</p>
+        </div>
+        <form
+          className="browser-search-card"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void loadPage();
+          }}
+        >
+          <label>
+            Transaction ID
+            <input
+              autoComplete="off"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="64 character txid"
+              spellCheck={false}
+              value={query}
+            />
+          </label>
+          <div className="browser-form-row">
+            <select aria-label="Bitcoin network" onChange={(event) => setNetwork(event.target.value as BitcoinNetwork)} value={network}>
+              <option value="livenet">Mainnet</option>
+              <option value="testnet4">Testnet4</option>
+              <option value="testnet">Testnet3</option>
+            </select>
+            <button className="primary" disabled={loading} type="submit">
+              <span className="button-content">
+                <Search size={16} />
+                <span>{loading ? "Loading" : "View Page"}</span>
+              </span>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {page ? (
+        <section className="browser-page-grid">
+          <article className="browser-preview-card">
+            <div className="browser-card-head">
+              <div>
+                <span>Sandboxed preview</span>
+                <h3>{page.attachment.name}</h3>
+              </div>
+              <a className="secondary small link-button" href={mempoolTxUrl(page.txid, page.network)} rel="noreferrer" target="_blank">
+                <span className="button-content">
+                  <span>View TX</span>
+                  <ArrowUpRight size={14} />
+                </span>
+              </a>
+            </div>
+            <iframe referrerPolicy="no-referrer" sandbox="" srcDoc={page.html} title={`${page.attachment.name} rendered from ${page.txid}`} />
+          </article>
+
+          <aside className="browser-proof-card">
+            <div className="empty-icon" aria-hidden="true">
+              <CheckCircle2 size={24} />
+            </div>
+            <h3>Verified page</h3>
+            <dl>
+              <div>
+                <dt>Status</dt>
+                <dd>{page.confirmed ? "Confirmed" : "Pending"}</dd>
+              </div>
+              <div>
+                <dt>Network</dt>
+                <dd>{networkLabel(page.network)}</dd>
+              </div>
+              <div>
+                <dt>Size</dt>
+                <dd>{formatBytes(page.attachment.size)}</dd>
+              </div>
+              <div>
+                <dt>Protocol bytes</dt>
+                <dd>{formatBytes(page.protocolBytes)}</dd>
+              </div>
+              <div>
+                <dt>Sender</dt>
+                <dd>{shortAddress(page.sender)}</dd>
+              </div>
+              <div>
+                <dt>Payment</dt>
+                <dd>{page.amountSats.toLocaleString()} sats</dd>
+              </div>
+              <div>
+                <dt>SHA-256</dt>
+                <dd>{page.attachment.sha256}</dd>
+              </div>
+              <div>
+                <dt>TXID</dt>
+                <dd>{page.txid}</dd>
+              </div>
+            </dl>
+          </aside>
+
+          <article className="browser-source-card">
+            <div className="browser-card-head">
+              <div>
+                <span>Source</span>
+                <h3>Verified HTML</h3>
+              </div>
+              <button className="secondary small" onClick={() => void copyTextToClipboard(page.html)} type="button">
+                <span className="button-content">
+                  <Copy size={14} />
+                  <span>Copy</span>
+                </span>
+              </button>
+            </div>
+            <pre>{page.html}</pre>
+          </article>
+        </section>
+      ) : (
+        <section className="browser-empty">
+          <div className="empty-icon" aria-hidden="true">
+            <Monitor size={26} />
+          </div>
+          <h3>No page loaded</h3>
+          <p>Browser reads the current ProofOfWork file format and accepts confirmed or pending txids with verified HTML attachments.</p>
+        </section>
+      )}
+
+      <section className="browser-template-card">
+        <div className="browser-card-head">
+          <div>
+            <span>Page template</span>
+            <h3>Computer-native HTML</h3>
+          </div>
+          <div className="browser-template-actions">
+            <button className="secondary small" onClick={() => void copyTemplate()} type="button">
+              <span className="button-content">
+                <Copy size={14} />
+                <span>{templateCopied ? "Copied" : "Copy HTML"}</span>
+              </span>
+            </button>
+            <a className="secondary small link-button" download="proof-page.html" href={templateHref}>
+              <span className="button-content">
+                <Download size={14} />
+                <span>Download</span>
+              </span>
+            </a>
+          </div>
+        </div>
+
+        <div className="browser-template-grid">
+          <div className="browser-template-fields">
+            <label>
+              Title
+              <input onChange={(event) => setTemplateTitle(event.target.value)} value={templateTitle} />
+            </label>
+            <label>
+              Kicker
+              <input onChange={(event) => setTemplateKicker(event.target.value)} value={templateKicker} />
+            </label>
+            <label>
+              Body
+              <textarea onChange={(event) => setTemplateBody(event.target.value)} rows={5} value={templateBody} />
+            </label>
+            <dl className="browser-template-meta">
+              <div>
+                <dt>Bytes</dt>
+                <dd>{formatBytes(templateBytes)}</dd>
+              </div>
+              <div>
+                <dt>SHA-256</dt>
+                <dd>{templateSha256}</dd>
+              </div>
+            </dl>
+          </div>
+          <textarea className="browser-template-source" readOnly rows={18} value={template} />
+        </div>
+      </section>
+    </section>
   );
 }
 

@@ -901,6 +901,23 @@ select {
   width: 100%;
 }
 
+.browser-computer-workspace {
+  background: #030508;
+  color: #edf2f7;
+  grid-column: 2 / -1;
+  margin: 0;
+  max-width: none;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.browser-computer-workspace .browser-workspace-status {
+  background: #10151c;
+  border: 1px solid rgba(237, 242, 247, 0.14);
+  border-radius: 10px;
+}
+
 .browser-hero {
   align-items: end;
   display: grid;
@@ -928,6 +945,16 @@ select {
   letter-spacing: 0;
   line-height: 0.92;
   overflow-wrap: anywhere;
+}
+
+.browser-computer-workspace .browser-hero {
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+}
+
+.browser-computer-workspace .browser-hero h2 {
+  font-size: 3.1rem;
+  line-height: 0.96;
 }
 
 .browser-hero p,
@@ -1003,6 +1030,10 @@ select {
   min-height: 620px;
 }
 
+.browser-computer-workspace .browser-preview-card {
+  min-height: 520px;
+}
+
 .browser-card-head {
   align-items: center;
   display: flex;
@@ -1024,6 +1055,10 @@ select {
   border-radius: 10px;
   height: 560px;
   width: 100%;
+}
+
+.browser-computer-workspace .browser-preview-card iframe {
+  height: 480px;
 }
 
 .browser-proof-card dl,
@@ -3509,6 +3544,20 @@ pre {
     padding: 92px 14px 28px;
   }
 
+  .browser-computer-workspace {
+    grid-column: auto;
+    overflow: visible;
+    padding: 14px;
+  }
+
+  .browser-computer-workspace .browser-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .browser-computer-workspace .browser-hero h2 {
+    font-size: 2.4rem;
+  }
+
   .browser-preview-card {
     min-height: 460px;
   }
@@ -3602,6 +3651,7 @@ pre {
   .message-column,
   .files-workspace,
   .desktop-workspace,
+  .browser-computer-workspace,
   .ids-workspace,
   .contacts-workspace {
     border-right: 0;
@@ -3627,6 +3677,7 @@ pre {
 
   .files-workspace,
   .desktop-workspace,
+  .browser-computer-workspace,
   .ids-workspace,
   .contacts-workspace {
     grid-column: auto;

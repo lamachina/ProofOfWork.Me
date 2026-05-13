@@ -110,6 +110,7 @@ Launch invariants for future developers/agents:
 - Previews images, PDFs, audio, video, text, Markdown, JSON, and code files directly in the app, with copy support for text/code content.
 - Adds a standalone public Desktop app that searches any Bitcoin address or confirmed ProofOfWork ID and displays/previews confirmed public attachments without a wallet connection.
 - Adds a standalone public Browser app that loads a txid, verifies a `text/html` attachment, renders it in a sandbox, and exposes a Computer-native HTML template.
+- Exposes Browser as a first-class Computer sidebar workspace, so HTML pages are part of the Bitcoin Computer and not only a standalone subdomain.
 - Supports fractional fee rates, including sub-1 sat/vB values like `0.1`.
 - Uses the correct mempool.space explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.

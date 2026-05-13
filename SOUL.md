@@ -8,7 +8,7 @@ It is distilled from current repository docs and public launch memory captured o
 
 - Public account: `@proofofworkme`
 - Launch memory reviewed: 2026-05-10
-- Core domains: `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -67,7 +67,8 @@ The emotional shape is a breakthrough moment: years of Bitcoin/app experiments m
 
 Future agents must preserve these unless the user explicitly asks for a migration:
 
-- `proofofwork.me` is the landing/router.
+- `www.proofofwork.me` is the canonical landing/router.
+- `proofofwork.me` redirects to `https://www.proofofwork.me/`.
 - `id.proofofwork.me` is the focused ID registry app.
 - `computer.proofofwork.me` is the full mail/computer app.
 - `desktop.proofofwork.me` is the public read-only file desktop.

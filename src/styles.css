@@ -3001,7 +3001,8 @@ pre {
 .landing-choice p,
 .landing-protocol p,
 .landing-testimonial p,
-.landing-video-copy p {
+.landing-deck-copy p,
+.landing-deck-panel p {
   color: var(--text-muted);
   font-size: 0.88rem;
   line-height: 1.5;
@@ -3103,7 +3104,7 @@ pre {
   grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
 }
 
-.landing-video {
+.landing-deck {
   align-items: center;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -3115,32 +3116,34 @@ pre {
   padding: 18px;
 }
 
-.landing-video-copy {
+.landing-deck-copy {
   display: grid;
   gap: 8px;
   min-width: 0;
 }
 
-.landing-video-copy h3 {
+.landing-deck-copy h3 {
   font-size: clamp(1.8rem, 4vw, 3.4rem);
   letter-spacing: 0;
   line-height: 0.95;
 }
 
-.landing-video-frame {
-  aspect-ratio: 16 / 9;
-  background: #030508;
+.landing-deck-panel {
+  align-items: center;
+  background: var(--surface-soft);
   border: 1px solid var(--border);
   border-radius: 12px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-width: 0;
-  overflow: hidden;
+  padding: 18px;
 }
 
-.landing-video-frame iframe {
-  border: 0;
-  display: block;
-  height: 100%;
-  width: 100%;
+.landing-deck-panel h4 {
+  color: var(--text);
+  font-size: 1.1rem;
+  margin: 0 0 4px;
 }
 
 .landing-stats div,
@@ -3532,7 +3535,7 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .landing-video {
+  .landing-deck {
     grid-template-columns: 1fr;
   }
 

@@ -7,7 +7,8 @@ Notes for mailbox features that make ProofOfWork.Me feel like a normal mail app 
 The Phase 1 public launch surfaces are:
 
 ```text
-proofofwork.me              landing page
+www.proofofwork.me          canonical landing page
+proofofwork.me              permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           focused ProofOfWork ID registry onboarding app
 computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop

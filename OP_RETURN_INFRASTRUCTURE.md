@@ -18,7 +18,8 @@ The browser still signs locally with UniSat. The API never receives seed phrases
 Production domains:
 
 ```text
-proofofwork.me              -> landing page
+www.proofofwork.me          -> canonical landing page
+proofofwork.me              -> permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           -> ID registry app
 computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
@@ -92,7 +93,7 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 Production builds:
 
 ```bash
-VITE_LANDING_ONLY=1 VITE_POW_API_BASE=https://proofofwork.me npm run build
+VITE_LANDING_ONLY=1 VITE_POW_API_BASE=https://www.proofofwork.me npm run build
 VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
 VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build

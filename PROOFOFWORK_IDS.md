@@ -99,10 +99,12 @@ All registry-facing UI surfaces should include search once the registry grows: p
 Production domains:
 
 ```text
-proofofwork.me              landing page
+www.proofofwork.me          canonical landing page
+proofofwork.me              permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           focused ID registry app
 computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
+browser.proofofwork.me      public read-only HTML browser by txid
 marketplace.proofofwork.me  standalone ID marketplace
 log.proofofwork.me          public Bitcoin Computer log
 growth.proofofwork.me       public growth model dashboard
@@ -333,10 +335,11 @@ For ID safety, production should prefer this API over public mempool.space reads
 Phase 1 production uses same-origin API proxies:
 
 ```text
-https://proofofwork.me/api/*
+https://www.proofofwork.me/api/*
 https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
+https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*

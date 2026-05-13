@@ -650,7 +650,7 @@ const LOCAL_BROWSER_APP_URL = "/?browser=1";
 const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
 const LOCAL_LOG_APP_URL = "/?log=1";
 const LOCAL_GROWTH_APP_URL = "/?growth=1";
-const LANDING_VIDEO_EMBED_URL = "https://www.youtube-nocookie.com/embed/DLDb4NDWZVA";
+const GENERAL_DECK_URL = "/proofofwork-general-deck.pptx";
 const LANDING_TESTIMONIAL_TXID = "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
 const LANDING_TESTIMONIAL_TX_URL = `https://mempool.space/tx/${LANDING_TESTIMONIAL_TXID}`;
 const CANONICAL_WELCOME_TXID = "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b";
@@ -11783,21 +11783,26 @@ function LandingApp({
       </section>
 
       <section className="landing-main" aria-label="ProofOfWork.Me onboarding">
-        <section className="landing-video" aria-label="ProofOfWork.Me launch video">
-          <div className="landing-video-copy">
-            <span className="landing-kicker">Launch video</span>
-            <h3>The Final Network</h3>
-            <p>Watch the ProofOfWork.Me launch story, then claim an ID or open the Bitcoin computer.</p>
+        <section className="landing-deck" aria-label="ProofOfWork.Me general deck">
+          <div className="landing-deck-copy">
+            <span className="landing-kicker">General deck</span>
+            <h3>The Bitcoin Computer</h3>
+            <p>Download the current ProofOfWork.Me overview: IDs, Mail, Files, Desktop, Browser, Marketplace, Log, Growth, and agents.</p>
           </div>
-          <div className="landing-video-frame">
-            <iframe
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              loading="lazy"
-              referrerPolicy="strict-origin-when-cross-origin"
-              src={`${LANDING_VIDEO_EMBED_URL}?rel=0&modestbranding=1`}
-              title="ProofOfWork.Me launch video"
-            />
+          <div className="landing-deck-panel">
+            <div className="empty-icon" aria-hidden="true">
+              <FileText size={28} />
+            </div>
+            <div>
+              <h4>ProofOfWork.Me General Deck</h4>
+              <p>Updated 2026-05-13. PowerPoint format.</p>
+            </div>
+            <a className="primary link-button" href={GENERAL_DECK_URL}>
+              <span className="button-content">
+                <Download size={16} />
+                <span>Download PPT</span>
+              </span>
+            </a>
           </div>
         </section>
 

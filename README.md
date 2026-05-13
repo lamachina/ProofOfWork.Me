@@ -13,10 +13,16 @@ This repository is built for agent collaboration. `SOUL.md` explains the project
 The public front door is:
 
 ```text
-proofofwork.me
+www.proofofwork.me
 ```
 
-The root domain renders a focused landing page that routes users to the production apps:
+The apex domain redirects permanently to the canonical `www` front door:
+
+```text
+proofofwork.me -> https://www.proofofwork.me/
+```
+
+The front door renders a focused landing page that routes users to the production apps:
 
 ```text
 id.proofofwork.me
@@ -30,7 +36,8 @@ growth.proofofwork.me
 
 Production app roles:
 
-- `proofofwork.me` is the landing/router page.
+- `www.proofofwork.me` is the canonical landing/router page.
+- `proofofwork.me` redirects to `https://www.proofofwork.me/`.
 - `id.proofofwork.me` is the focused Phase 1 ID registry onboarding app.
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
@@ -39,6 +46,7 @@ Production app roles:
 - `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled Bitcoin Computer network value with real confirmed chain value in sats and USD.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
+- The landing page links to the current public PowerPoint deck at `/proofofwork-general-deck.pptx`.
 
 Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
 
@@ -147,7 +155,7 @@ server/proof-api.mjs
 Production routes the API through the same app domains:
 
 ```text
-https://proofofwork.me/api/*
+https://www.proofofwork.me/api/*
 https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
@@ -313,7 +321,7 @@ Growth -> /?growth=1
 To build a landing-page-only deployment for `proofofwork.me`:
 
 ```bash
-VITE_LANDING_ONLY=1 VITE_POW_API_BASE=https://proofofwork.me npm run build
+VITE_LANDING_ONLY=1 VITE_POW_API_BASE=https://www.proofofwork.me npm run build
 ```
 
 To build an ID-registration-only deployment that hides the full mail app on every hostname:

@@ -14,6 +14,7 @@ computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public read-only HTML browser by txid
 marketplace.proofofwork.me  standalone ID marketplace
+pay2speak.proofofwork.me    standalone X Space crowdfunding app
 log.proofofwork.me          public Bitcoin Computer log
 growth.proofofwork.me       public growth model dashboard
 ```
@@ -37,6 +38,7 @@ Mail organization features that are already implemented in the full app:
 - Browser-readable HTML message bodies appear in Files/Desktop as derived `.html` files, even when no attachment exists.
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
+- Pay2Speak workspace for mainnet X Space campaign creation, funding, and ranked questions.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, and attachment actions.
 - Growth surface for canonical modeled network value versus real confirmed registry, log, file, and marketplace value metrics.
 - Export/import for local drafts, archive/favorite preferences, theme, and sent/outbox tracking.

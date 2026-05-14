@@ -25,11 +25,12 @@ computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 browser.proofofwork.me      -> public read-only HTML browser by txid
 marketplace.proofofwork.me  -> standalone ID marketplace
+pay2speak.proofofwork.me    -> standalone X Space crowdfunding app
 log.proofofwork.me          -> public Bitcoin Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -86,6 +87,7 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 /?desktop=1
 /?browser=1
 /?marketplace=1
+/?pay2speak=1
 /?log=1
 /?growth=1
 ```
@@ -99,6 +101,7 @@ VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
+VITE_PAY2SPEAK_ONLY=1 VITE_POW_API_BASE=https://pay2speak.proofofwork.me npm run build
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
@@ -111,6 +114,7 @@ GET /api/v1/registry?network=livenet
 GET /api/v1/log?network=livenet
 GET /api/v1/ids?network=livenet
 GET /api/v1/ids/:id?network=livenet
+GET /api/v1/pay2speak?network=livenet
 GET /api/v1/address/:address/mail?network=livenet
 GET /api/v1/tx/:txid?network=livenet
 GET /api/v1/tx/:txid/status?network=livenet
@@ -140,6 +144,17 @@ The Growth app:
 - Compares modeled Bitcoin Computer network value to confirmed chain-derived value in sats and USD.
 - Auto-refreshes confirmed registry, log, file, and marketplace metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
+
+The Pay2Speak endpoint:
+
+- Scans the Pay2Speak registry address `bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4`.
+- Reads confirmed and pending `pws1:` records.
+- Reconstructs campaigns from `pws1:c:<space-number>:<x-handle>:<target-gross-sats>` creation transactions.
+- Defines the campaign ID as the creation txid and infers the creator payout address from the transaction inputs.
+- Reconstructs funding from `pws1:f:<campaign-id>:<question-base64url?>` transactions.
+- Counts valid funding by gross donor spend, using the required split before OP_RETURN: below 5,460 sats, 1,000 sats to registry and the remainder to creator; at or above 5,460 sats, 10% to registry and 90% to creator.
+- Exposes optional questions decoded from base64url and ranked by attached gross sats.
+- Treats pending Pay2Speak records as visibility only; confirmed records are canonical.
 
 The mail endpoint:
 
@@ -235,6 +250,19 @@ Mainnet canonical registry:
 
 ```text
 bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e
+```
+
+Pay2Speak:
+
+```text
+pws1:c:<space-number>:<x-handle>:<target-gross-sats>
+pws1:f:<campaign-id>:<question-base64url?>
+```
+
+Mainnet Pay2Speak registry:
+
+```text
+bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4
 ```
 
 ## Launch Rule

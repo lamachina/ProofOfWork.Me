@@ -13,24 +13,43 @@ const { Verifier } = bip322;
 const HOST = process.env.HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PORT ?? 8081);
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "*";
-const MEMPOOL_BASE_MAINNET = stripTrailingSlash(process.env.MEMPOOL_BASE ?? "http://127.0.0.1:8080");
-const PENDING_MEMPOOL_BASE_MAINNET = stripTrailingSlash(process.env.PENDING_MEMPOOL_BASE ?? "https://mempool.space");
-const MEMPOOL_BASE_TESTNET = stripTrailingSlash(process.env.MEMPOOL_BASE_TESTNET ?? "https://mempool.space/testnet");
-const MEMPOOL_BASE_TESTNET4 = stripTrailingSlash(process.env.MEMPOOL_BASE_TESTNET4 ?? "https://mempool.space/testnet4");
+const MEMPOOL_BASE_MAINNET = stripTrailingSlash(
+  process.env.MEMPOOL_BASE ?? "http://127.0.0.1:8080",
+);
+const PENDING_MEMPOOL_BASE_MAINNET = stripTrailingSlash(
+  process.env.PENDING_MEMPOOL_BASE ?? "https://mempool.space",
+);
+const MEMPOOL_BASE_TESTNET = stripTrailingSlash(
+  process.env.MEMPOOL_BASE_TESTNET ?? "https://mempool.space/testnet",
+);
+const MEMPOOL_BASE_TESTNET4 = stripTrailingSlash(
+  process.env.MEMPOOL_BASE_TESTNET4 ?? "https://mempool.space/testnet4",
+);
 const ELECTRUM_HOST = process.env.ELECTRUM_HOST ?? "127.0.0.1";
 const ELECTRUM_PORT = Number(process.env.ELECTRUM_PORT ?? 50001);
 const MAX_REGISTRY_TX_PAGES = Number(process.env.MAX_REGISTRY_TX_PAGES ?? 250);
 const MAX_ADDRESS_TX_PAGES = Number(process.env.MAX_ADDRESS_TX_PAGES ?? 50);
-const MAX_ACTIVITY_ADDRESSES = Number(process.env.MAX_ACTIVITY_ADDRESSES ?? 500);
-const MAX_ACTIVITY_ADDRESS_GRAPH_PASSES = Number(process.env.MAX_ACTIVITY_ADDRESS_GRAPH_PASSES ?? 1);
-const ACTIVITY_CACHE_TTL_MS = Number(process.env.ACTIVITY_CACHE_TTL_MS ?? 15_000);
+const MAX_ACTIVITY_ADDRESSES = Number(
+  process.env.MAX_ACTIVITY_ADDRESSES ?? 500,
+);
+const MAX_ACTIVITY_ADDRESS_GRAPH_PASSES = Number(
+  process.env.MAX_ACTIVITY_ADDRESS_GRAPH_PASSES ?? 1,
+);
+const ACTIVITY_CACHE_TTL_MS = Number(
+  process.env.ACTIVITY_CACHE_TTL_MS ?? 15_000,
+);
 const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
-const BLOCK_TXID_FETCH_CONCURRENCY = Number(process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4);
+const BLOCK_TXID_FETCH_CONCURRENCY = Number(
+  process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4,
+);
 
 const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
+const PAY2SPEAK_PROTOCOL_PREFIX = "pws1:";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
+const PAY2SPEAK_REGISTRY_PRICE_SATS = 1000;
+const PAY2SPEAK_SPLIT_THRESHOLD_SATS = 5460;
 const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
 const ID_SALE_AUTH_VERSION_ANCHORED = "pwid-sale-v2";
 const ID_SALE_AUTH_VERSION = "pwid-sale-v3";
@@ -40,10 +59,14 @@ const ID_LISTING_ANCHOR_TYPE = "seller-utxo-v1";
 const ID_LISTING_TICKET_ANCHOR_TYPE = "sale-ticket-v1";
 const ID_LISTING_ANCHOR_VALUE_SATS = 546;
 const ID_LISTING_ANCHOR_VOUT = 2;
-const ID_LISTING_ANCHOR_SIGHASH_TYPE = bitcoin.Transaction.SIGHASH_SINGLE | bitcoin.Transaction.SIGHASH_ANYONECANPAY;
+const ID_LISTING_ANCHOR_SIGHASH_TYPE =
+  bitcoin.Transaction.SIGHASH_SINGLE | bitcoin.Transaction.SIGHASH_ANYONECANPAY;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const ID_REGISTRY_ADDRESSES = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
+};
+const PAY2SPEAK_REGISTRY_ADDRESSES = {
+  livenet: "bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4",
 };
 
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
@@ -54,10 +77,16 @@ function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
 }
 
-function jsonResponse(response, statusCode, payload, cacheControl = "no-store") {
+function jsonResponse(
+  response,
+  statusCode,
+  payload,
+  cacheControl = "no-store",
+) {
   const body = JSON.stringify(payload);
   response.writeHead(statusCode, {
-    "Access-Control-Allow-Headers": "Accept, Authorization, Cache-Control, Content-Type",
+    "Access-Control-Allow-Headers":
+      "Accept, Authorization, Cache-Control, Content-Type",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Origin": CORS_ORIGIN,
     "Cache-Control": cacheControl,
@@ -101,11 +130,19 @@ function pendingMempoolBases(network) {
     return [mempoolBase(network)];
   }
 
-  return [...new Set([MEMPOOL_BASE_MAINNET, PENDING_MEMPOOL_BASE_MAINNET].filter(Boolean))];
+  return [
+    ...new Set(
+      [MEMPOOL_BASE_MAINNET, PENDING_MEMPOOL_BASE_MAINNET].filter(Boolean),
+    ),
+  ];
 }
 
 function registryAddressForNetwork(network) {
   return ID_REGISTRY_ADDRESSES[network] ?? "";
+}
+
+function pay2SpeakRegistryAddressForNetwork(network) {
+  return PAY2SPEAK_REGISTRY_ADDRESSES[network] ?? "";
 }
 
 async function fetchJson(url) {
@@ -117,7 +154,9 @@ async function fetchJson(url) {
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`${url} returned ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+    throw new Error(
+      `${url} returned ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`,
+    );
   }
 
   return response.json();
@@ -127,7 +166,9 @@ async function fetchText(url) {
   const response = await fetch(url);
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`${url} returned ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+    throw new Error(
+      `${url} returned ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`,
+    );
   }
 
   return response.text();
@@ -141,7 +182,9 @@ async function fetchBlockTxidIndex(blockHash, network) {
   const normalizedHash = blockHash.toLowerCase();
   const cacheKey = `${network}:${normalizedHash}`;
   if (!BLOCK_TXID_INDEX_CACHE.has(cacheKey)) {
-    const promise = fetchJson(`${mempoolBase(network)}/api/block/${normalizedHash}/txids`)
+    const promise = fetchJson(
+      `${mempoolBase(network)}/api/block/${normalizedHash}/txids`,
+    )
       .then((txids) => {
         const index = new Map();
         if (Array.isArray(txids)) {
@@ -164,25 +207,35 @@ async function fetchBlockTxidIndex(blockHash, network) {
 }
 
 async function fetchAddressTransactionsPage(address, network, path) {
-  const transactions = await fetchJson(`${mempoolBase(network)}/api/address/${address}/${path}`);
+  const transactions = await fetchJson(
+    `${mempoolBase(network)}/api/address/${address}/${path}`,
+  );
   return Array.isArray(transactions) ? transactions : [];
 }
 
 async function fetchAddressTransactionsPageFromBase(baseUrl, address, path) {
-  const transactions = await fetchJson(`${baseUrl}/api/address/${address}/${path}`);
+  const transactions = await fetchJson(
+    `${baseUrl}/api/address/${address}/${path}`,
+  );
   return Array.isArray(transactions) ? transactions : [];
 }
 
 async function fetchAddressMempoolTransactions(address, network) {
   const pages = await Promise.allSettled(
-    pendingMempoolBases(network).map((baseUrl) => fetchAddressTransactionsPageFromBase(baseUrl, address, "txs/mempool")),
+    pendingMempoolBases(network).map((baseUrl) =>
+      fetchAddressTransactionsPageFromBase(baseUrl, address, "txs/mempool"),
+    ),
   );
 
-  return dedupeTransactions(pages.flatMap((page) => (page.status === "fulfilled" ? page.value : [])));
+  return dedupeTransactions(
+    pages.flatMap((page) => (page.status === "fulfilled" ? page.value : [])),
+  );
 }
 
 function bitcoinNetwork(network) {
-  return network === "livenet" ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
+  return network === "livenet"
+    ? bitcoin.networks.bitcoin
+    : bitcoin.networks.testnet;
 }
 
 function isValidBitcoinAddress(address, network) {
@@ -213,21 +266,36 @@ function marketplaceLegacyAnchorScriptPubKey() {
 }
 
 function validPublicKeyHex(value) {
-  return /^[0-9a-fA-F]{64}$/u.test(value) || /^(02|03)[0-9a-fA-F]{64}$/u.test(value) || /^04[0-9a-fA-F]{128}$/u.test(value);
+  return (
+    /^[0-9a-fA-F]{64}$/u.test(value) ||
+    /^(02|03)[0-9a-fA-F]{64}$/u.test(value) ||
+    /^04[0-9a-fA-F]{128}$/u.test(value)
+  );
 }
 
 function validSignatureHex(value) {
-  return /^[0-9a-fA-F]+$/u.test(value) && value.length >= 18 && value.length <= 146 && value.length % 2 === 0;
+  return (
+    /^[0-9a-fA-F]+$/u.test(value) &&
+    value.length >= 18 &&
+    value.length <= 146 &&
+    value.length % 2 === 0
+  );
 }
 
 function scriptHashForAddress(address, network) {
-  const script = bitcoin.address.toOutputScript(address, bitcoinNetwork(network));
+  const script = bitcoin.address.toOutputScript(
+    address,
+    bitcoinNetwork(network),
+  );
   return Buffer.from(bitcoin.crypto.sha256(script)).reverse().toString("hex");
 }
 
 function electrumRequest(method, params) {
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection({ host: ELECTRUM_HOST, port: ELECTRUM_PORT });
+    const socket = net.createConnection({
+      host: ELECTRUM_HOST,
+      port: ELECTRUM_PORT,
+    });
     const requestId = Date.now();
     let settled = false;
     let buffer = "";
@@ -261,7 +329,9 @@ function electrumRequest(method, params) {
       try {
         const parsed = JSON.parse(line);
         if (parsed.error) {
-          reject(new Error(parsed.error.message ?? `Electrum error for ${method}`));
+          reject(
+            new Error(parsed.error.message ?? `Electrum error for ${method}`),
+          );
           return;
         }
 
@@ -295,7 +365,9 @@ async function mapWithConcurrency(items, concurrency, mapper) {
     }
   }
 
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, worker),
+  );
   return results;
 }
 
@@ -329,30 +401,40 @@ async function fetchTransactionWithPendingFallback(txid, network) {
 
 async function fetchAddressTransactionsFromElectrum(address, network) {
   const scripthash = scriptHashForAddress(address, network);
-  const history = await electrumRequest("blockchain.scripthash.get_history", [scripthash]);
+  const history = await electrumRequest("blockchain.scripthash.get_history", [
+    scripthash,
+  ]);
   const entries = Array.isArray(history) ? history : [];
   const txids = [
     ...new Set(
       entries
         .map((entry) => entry?.tx_hash)
-        .filter((txid) => typeof txid === "string" && /^[0-9a-fA-F]{64}$/u.test(txid))
+        .filter(
+          (txid) => typeof txid === "string" && /^[0-9a-fA-F]{64}$/u.test(txid),
+        )
         .map((txid) => txid.toLowerCase()),
     ),
   ];
 
-  const txs = await mapWithConcurrency(txids, TX_FETCH_CONCURRENCY, async (txid) => {
-    try {
-      return await fetchTransaction(txid, network);
-    } catch {
-      return null;
-    }
-  });
+  const txs = await mapWithConcurrency(
+    txids,
+    TX_FETCH_CONCURRENCY,
+    async (txid) => {
+      try {
+        return await fetchTransaction(txid, network);
+      } catch {
+        return null;
+      }
+    },
+  );
 
   return dedupeTransactions(txs.filter(Boolean));
 }
 
 function transactionTxid(tx) {
-  return typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid) ? tx.txid.toLowerCase() : "";
+  return typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid)
+    ? tx.txid.toLowerCase()
+    : "";
 }
 
 function transactionConfirmed(tx) {
@@ -361,7 +443,9 @@ function transactionConfirmed(tx) {
 
 function transactionBlockHash(tx) {
   const blockHash = tx.status?.block_hash;
-  return typeof blockHash === "string" && /^[0-9a-fA-F]{64}$/u.test(blockHash) ? blockHash.toLowerCase() : "";
+  return typeof blockHash === "string" && /^[0-9a-fA-F]{64}$/u.test(blockHash)
+    ? blockHash.toLowerCase()
+    : "";
 }
 
 function transactionBlockHeight(tx) {
@@ -370,7 +454,8 @@ function transactionBlockHeight(tx) {
 }
 
 function transactionBlockIndex(tx) {
-  const index = tx._powBlockIndex ?? tx.status?.block_index ?? tx.status?.block_tx_index;
+  const index =
+    tx._powBlockIndex ?? tx.status?.block_index ?? tx.status?.block_tx_index;
   return Number.isSafeInteger(index) && index >= 0 ? index : undefined;
 }
 
@@ -387,19 +472,27 @@ async function annotateBlockOrder(txs, network) {
     }
   }
 
-  const blockHashes = [...blockCounts].filter(([, count]) => count > 1).map(([blockHash]) => blockHash);
+  const blockHashes = [...blockCounts]
+    .filter(([, count]) => count > 1)
+    .map(([blockHash]) => blockHash);
 
   if (blockHashes.length === 0) {
     return txs;
   }
 
   const blockIndexes = new Map();
-  await mapWithConcurrency(blockHashes, BLOCK_TXID_FETCH_CONCURRENCY, async (blockHash) => {
-    const index = await fetchBlockTxidIndex(blockHash, network).catch(() => null);
-    if (index) {
-      blockIndexes.set(blockHash, index);
-    }
-  });
+  await mapWithConcurrency(
+    blockHashes,
+    BLOCK_TXID_FETCH_CONCURRENCY,
+    async (blockHash) => {
+      const index = await fetchBlockTxidIndex(blockHash, network).catch(
+        () => null,
+      );
+      if (index) {
+        blockIndexes.set(blockHash, index);
+      }
+    },
+  );
 
   if (blockIndexes.size === 0) {
     return txs;
@@ -415,7 +508,9 @@ async function annotateBlockOrder(txs, network) {
 
 function oldestConfirmedTxid(txs) {
   const confirmedTxs = txs.filter(transactionConfirmed);
-  return confirmedTxs.length > 0 ? transactionTxid(confirmedTxs[confirmedTxs.length - 1]) : "";
+  return confirmedTxs.length > 0
+    ? transactionTxid(confirmedTxs[confirmedTxs.length - 1])
+    : "";
 }
 
 function dedupeTransactions(txs) {
@@ -428,7 +523,10 @@ function dedupeTransactions(txs) {
     }
 
     const current = merged.get(txid);
-    if (!current || (transactionConfirmed(tx) && !transactionConfirmed(current))) {
+    if (
+      !current ||
+      (transactionConfirmed(tx) && !transactionConfirmed(current))
+    ) {
       merged.set(txid, tx);
     }
   }
@@ -436,13 +534,24 @@ function dedupeTransactions(txs) {
   return [...merged.values()];
 }
 
-async function fetchAddressTransactionsViaMempoolPagination(address, network, maxPages = MAX_ADDRESS_TX_PAGES) {
+async function fetchAddressTransactionsViaMempoolPagination(
+  address,
+  network,
+  maxPages = MAX_ADDRESS_TX_PAGES,
+) {
   const recentTxs = await fetchAddressTransactionsPage(address, network, "txs");
-  const mempoolTxs = await fetchAddressMempoolTransactions(address, network).catch(() => []);
+  const mempoolTxs = await fetchAddressMempoolTransactions(
+    address,
+    network,
+  ).catch(() => []);
 
   let chainPage = [];
   try {
-    chainPage = await fetchAddressTransactionsPage(address, network, "txs/chain");
+    chainPage = await fetchAddressTransactionsPage(
+      address,
+      network,
+      "txs/chain",
+    );
   } catch {
     chainPage = recentTxs.filter(transactionConfirmed);
   }
@@ -463,7 +572,11 @@ async function fetchAddressTransactionsViaMempoolPagination(address, network, ma
     cursors.add(cursor);
     let nextPage = [];
     try {
-      nextPage = await fetchAddressTransactionsPage(address, network, `txs/chain/${cursor}`);
+      nextPage = await fetchAddressTransactionsPage(
+        address,
+        network,
+        `txs/chain/${cursor}`,
+      );
     } catch {
       break;
     }
@@ -479,7 +592,11 @@ async function fetchAddressTransactionsViaMempoolPagination(address, network, ma
   return dedupeTransactions([...chainTxs, ...mempoolTxs, ...recentTxs]);
 }
 
-async function fetchAddressTransactions(address, network, maxPages = MAX_ADDRESS_TX_PAGES) {
+async function fetchAddressTransactions(
+  address,
+  network,
+  maxPages = MAX_ADDRESS_TX_PAGES,
+) {
   if (network === "livenet" && ELECTRUM_HOST && ELECTRUM_PORT) {
     try {
       const [historyTxs, mempoolTxs] = await Promise.all([
@@ -489,15 +606,27 @@ async function fetchAddressTransactions(address, network, maxPages = MAX_ADDRESS
 
       return dedupeTransactions([...historyTxs, ...mempoolTxs]);
     } catch {
-      return fetchAddressTransactionsViaMempoolPagination(address, network, maxPages);
+      return fetchAddressTransactionsViaMempoolPagination(
+        address,
+        network,
+        maxPages,
+      );
     }
   }
 
-  return fetchAddressTransactionsViaMempoolPagination(address, network, maxPages);
+  return fetchAddressTransactionsViaMempoolPagination(
+    address,
+    network,
+    maxPages,
+  );
 }
 
 async function fetchRegistryTransactions(registryAddress, network) {
-  const txs = await fetchAddressTransactions(registryAddress, network, MAX_REGISTRY_TX_PAGES);
+  const txs = await fetchAddressTransactions(
+    registryAddress,
+    network,
+    MAX_REGISTRY_TX_PAGES,
+  );
   return annotateBlockOrder(txs, network);
 }
 
@@ -525,16 +654,26 @@ function decodedOpReturnMessages(vout) {
 }
 
 function decodedProtocolMessages(vout, prefix) {
-  return decodedOpReturnMessages(vout).filter((message) => message.startsWith(prefix));
+  return decodedOpReturnMessages(vout).filter((message) =>
+    message.startsWith(prefix),
+  );
 }
 
 function protocolDataBytesForVout(vout, prefix) {
-  return decodedProtocolMessages(vout, prefix).reduce((total, message) => total + Buffer.byteLength(message, "utf8"), 0);
+  return decodedProtocolMessages(vout, prefix).reduce(
+    (total, message) => total + Buffer.byteLength(message, "utf8"),
+    0,
+  );
 }
 
 function proofProtocolDataBytesForVout(vout) {
   return decodedOpReturnMessages(vout)
-    .filter((message) => message.startsWith(PROTOCOL_PREFIX) || message.startsWith(ID_PROTOCOL_PREFIX))
+    .filter(
+      (message) =>
+        message.startsWith(PROTOCOL_PREFIX) ||
+        message.startsWith(ID_PROTOCOL_PREFIX) ||
+        message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX),
+    )
     .reduce((total, message) => total + Buffer.byteLength(message, "utf8"), 0);
 }
 
@@ -555,6 +694,18 @@ function firstIdProtocolOutputIndex(vout) {
     }
 
     return decodedProtocolMessages([output], ID_PROTOCOL_PREFIX).length > 0;
+  });
+}
+
+function firstPay2SpeakOutputIndex(vout) {
+  return vout.findIndex((output) => {
+    if (output.scriptpubkey_type !== "op_return") {
+      return false;
+    }
+
+    return (
+      decodedProtocolMessages([output], PAY2SPEAK_PROTOCOL_PREFIX).length > 0
+    );
   });
 }
 
@@ -601,13 +752,25 @@ function parseAttachmentPayload(payload, current) {
   const size = Number(sizeText);
   const part = partText.match(/^(\d+)\/(\d+)$/u);
 
-  if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_ATTACHMENT_BYTES || !/^[0-9a-f]{64}$/iu.test(sha256) || !part) {
+  if (
+    !Number.isSafeInteger(size) ||
+    size <= 0 ||
+    size > MAX_ATTACHMENT_BYTES ||
+    !/^[0-9a-f]{64}$/iu.test(sha256) ||
+    !part
+  ) {
     return current;
   }
 
   const index = Number(part[1]);
   const total = Number(part[2]);
-  if (!Number.isSafeInteger(index) || !Number.isSafeInteger(total) || total < 1 || index < 0 || index >= total) {
+  if (
+    !Number.isSafeInteger(index) ||
+    !Number.isSafeInteger(total) ||
+    total < 1 ||
+    index < 0 ||
+    index >= total
+  ) {
     return current;
   }
 
@@ -621,7 +784,12 @@ function parseAttachmentPayload(payload, current) {
   }
 
   const accumulator =
-    current && current.mime === mime && current.name === name && current.size === size && current.sha256 === sha256.toLowerCase() && current.total === total
+    current &&
+    current.mime === mime &&
+    current.name === name &&
+    current.size === size &&
+    current.sha256 === sha256.toLowerCase() &&
+    current.total === total
       ? current
       : {
           chunks: Array.from({ length: total }, () => ""),
@@ -644,7 +812,10 @@ function attachmentFromAccumulator(accumulator) {
   const data = accumulator.chunks.join("");
   try {
     const bytes = base64UrlDecodeBytes(data);
-    if (bytes.byteLength !== accumulator.size || sha256Hex(bytes) !== accumulator.sha256) {
+    if (
+      bytes.byteLength !== accumulator.size ||
+      sha256Hex(bytes) !== accumulator.sha256
+    ) {
       return undefined;
     }
   } catch {
@@ -700,7 +871,10 @@ function extractProtocolMemo(vout) {
     }
 
     if (payload.startsWith("a:")) {
-      attachmentAccumulator = parseAttachmentPayload(payload, attachmentAccumulator);
+      attachmentAccumulator = parseAttachmentPayload(
+        payload,
+        attachmentAccumulator,
+      );
     }
   }
 
@@ -735,11 +909,16 @@ function extractProtocolMemo(vout) {
 function receivedPaymentAmount(vout, address) {
   const protocolIndex = firstProtocolOutputIndex(vout);
   const amount = vout.reduce((total, output, index) => {
-    if (output.scriptpubkey_address !== address || typeof output.value !== "number") {
+    if (
+      output.scriptpubkey_address !== address ||
+      typeof output.value !== "number"
+    ) {
       return total;
     }
 
-    return protocolIndex === -1 || index < protocolIndex ? total + output.value : total;
+    return protocolIndex === -1 || index < protocolIndex
+      ? total + output.value
+      : total;
   }, 0);
 
   if (amount > 0) {
@@ -750,7 +929,11 @@ function receivedPaymentAmount(vout, address) {
     return 0;
   }
 
-  const fallbackOutput = vout.find((output) => output.scriptpubkey_address === address && typeof output.value === "number");
+  const fallbackOutput = vout.find(
+    (output) =>
+      output.scriptpubkey_address === address &&
+      typeof output.value === "number",
+  );
   return typeof fallbackOutput?.value === "number" ? fallbackOutput.value : 0;
 }
 
@@ -789,15 +972,23 @@ function inputAddresses(vin) {
 
 function spentOutpoints(vin) {
   return vin.flatMap((input) => {
-    const txid = typeof input?.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(input.txid) ? input.txid.toLowerCase() : "";
-    const vout = Number.isSafeInteger(input?.vout) && input.vout >= 0 ? input.vout : -1;
+    const txid =
+      typeof input?.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(input.txid)
+        ? input.txid.toLowerCase()
+        : "";
+    const vout =
+      Number.isSafeInteger(input?.vout) && input.vout >= 0 ? input.vout : -1;
     return txid && vout >= 0 ? [{ txid, vout }] : [];
   });
 }
 
 function senderAddress(vin, targetAddress) {
   const addresses = inputAddresses(vin);
-  return addresses.find((inputAddress) => inputAddress !== targetAddress) ?? addresses[0] ?? "Unknown";
+  return (
+    addresses.find((inputAddress) => inputAddress !== targetAddress) ??
+    addresses[0] ??
+    "Unknown"
+  );
 }
 
 function registryPaymentAmount(vout, registryAddress) {
@@ -816,8 +1007,109 @@ function registryPaymentAmount(vout, registryAddress) {
   }, 0);
 }
 
+function pay2SpeakPaymentAmountBeforeProtocol(vout, address) {
+  const protocolIndex = firstPay2SpeakOutputIndex(vout);
+  return vout.reduce((total, output, index) => {
+    if (
+      output.scriptpubkey_address === address &&
+      typeof output.value === "number" &&
+      output.value > 0 &&
+      (protocolIndex === -1 || index < protocolIndex)
+    ) {
+      return total + output.value;
+    }
+
+    return total;
+  }, 0);
+}
+
+function normalizeXHandle(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/^@+/u, "")
+    .toLowerCase();
+}
+
+function pay2SpeakFundingSplit(grossSats) {
+  const gross = Math.floor(grossSats);
+  if (!Number.isSafeInteger(gross) || gross <= PAY2SPEAK_REGISTRY_PRICE_SATS) {
+    throw new Error("Contribution must be greater than 1,000 sats.");
+  }
+
+  const registrySats =
+    gross < PAY2SPEAK_SPLIT_THRESHOLD_SATS
+      ? PAY2SPEAK_REGISTRY_PRICE_SATS
+      : Math.floor(gross / 10);
+  return { creatorSats: gross - registrySats, grossSats: gross, registrySats };
+}
+
+function parsePay2SpeakPayload(message) {
+  if (!message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX)) {
+    return null;
+  }
+
+  const parts = message.slice(PAY2SPEAK_PROTOCOL_PREFIX.length).split(":");
+  if (parts[0] === "c" && parts.length === 4) {
+    const spaceNumber = Number(parts[1]);
+    const handle = normalizeXHandle(parts[2]);
+    const targetGrossSats = Number(parts[3]);
+    if (
+      !Number.isSafeInteger(spaceNumber) ||
+      spaceNumber < 0 ||
+      !/^[a-z0-9_]{1,15}$/u.test(handle) ||
+      !Number.isSafeInteger(targetGrossSats) ||
+      targetGrossSats <= PAY2SPEAK_REGISTRY_PRICE_SATS
+    ) {
+      return null;
+    }
+
+    return { handle, kind: "campaign", spaceNumber, targetGrossSats };
+  }
+
+  if (
+    parts[0] === "f" &&
+    parts.length >= 2 &&
+    parts.length <= 3 &&
+    /^[0-9a-fA-F]{64}$/u.test(parts[1] ?? "")
+  ) {
+    let question = "";
+    try {
+      question = parts[2]
+        ? decodeTextBase64Url(parts[2]).trim().slice(0, 500)
+        : "";
+    } catch {
+      return null;
+    }
+
+    return {
+      campaignId: parts[1].toLowerCase(),
+      kind: "funding",
+      question: question || undefined,
+    };
+  }
+
+  return null;
+}
+
+function pay2SpeakTitle(handle, spaceNumber) {
+  return `@${handle} Space #${spaceNumber}`;
+}
+
+function comparePay2SpeakCampaigns(left, right) {
+  if (left.confirmed !== right.confirmed) {
+    return Number(right.confirmed) - Number(left.confirmed);
+  }
+
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    left.txid.localeCompare(right.txid)
+  );
+}
+
 function idEventMinimumPaymentSats(kind) {
-  return kind === "register" ? ID_REGISTRATION_PRICE_SATS : ID_MUTATION_PRICE_SATS;
+  return kind === "register"
+    ? ID_REGISTRATION_PRICE_SATS
+    : ID_MUTATION_PRICE_SATS;
 }
 
 function paymentOutputsBeforeIdProtocol(vout) {
@@ -837,7 +1129,11 @@ function paymentOutputsBeforeIdProtocol(vout) {
 }
 
 function paymentAmountFromSnapshots(outputs, address) {
-  return outputs.reduce((total, output) => total + (output.address === address ? output.amountSats : 0), 0);
+  return outputs.reduce(
+    (total, output) =>
+      total + (output.address === address ? output.amountSats : 0),
+    0,
+  );
 }
 
 function paymentAmountBeforeIdProtocol(vout, address) {
@@ -903,7 +1199,11 @@ function parseIdRegistrationPayload(payload, network) {
   }
 
   const id = normalizePowId(rawId);
-  if (!id || !isValidBitcoinAddress(ownerAddress, network) || !isValidBitcoinAddress(receiveAddress, network)) {
+  if (
+    !id ||
+    !isValidBitcoinAddress(ownerAddress, network) ||
+    !isValidBitcoinAddress(receiveAddress, network)
+  ) {
     return null;
   }
 
@@ -973,7 +1273,11 @@ function parseIdTransferPayload(payload, network) {
 
   const receiveAddress = receiver?.trim() || owner;
   const id = normalizePowId(rawId);
-  if (!id || !isValidBitcoinAddress(owner, network) || !isValidBitcoinAddress(receiveAddress, network)) {
+  if (
+    !id ||
+    !isValidBitcoinAddress(owner, network) ||
+    !isValidBitcoinAddress(receiveAddress, network)
+  ) {
     return null;
   }
 
@@ -1014,20 +1318,39 @@ function saleAuthorizationDraft({
     version,
   };
 
-  if (version === ID_SALE_AUTH_VERSION_ANCHORED || version === ID_SALE_AUTH_VERSION || version === ID_SALE_AUTH_VERSION_TICKET) {
+  if (
+    version === ID_SALE_AUTH_VERSION_ANCHORED ||
+    version === ID_SALE_AUTH_VERSION ||
+    version === ID_SALE_AUTH_VERSION_TICKET
+  ) {
     draft.anchorSigHashType = Number.isSafeInteger(anchorSigHashType)
       ? Math.floor(anchorSigHashType)
-      : version === ID_SALE_AUTH_VERSION || version === ID_SALE_AUTH_VERSION_TICKET
+      : version === ID_SALE_AUTH_VERSION ||
+          version === ID_SALE_AUTH_VERSION_TICKET
         ? ID_LISTING_ANCHOR_SIGHASH_TYPE
         : undefined;
     draft.anchorSignature = anchorSignature?.trim().toLowerCase() || undefined;
-    draft.anchorScriptPubKey = anchorScriptPubKey?.trim().toLowerCase() || undefined;
+    draft.anchorScriptPubKey =
+      anchorScriptPubKey?.trim().toLowerCase() || undefined;
     draft.anchorTxid = anchorTxid?.trim().toLowerCase() || undefined;
-    draft.anchorType = anchorType?.trim() || (version === ID_SALE_AUTH_VERSION_TICKET ? ID_LISTING_TICKET_ANCHOR_TYPE : version === ID_SALE_AUTH_VERSION ? ID_LISTING_ANCHOR_TYPE : ID_LISTING_ANCHOR_TYPE_LEGACY);
-    draft.anchorValueSats = Number.isSafeInteger(anchorValueSats) ? Math.floor(anchorValueSats) : ID_LISTING_ANCHOR_VALUE_SATS;
-    draft.anchorVout = Number.isSafeInteger(anchorVout) ? Math.floor(anchorVout) : 2;
+    draft.anchorType =
+      anchorType?.trim() ||
+      (version === ID_SALE_AUTH_VERSION_TICKET
+        ? ID_LISTING_TICKET_ANCHOR_TYPE
+        : version === ID_SALE_AUTH_VERSION
+          ? ID_LISTING_ANCHOR_TYPE
+          : ID_LISTING_ANCHOR_TYPE_LEGACY);
+    draft.anchorValueSats = Number.isSafeInteger(anchorValueSats)
+      ? Math.floor(anchorValueSats)
+      : ID_LISTING_ANCHOR_VALUE_SATS;
+    draft.anchorVout = Number.isSafeInteger(anchorVout)
+      ? Math.floor(anchorVout)
+      : 2;
 
-    if (version === ID_SALE_AUTH_VERSION_ANCHORED && !draft.anchorScriptPubKey) {
+    if (
+      version === ID_SALE_AUTH_VERSION_ANCHORED &&
+      !draft.anchorScriptPubKey
+    ) {
       draft.anchorScriptPubKey = marketplaceLegacyAnchorScriptPubKey();
     }
   }
@@ -1048,7 +1371,11 @@ function saleAuthorizationMessage(authorization) {
     `expiresAt:${authorization.expiresAt || ""}`,
   ];
 
-  if (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION || authorization.version === ID_SALE_AUTH_VERSION_TICKET) {
+  if (
+    authorization.version === ID_SALE_AUTH_VERSION_ANCHORED ||
+    authorization.version === ID_SALE_AUTH_VERSION ||
+    authorization.version === ID_SALE_AUTH_VERSION_TICKET
+  ) {
     lines.push(
       `anchorType:${authorization.anchorType || ""}`,
       `anchorTxid:${authorization.anchorTxid || ""}`,
@@ -1070,13 +1397,23 @@ function parseSaleAuthorizationJson(value, network) {
   }
 
   const id = normalizePowId(typeof parsed.id === "string" ? parsed.id : "");
-  const sellerAddress = typeof parsed.sellerAddress === "string" ? parsed.sellerAddress.trim() : "";
-  const buyerAddress = typeof parsed.buyerAddress === "string" ? parsed.buyerAddress.trim() : "";
-  const receiveAddress = typeof parsed.receiveAddress === "string" ? parsed.receiveAddress.trim() : "";
-  const signature = typeof parsed.signature === "string" ? parsed.signature.trim() : "";
+  const sellerAddress =
+    typeof parsed.sellerAddress === "string" ? parsed.sellerAddress.trim() : "";
+  const buyerAddress =
+    typeof parsed.buyerAddress === "string" ? parsed.buyerAddress.trim() : "";
+  const receiveAddress =
+    typeof parsed.receiveAddress === "string"
+      ? parsed.receiveAddress.trim()
+      : "";
+  const signature =
+    typeof parsed.signature === "string" ? parsed.signature.trim() : "";
   const nonce = typeof parsed.nonce === "string" ? parsed.nonce.trim() : "";
-  const expiresAt = typeof parsed.expiresAt === "string" ? parsed.expiresAt.trim() : "";
-  const priceSats = typeof parsed.priceSats === "number" ? Math.floor(parsed.priceSats) : Number.NaN;
+  const expiresAt =
+    typeof parsed.expiresAt === "string" ? parsed.expiresAt.trim() : "";
+  const priceSats =
+    typeof parsed.priceSats === "number"
+      ? Math.floor(parsed.priceSats)
+      : Number.NaN;
   const version =
     parsed.version === ID_SALE_AUTH_VERSION_LEGACY
       ? ID_SALE_AUTH_VERSION_LEGACY
@@ -1087,14 +1424,36 @@ function parseSaleAuthorizationJson(value, network) {
           : parsed.version === ID_SALE_AUTH_VERSION_TICKET
             ? ID_SALE_AUTH_VERSION_TICKET
             : "";
-  const anchorType = typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
-  const anchorSigHashType = typeof parsed.anchorSigHashType === "number" ? Math.floor(parsed.anchorSigHashType) : Number.NaN;
-  const anchorSignature = typeof parsed.anchorSignature === "string" ? parsed.anchorSignature.trim().toLowerCase() : "";
-  const anchorScriptPubKey = typeof parsed.anchorScriptPubKey === "string" ? parsed.anchorScriptPubKey.trim().toLowerCase() : "";
-  const anchorTxid = typeof parsed.anchorTxid === "string" ? parsed.anchorTxid.trim().toLowerCase() : "";
-  const anchorVout = typeof parsed.anchorVout === "number" ? Math.floor(parsed.anchorVout) : Number.NaN;
-  const anchorValueSats = typeof parsed.anchorValueSats === "number" ? Math.floor(parsed.anchorValueSats) : Number.NaN;
-  const sellerPublicKey = typeof parsed.sellerPublicKey === "string" ? parsed.sellerPublicKey.trim().toLowerCase() : "";
+  const anchorType =
+    typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
+  const anchorSigHashType =
+    typeof parsed.anchorSigHashType === "number"
+      ? Math.floor(parsed.anchorSigHashType)
+      : Number.NaN;
+  const anchorSignature =
+    typeof parsed.anchorSignature === "string"
+      ? parsed.anchorSignature.trim().toLowerCase()
+      : "";
+  const anchorScriptPubKey =
+    typeof parsed.anchorScriptPubKey === "string"
+      ? parsed.anchorScriptPubKey.trim().toLowerCase()
+      : "";
+  const anchorTxid =
+    typeof parsed.anchorTxid === "string"
+      ? parsed.anchorTxid.trim().toLowerCase()
+      : "";
+  const anchorVout =
+    typeof parsed.anchorVout === "number"
+      ? Math.floor(parsed.anchorVout)
+      : Number.NaN;
+  const anchorValueSats =
+    typeof parsed.anchorValueSats === "number"
+      ? Math.floor(parsed.anchorValueSats)
+      : Number.NaN;
+  const sellerPublicKey =
+    typeof parsed.sellerPublicKey === "string"
+      ? parsed.sellerPublicKey.trim().toLowerCase()
+      : "";
 
   if (!version || !id || !isValidBitcoinAddress(sellerAddress, network)) {
     throw new Error("Sale authorization is invalid.");
@@ -1108,7 +1467,12 @@ function parseSaleAuthorizationJson(value, network) {
     throw new Error("Sale receive address is invalid.");
   }
 
-  if (!Number.isSafeInteger(priceSats) || priceSats < 0 || !nonce || nonce.length > 160) {
+  if (
+    !Number.isSafeInteger(priceSats) ||
+    priceSats < 0 ||
+    !nonce ||
+    nonce.length > 160
+  ) {
     throw new Error("Sale authorization terms are invalid.");
   }
 
@@ -1190,7 +1554,10 @@ function saleAuthorizationMessageDraft(authorization) {
 }
 
 function saleAuthorizationVerified(authorization) {
-  if (authorization.version !== ID_SALE_AUTH_VERSION_LEGACY || !authorization.signature) {
+  if (
+    authorization.version !== ID_SALE_AUTH_VERSION_LEGACY ||
+    !authorization.signature
+  ) {
     return false;
   }
 
@@ -1206,15 +1573,36 @@ function saleAuthorizationVerified(authorization) {
 }
 
 function saleAuthorizationTermsMatch(left, right) {
-  return JSON.stringify(saleAuthorizationDraft(left)) === JSON.stringify(saleAuthorizationDraft(right));
+  return (
+    JSON.stringify(saleAuthorizationDraft(left)) ===
+    JSON.stringify(saleAuthorizationDraft(right))
+  );
 }
 
 function saleAuthorizationTermsMatchIgnoringSeal(left, right) {
-  return JSON.stringify(saleAuthorizationDraft({ ...left, anchorSignature: undefined, anchorTxid: undefined })) ===
-    JSON.stringify(saleAuthorizationDraft({ ...right, anchorSignature: undefined, anchorTxid: undefined }));
+  return (
+    JSON.stringify(
+      saleAuthorizationDraft({
+        ...left,
+        anchorSignature: undefined,
+        anchorTxid: undefined,
+      }),
+    ) ===
+    JSON.stringify(
+      saleAuthorizationDraft({
+        ...right,
+        anchorSignature: undefined,
+        anchorTxid: undefined,
+      }),
+    )
+  );
 }
 
-function findMatchingActiveListing(listings, authorization, currentOwnerAddress) {
+function findMatchingActiveListing(
+  listings,
+  authorization,
+  currentOwnerAddress,
+) {
   for (const listing of listings.values()) {
     if (
       listing.listingVersion !== "list3" &&
@@ -1232,8 +1620,12 @@ function findMatchingActiveListing(listings, authorization, currentOwnerAddress)
 
 function saleAuthorizationHasAnchor(authorization) {
   return (
-    (authorization?.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization?.version === ID_SALE_AUTH_VERSION || authorization?.version === ID_SALE_AUTH_VERSION_TICKET) &&
-    (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY || authorization.anchorType === ID_LISTING_ANCHOR_TYPE || authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE) &&
+    (authorization?.version === ID_SALE_AUTH_VERSION_ANCHORED ||
+      authorization?.version === ID_SALE_AUTH_VERSION ||
+      authorization?.version === ID_SALE_AUTH_VERSION_TICKET) &&
+    (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY ||
+      authorization.anchorType === ID_LISTING_ANCHOR_TYPE ||
+      authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE) &&
     typeof authorization.anchorScriptPubKey === "string" &&
     /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey) &&
     Number.isSafeInteger(authorization.anchorVout) &&
@@ -1278,7 +1670,9 @@ function listingAnchorOutpoint(listing) {
   }
 
   return {
-    txid: saleAuthorizationUsesSellerUtxoAnchor(listing.saleAuthorization) ? listing.saleAuthorization.anchorTxid : listing.listingId,
+    txid: saleAuthorizationUsesSellerUtxoAnchor(listing.saleAuthorization)
+      ? listing.saleAuthorization.anchorTxid
+      : listing.listingId,
     vout: listing.saleAuthorization.anchorVout,
   };
 }
@@ -1286,11 +1680,19 @@ function listingAnchorOutpoint(listing) {
 function spendsListingAnchor(spent, listing) {
   const anchor = listingAnchorOutpoint(listing);
 
-  return Boolean(anchor && spent.some((outpoint) => outpoint.txid === anchor.txid && outpoint.vout === anchor.vout));
+  return Boolean(
+    anchor &&
+    spent.some(
+      (outpoint) =>
+        outpoint.txid === anchor.txid && outpoint.vout === anchor.vout,
+    ),
+  );
 }
 
 function sellerPaymentRequiredSats(listing) {
-  const anchorValue = saleAuthorizationHasAnchor(listing?.saleAuthorization) ? listing.saleAuthorization.anchorValueSats : 0;
+  const anchorValue = saleAuthorizationHasAnchor(listing?.saleAuthorization)
+    ? listing.saleAuthorization.anchorValueSats
+    : 0;
   return listing.priceSats + anchorValue;
 }
 
@@ -1299,15 +1701,24 @@ function listingAnchorIsPresent(vout, authorization) {
     return false;
   }
 
-  if (authorization.version !== ID_SALE_AUTH_VERSION_ANCHORED && authorization.version !== ID_SALE_AUTH_VERSION_TICKET) {
+  if (
+    authorization.version !== ID_SALE_AUTH_VERSION_ANCHORED &&
+    authorization.version !== ID_SALE_AUTH_VERSION_TICKET
+  ) {
     return false;
   }
 
-  if (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED && authorization.anchorType !== ID_LISTING_ANCHOR_TYPE_LEGACY) {
+  if (
+    authorization.version === ID_SALE_AUTH_VERSION_ANCHORED &&
+    authorization.anchorType !== ID_LISTING_ANCHOR_TYPE_LEGACY
+  ) {
     return false;
   }
 
-  if (authorization.version === ID_SALE_AUTH_VERSION_TICKET && authorization.anchorType !== ID_LISTING_TICKET_ANCHOR_TYPE) {
+  if (
+    authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+    authorization.anchorType !== ID_LISTING_TICKET_ANCHOR_TYPE
+  ) {
     return false;
   }
 
@@ -1321,13 +1732,20 @@ function listingAnchorIsPresent(vout, authorization) {
 
 async function listingAnchorSpent(listing, network) {
   const anchor = listingAnchorOutpoint(listing);
-  if ((listing?.listingVersion !== "list3" && listing?.listingVersion !== "list4" && listing?.listingVersion !== "list5") || !anchor) {
+  if (
+    (listing?.listingVersion !== "list3" &&
+      listing?.listingVersion !== "list4" &&
+      listing?.listingVersion !== "list5") ||
+    !anchor
+  ) {
     return false;
   }
 
   for (const base of pendingMempoolBases(network)) {
     try {
-      const outspend = await fetchJson(`${base}/api/tx/${anchor.txid}/outspend/${anchor.vout}`);
+      const outspend = await fetchJson(
+        `${base}/api/tx/${anchor.txid}/outspend/${anchor.vout}`,
+      );
       if (outspend?.spent) {
         return true;
       }
@@ -1340,7 +1758,9 @@ async function listingAnchorSpent(listing, network) {
 }
 
 async function filterSpendableListings(listings, network) {
-  const spentStates = await Promise.all(listings.map((listing) => listingAnchorSpent(listing, network)));
+  const spentStates = await Promise.all(
+    listings.map((listing) => listingAnchorSpent(listing, network)),
+  );
   return listings.filter((_listing, index) => !spentStates[index]);
 }
 
@@ -1354,32 +1774,54 @@ function saleAuthorizationExpired(authorization, eventCreatedAt) {
 
 function compareRegistryEventOrder(left, right) {
   if (left.confirmed && right.confirmed) {
-    const leftHeight = Number.isSafeInteger(left.blockHeight) ? left.blockHeight : Number.POSITIVE_INFINITY;
-    const rightHeight = Number.isSafeInteger(right.blockHeight) ? right.blockHeight : Number.POSITIVE_INFINITY;
+    const leftHeight = Number.isSafeInteger(left.blockHeight)
+      ? left.blockHeight
+      : Number.POSITIVE_INFINITY;
+    const rightHeight = Number.isSafeInteger(right.blockHeight)
+      ? right.blockHeight
+      : Number.POSITIVE_INFINITY;
     if (leftHeight !== rightHeight) {
       return leftHeight - rightHeight;
     }
 
-    const leftIndex = Number.isSafeInteger(left.blockIndex) ? left.blockIndex : Number.POSITIVE_INFINITY;
-    const rightIndex = Number.isSafeInteger(right.blockIndex) ? right.blockIndex : Number.POSITIVE_INFINITY;
+    const leftIndex = Number.isSafeInteger(left.blockIndex)
+      ? left.blockIndex
+      : Number.POSITIVE_INFINITY;
+    const rightIndex = Number.isSafeInteger(right.blockIndex)
+      ? right.blockIndex
+      : Number.POSITIVE_INFINITY;
     if (leftIndex !== rightIndex) {
       return leftIndex - rightIndex;
     }
   }
 
-  return Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid);
+  return (
+    Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+    left.txid.localeCompare(right.txid)
+  );
 }
 
 function parseIdMarketplaceTransferPayload(payload, network) {
   const parts = payload.split(":");
-  if (payload.startsWith("buy3:") || payload.startsWith("buy4:") || payload.startsWith("buy5:")) {
-    if (parts.length < 3 || parts.length > 4 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
+  if (
+    payload.startsWith("buy3:") ||
+    payload.startsWith("buy4:") ||
+    payload.startsWith("buy5:")
+  ) {
+    if (
+      parts.length < 3 ||
+      parts.length > 4 ||
+      !/^[0-9a-fA-F]{64}$/u.test(parts[1])
+    ) {
       return null;
     }
 
     const [, listingId, owner, receiver] = parts;
     const receiveAddress = receiver?.trim() || owner;
-    if (!isValidBitcoinAddress(owner, network) || !isValidBitcoinAddress(receiveAddress, network)) {
+    if (
+      !isValidBitcoinAddress(owner, network) ||
+      !isValidBitcoinAddress(receiveAddress, network)
+    ) {
       return null;
     }
 
@@ -1387,7 +1829,11 @@ function parseIdMarketplaceTransferPayload(payload, network) {
       listingId: listingId.toLowerCase(),
       ownerAddress: owner,
       receiveAddress,
-      transferVersion: payload.startsWith("buy5:") ? "buy5" : payload.startsWith("buy4:") ? "buy4" : "buy3",
+      transferVersion: payload.startsWith("buy5:")
+        ? "buy5"
+        : payload.startsWith("buy4:")
+          ? "buy4"
+          : "buy3",
     };
   }
 
@@ -1402,13 +1848,19 @@ function parseIdMarketplaceTransferPayload(payload, network) {
   const [, authorizationEncoded, owner, receiver] = parts;
   let authorization;
   try {
-    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), network);
+    authorization = parseSaleAuthorizationJson(
+      decodeTextBase64Url(authorizationEncoded),
+      network,
+    );
   } catch {
     return null;
   }
 
   const receiveAddress = receiver?.trim() || owner;
-  if (!isValidBitcoinAddress(owner, network) || !isValidBitcoinAddress(receiveAddress, network)) {
+  if (
+    !isValidBitcoinAddress(owner, network) ||
+    !isValidBitcoinAddress(receiveAddress, network)
+  ) {
     return null;
   }
 
@@ -1416,7 +1868,10 @@ function parseIdMarketplaceTransferPayload(payload, network) {
     return null;
   }
 
-  if (authorization.receiveAddress && authorization.receiveAddress !== receiveAddress) {
+  if (
+    authorization.receiveAddress &&
+    authorization.receiveAddress !== receiveAddress
+  ) {
     return null;
   }
 
@@ -1432,7 +1887,15 @@ function parseIdMarketplaceTransferPayload(payload, network) {
 }
 
 function parseIdListingPayload(payload, network) {
-  const listingVersion = payload.startsWith("list5:") ? "list5" : payload.startsWith("list4:") ? "list4" : payload.startsWith("list3:") ? "list3" : payload.startsWith("list2:") ? "list2" : "";
+  const listingVersion = payload.startsWith("list5:")
+    ? "list5"
+    : payload.startsWith("list4:")
+      ? "list4"
+      : payload.startsWith("list3:")
+        ? "list3"
+        : payload.startsWith("list2:")
+          ? "list2"
+          : "";
   if (!listingVersion) {
     return null;
   }
@@ -1445,7 +1908,10 @@ function parseIdListingPayload(payload, network) {
   const [, authorizationEncoded] = parts;
   let authorization;
   try {
-    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), network);
+    authorization = parseSaleAuthorizationJson(
+      decodeTextBase64Url(authorizationEncoded),
+      network,
+    );
   } catch {
     return null;
   }
@@ -1472,7 +1938,10 @@ function parseIdSaleSealPayload(payload, network) {
   const [, listingId, authorizationEncoded] = parts;
   let authorization;
   try {
-    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), network);
+    authorization = parseSaleAuthorizationJson(
+      decodeTextBase64Url(authorizationEncoded),
+      network,
+    );
   } catch {
     return null;
   }
@@ -1484,7 +1953,15 @@ function parseIdSaleSealPayload(payload, network) {
 }
 
 function parseIdDelistingPayload(payload) {
-  const delistingVersion = payload.startsWith("delist5:") ? "delist5" : payload.startsWith("delist4:") ? "delist4" : payload.startsWith("delist3:") ? "delist3" : payload.startsWith("delist2:") ? "delist2" : "";
+  const delistingVersion = payload.startsWith("delist5:")
+    ? "delist5"
+    : payload.startsWith("delist4:")
+      ? "delist4"
+      : payload.startsWith("delist3:")
+        ? "delist3"
+        : payload.startsWith("delist2:")
+          ? "delist2"
+          : "";
   if (!delistingVersion) {
     return null;
   }
@@ -1525,7 +2002,10 @@ function parseIdEventPayload(payload, network) {
     };
   }
 
-  const marketplaceTransfer = parseIdMarketplaceTransferPayload(payload, network);
+  const marketplaceTransfer = parseIdMarketplaceTransferPayload(
+    payload,
+    network,
+  );
   if (marketplaceTransfer) {
     return {
       kind: "marketTransfer",
@@ -1565,7 +2045,9 @@ function shortAddress(value) {
     return "Unknown";
   }
 
-  return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-8)}` : value;
+  return value.length > 18
+    ? `${value.slice(0, 8)}...${value.slice(-8)}`
+    : value;
 }
 
 function networkLabel(network) {
@@ -1612,11 +2094,17 @@ function publicMarketplaceSales(sales) {
 }
 
 function compareMarketplaceSales(left, right) {
-  return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.txid.localeCompare(left.txid);
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    right.txid.localeCompare(left.txid)
+  );
 }
 
 function compareActivityItems(left, right) {
-  return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.txid.localeCompare(left.txid);
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    right.txid.localeCompare(left.txid)
+  );
 }
 
 function idActivityItemsFromEvents(events) {
@@ -1629,7 +2117,11 @@ function idActivityItemsFromEvents(events) {
       createdAt: event.createdAt,
       dataBytes: event.dataBytes ?? 0,
       network: event.network,
-      tags: [status, networkLabel(event.network), `${event.amountSats.toLocaleString()} sats`],
+      tags: [
+        status,
+        networkLabel(event.network),
+        `${event.amountSats.toLocaleString()} sats`,
+      ],
       txid: event.txid,
     };
 
@@ -1671,17 +2163,25 @@ function idActivityItemsFromEvents(events) {
     }
 
     if (event.kind === "list") {
-      const anchorVout = event.saleAuthorization.anchorVout ?? ID_LISTING_ANCHOR_VOUT;
+      const anchorVout =
+        event.saleAuthorization.anchorVout ?? ID_LISTING_ANCHOR_VOUT;
       return {
         ...base,
         actor: event.sellerAddress,
         counterparty: event.saleAuthorization.buyerAddress,
         description: `${event.id}@proofofwork.me listed for ${event.priceSats.toLocaleString()} sats by ${shortAddress(event.sellerAddress)}.`,
-        detail: event.listingVersion === "list5" ? "Sale-ticket listing" : "Legacy listing",
+        detail:
+          event.listingVersion === "list5"
+            ? "Sale-ticket listing"
+            : "Legacy listing",
         id: event.id,
         kind: "id-list",
         listingId: event.txid,
-        tags: [...base.tags, "Listing", `${event.priceSats.toLocaleString()} sale sats`],
+        tags: [
+          ...base.tags,
+          "Listing",
+          `${event.priceSats.toLocaleString()} sale sats`,
+        ],
         title: event.confirmed ? "ID listed" : "ID listing pending",
         utxo: `${event.txid}:${anchorVout}`,
       };
@@ -1695,7 +2195,9 @@ function idActivityItemsFromEvents(events) {
         kind: "id-seal",
         listingId: event.listingId,
         tags: [...base.tags, "Seal"],
-        title: event.confirmed ? "Sale ticket sealed" : "Sale-ticket seal pending",
+        title: event.confirmed
+          ? "Sale ticket sealed"
+          : "Sale-ticket seal pending",
       };
     }
 
@@ -1716,11 +2218,17 @@ function idActivityItemsFromEvents(events) {
       actor: event.ownerAddress,
       counterparty: event.sellerAddress,
       description: `${event.id ? `${event.id}@proofofwork.me` : "ID"} purchased by ${shortAddress(event.ownerAddress)}${event.sellerAddress ? ` from ${shortAddress(event.sellerAddress)}` : ""}.`,
-      detail: event.listingId ? `Listing ${shortAddress(event.listingId)}` : undefined,
+      detail: event.listingId
+        ? `Listing ${shortAddress(event.listingId)}`
+        : undefined,
       id: event.id,
       kind: "id-buy",
       listingId: event.listingId,
-      tags: [...base.tags, "Marketplace buy", event.priceSats ? `${event.priceSats.toLocaleString()} sale sats` : ""].filter(Boolean),
+      tags: [
+        ...base.tags,
+        "Marketplace buy",
+        event.priceSats ? `${event.priceSats.toLocaleString()} sale sats` : "",
+      ].filter(Boolean),
       title: event.confirmed ? "ID purchased" : "ID purchase pending",
     };
   });
@@ -1743,7 +2251,9 @@ function formatBytes(bytes) {
 }
 
 function compactText(value, maxLength = 140) {
-  const text = String(value ?? "").replace(/\s+/gu, " ").trim();
+  const text = String(value ?? "")
+    .replace(/\s+/gu, " ")
+    .trim();
   if (text.length <= maxLength) {
     return text;
   }
@@ -1777,11 +2287,18 @@ function totalProtocolDataBytes(items) {
   const bytesByTxid = new Map();
 
   for (const item of items) {
-    if (!item?.txid || !Number.isFinite(item.dataBytes) || item.dataBytes <= 0) {
+    if (
+      !item?.txid ||
+      !Number.isFinite(item.dataBytes) ||
+      item.dataBytes <= 0
+    ) {
       continue;
     }
 
-    bytesByTxid.set(item.txid, Math.max(bytesByTxid.get(item.txid) ?? 0, item.dataBytes));
+    bytesByTxid.set(
+      item.txid,
+      Math.max(bytesByTxid.get(item.txid) ?? 0, item.dataBytes),
+    );
   }
 
   return [...bytesByTxid.values()].reduce((total, bytes) => total + bytes, 0);
@@ -1797,7 +2314,9 @@ function isBrowserHtmlMessageBody(value) {
     /^<!doctype\s+html[\s>]/iu.test(text) ||
     /^<html[\s>]/iu.test(text) ||
     /<\/(?:html|head|body)>/iu.test(text) ||
-    /^<(?:a|article|body|button|canvas|code|div|form|h[1-6]|head|img|input|main|ol|p|pre|script|section|span|style|svg|table|ul)(?:\s|>|\/)/iu.test(text)
+    /^<(?:a|article|body|button|canvas|code|div|form|h[1-6]|head|img|input|main|ol|p|pre|script|section|span|style|svg|table|ul)(?:\s|>|\/)/iu.test(
+      text,
+    )
   );
 }
 
@@ -1812,12 +2331,23 @@ function mailActivityItemFromTransaction(tx, network) {
   }
 
   const confirmed = transactionConfirmed(tx);
-  const blockTime = typeof tx.status?.block_time === "number" ? tx.status.block_time * 1000 : Date.now();
+  const blockTime =
+    typeof tx.status?.block_time === "number"
+      ? tx.status.block_time * 1000
+      : Date.now();
   const createdAt = new Date(blockTime).toISOString();
   const recipients = protocolPaymentOutputs(vout);
-  const amountSats = recipients.reduce((total, recipient) => total + recipient.amountSats, 0);
+  const amountSats = recipients.reduce(
+    (total, recipient) => total + recipient.amountSats,
+    0,
+  );
   const actor = senderAddress(vin, "");
-  const counterparty = recipients.length === 0 ? "Unknown" : recipients.length === 1 ? recipients[0].display : `${recipients[0].display} +${recipients.length - 1}`;
+  const counterparty =
+    recipients.length === 0
+      ? "Unknown"
+      : recipients.length === 1
+        ? recipients[0].display
+        : `${recipients[0].display} +${recipients.length - 1}`;
   const isFile = Boolean(protocolMessage.attachment);
   const isReply = Boolean(protocolMessage.parentTxid);
   const kind = isFile ? "file" : isReply ? "reply" : "mail";
@@ -1933,13 +2463,23 @@ async function globalActivityPayload(network) {
   const mailTxs = [];
 
   let graphPasses = 0;
-  while (queuedAddresses.length > 0 && seenAddresses.size < MAX_ACTIVITY_ADDRESSES && graphPasses < MAX_ACTIVITY_ADDRESS_GRAPH_PASSES) {
+  while (
+    queuedAddresses.length > 0 &&
+    seenAddresses.size < MAX_ACTIVITY_ADDRESSES &&
+    graphPasses < MAX_ACTIVITY_ADDRESS_GRAPH_PASSES
+  ) {
     graphPasses += 1;
     const passCount = queuedAddresses.length;
     let processedInPass = 0;
 
-    while (queuedAddresses.length > 0 && processedInPass < passCount && seenAddresses.size < MAX_ACTIVITY_ADDRESSES) {
-      const batch = queuedAddresses.splice(0, Math.max(1, TX_FETCH_CONCURRENCY)).filter((address) => !seenAddresses.has(address));
+    while (
+      queuedAddresses.length > 0 &&
+      processedInPass < passCount &&
+      seenAddresses.size < MAX_ACTIVITY_ADDRESSES
+    ) {
+      const batch = queuedAddresses
+        .splice(0, Math.max(1, TX_FETCH_CONCURRENCY))
+        .filter((address) => !seenAddresses.has(address));
       if (batch.length === 0) {
         continue;
       }
@@ -1949,18 +2489,32 @@ async function globalActivityPayload(network) {
         seenAddresses.add(address);
       }
 
-      const addressTxGroups = await mapWithConcurrency(batch, TX_FETCH_CONCURRENCY, async (address) => {
-        try {
-          return await fetchAddressTransactionsViaMempoolPagination(address, network, 3);
-        } catch {
-          return [];
-        }
-      });
+      const addressTxGroups = await mapWithConcurrency(
+        batch,
+        TX_FETCH_CONCURRENCY,
+        async (address) => {
+          try {
+            return await fetchAddressTransactionsViaMempoolPagination(
+              address,
+              network,
+              3,
+            );
+          } catch {
+            return [];
+          }
+        },
+      );
       const batchTxs = addressTxGroups.flat();
       mailTxs.push(...batchTxs);
 
-      for (const discoveredAddress of activityAddressesFromMailTransactions(batchTxs, network)) {
-        if (!seenAddresses.has(discoveredAddress) && seenAddresses.size + queuedAddresses.length < MAX_ACTIVITY_ADDRESSES) {
+      for (const discoveredAddress of activityAddressesFromMailTransactions(
+        batchTxs,
+        network,
+      )) {
+        if (
+          !seenAddresses.has(discoveredAddress) &&
+          seenAddresses.size + queuedAddresses.length < MAX_ACTIVITY_ADDRESSES
+        ) {
           queuedAddresses.push(discoveredAddress);
         }
       }
@@ -1968,10 +2522,15 @@ async function globalActivityPayload(network) {
   }
 
   const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
-  const activity = dedupeActivityItems([...(registry.activity ?? []), ...mailActivity]);
+  const activity = dedupeActivityItems([
+    ...(registry.activity ?? []),
+    ...mailActivity,
+  ]);
   const dataBytes = totalProtocolDataBytes(activity);
   const fileActions = activity.filter((item) => item.kind === "file").length;
-  const messageActions = activity.filter((item) => item.kind === "mail" || item.kind === "reply").length;
+  const messageActions = activity.filter(
+    (item) => item.kind === "mail" || item.kind === "reply",
+  ).length;
 
   const payload = {
     activity,
@@ -2020,7 +2579,10 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       return [];
     }
 
-    const blockTime = typeof tx.status?.block_time === "number" ? tx.status.block_time * 1000 : Date.now();
+    const blockTime =
+      typeof tx.status?.block_time === "number"
+        ? tx.status.block_time * 1000
+        : Date.now();
     const baseEvent = {
       amountSats: amount,
       blockHeight: transactionBlockHeight(tx),
@@ -2084,7 +2646,10 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           ...baseEvent,
           id: eventMessage.id,
           kind: "list",
-          listingAnchorPresent: listingAnchorIsPresent(vout, eventMessage.saleAuthorization),
+          listingAnchorPresent: listingAnchorIsPresent(
+            vout,
+            eventMessage.saleAuthorization,
+          ),
           listingVersion: eventMessage.listingVersion,
           priceSats: eventMessage.priceSats,
           saleAuthorization: eventMessage.saleAuthorization,
@@ -2133,7 +2698,11 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     .sort(compareRegistryEventOrder);
   const pendingRegistrations = events
     .filter((event) => !event.confirmed && event.kind === "register")
-    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
+    .sort(
+      (left, right) =>
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    );
   const records = new Map();
   const listings = new Map();
   const confirmedSales = [];
@@ -2173,9 +2742,15 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       const listing = listings.get(event.listingId);
       const current = listing ? records.get(listing.id) : undefined;
       const anchorOk =
-        (event.delistingVersion !== "delist3" && event.delistingVersion !== "delist5") ||
+        (event.delistingVersion !== "delist3" &&
+          event.delistingVersion !== "delist5") ||
         (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
-      if (listing && current && event.inputAddresses.includes(current.ownerAddress) && anchorOk) {
+      if (
+        listing &&
+        current &&
+        event.inputAddresses.includes(current.ownerAddress) &&
+        anchorOk
+      ) {
         listings.delete(event.listingId);
         acceptedActivityEvents.push(event);
       }
@@ -2193,7 +2768,10 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         !event.inputAddresses.includes(current.ownerAddress) ||
         !saleAuthorizationUsesSaleTicketAnchor(event.saleAuthorization) ||
         event.saleAuthorization.anchorTxid !== listing.listingId ||
-        !saleAuthorizationTermsMatchIgnoringSeal(listing.saleAuthorization, event.saleAuthorization)
+        !saleAuthorizationTermsMatchIgnoringSeal(
+          listing.saleAuthorization,
+          event.saleAuthorization,
+        )
       ) {
         continue;
       }
@@ -2214,22 +2792,41 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
     }
 
     if (event.kind === "marketTransfer") {
-      if (event.transferVersion === "buy3" || event.transferVersion === "buy4" || event.transferVersion === "buy5") {
-        const listing = event.listingId ? listings.get(event.listingId) : undefined;
+      if (
+        event.transferVersion === "buy3" ||
+        event.transferVersion === "buy4" ||
+        event.transferVersion === "buy5"
+      ) {
+        const listing = event.listingId
+          ? listings.get(event.listingId)
+          : undefined;
         const current = listing ? records.get(listing.id) : undefined;
-        const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
+        const sellerPaymentSats = listing
+          ? paymentAmountFromSnapshots(
+              event.paymentOutputs,
+              listing.sellerAddress,
+            )
+          : 0;
         if (
           !listing ||
           !current ||
-          (event.transferVersion === "buy3" && listing.listingVersion !== "list3") ||
-          (event.transferVersion === "buy4" && listing.listingVersion !== "list4") ||
-          (event.transferVersion === "buy5" && listing.listingVersion !== "list5") ||
+          (event.transferVersion === "buy3" &&
+            listing.listingVersion !== "list3") ||
+          (event.transferVersion === "buy4" &&
+            listing.listingVersion !== "list4") ||
+          (event.transferVersion === "buy5" &&
+            listing.listingVersion !== "list5") ||
           current.ownerAddress !== listing.sellerAddress ||
           !spendsListingAnchor(event.spentOutpoints, listing) ||
           sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
-          saleAuthorizationExpired(listing.saleAuthorization, event.createdAt) ||
-          (listing.buyerAddress && listing.buyerAddress !== event.ownerAddress) ||
-          (listing.receiveAddress && listing.receiveAddress !== event.receiveAddress)
+          saleAuthorizationExpired(
+            listing.saleAuthorization,
+            event.createdAt,
+          ) ||
+          (listing.buyerAddress &&
+            listing.buyerAddress !== event.ownerAddress) ||
+          (listing.receiveAddress &&
+            listing.receiveAddress !== event.receiveAddress)
         ) {
           continue;
         }
@@ -2261,18 +2858,31 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         continue;
       }
 
-      if (event.id && event.saleAuthorization && event.sellerAddress && typeof event.priceSats === "number") {
+      if (
+        event.id &&
+        event.saleAuthorization &&
+        event.sellerAddress &&
+        typeof event.priceSats === "number"
+      ) {
         const current = records.get(event.id);
         if (!current) {
           continue;
         }
 
-        const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
+        const matchingListing = findMatchingActiveListing(
+          listings,
+          event.saleAuthorization,
+          current.ownerAddress,
+        );
         if (
           current.ownerAddress !== event.sellerAddress ||
-          paymentAmountFromSnapshots(event.paymentOutputs, event.sellerAddress) < event.priceSats ||
+          paymentAmountFromSnapshots(
+            event.paymentOutputs,
+            event.sellerAddress,
+          ) < event.priceSats ||
           saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-          (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
+          (!matchingListing &&
+            !saleAuthorizationVerified(event.saleAuthorization))
         ) {
           continue;
         }
@@ -2316,9 +2926,13 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         !event.inputAddresses.includes(current.ownerAddress) ||
         saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
         (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
-        (event.listingVersion === "list4" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
-        (event.listingVersion === "list5" && (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET || !event.listingAnchorPresent)) ||
-        (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
+        (event.listingVersion === "list4" &&
+          event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
+        (event.listingVersion === "list5" &&
+          (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET ||
+            !event.listingAnchorPresent)) ||
+        (event.listingVersion === "list2" &&
+          event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
       ) {
         continue;
       }
@@ -2387,9 +3001,17 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         const listing = listings.get(event.listingId);
         const current = listing ? records.get(listing.id) : undefined;
         const anchorOk =
-          (event.delistingVersion !== "delist3" && event.delistingVersion !== "delist5") ||
-          (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
-        if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress) || !anchorOk) {
+          (event.delistingVersion !== "delist3" &&
+            event.delistingVersion !== "delist5") ||
+          (listing
+            ? spendsListingAnchor(event.spentOutpoints, listing)
+            : false);
+        if (
+          !listing ||
+          !current ||
+          !event.inputAddresses.includes(current.ownerAddress) ||
+          !anchorOk
+        ) {
           return [];
         }
 
@@ -2421,7 +3043,10 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           !event.inputAddresses.includes(current.ownerAddress) ||
           !saleAuthorizationUsesSaleTicketAnchor(event.saleAuthorization) ||
           event.saleAuthorization.anchorTxid !== listing.listingId ||
-          !saleAuthorizationTermsMatchIgnoringSeal(listing.saleAuthorization, event.saleAuthorization)
+          !saleAuthorizationTermsMatchIgnoringSeal(
+            listing.saleAuthorization,
+            event.saleAuthorization,
+          )
         ) {
           return [];
         }
@@ -2444,22 +3069,41 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       }
 
       if (event.kind === "marketTransfer") {
-        if (event.transferVersion === "buy3" || event.transferVersion === "buy4" || event.transferVersion === "buy5") {
-          const listing = event.listingId ? listings.get(event.listingId) : undefined;
+        if (
+          event.transferVersion === "buy3" ||
+          event.transferVersion === "buy4" ||
+          event.transferVersion === "buy5"
+        ) {
+          const listing = event.listingId
+            ? listings.get(event.listingId)
+            : undefined;
           const current = listing ? records.get(listing.id) : undefined;
-          const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
+          const sellerPaymentSats = listing
+            ? paymentAmountFromSnapshots(
+                event.paymentOutputs,
+                listing.sellerAddress,
+              )
+            : 0;
           if (
             !listing ||
             !current ||
-            (event.transferVersion === "buy3" && listing.listingVersion !== "list3") ||
-            (event.transferVersion === "buy4" && listing.listingVersion !== "list4") ||
-            (event.transferVersion === "buy5" && listing.listingVersion !== "list5") ||
+            (event.transferVersion === "buy3" &&
+              listing.listingVersion !== "list3") ||
+            (event.transferVersion === "buy4" &&
+              listing.listingVersion !== "list4") ||
+            (event.transferVersion === "buy5" &&
+              listing.listingVersion !== "list5") ||
             current.ownerAddress !== listing.sellerAddress ||
             !spendsListingAnchor(event.spentOutpoints, listing) ||
             sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
-            saleAuthorizationExpired(listing.saleAuthorization, event.createdAt) ||
-            (listing.buyerAddress && listing.buyerAddress !== event.ownerAddress) ||
-            (listing.receiveAddress && listing.receiveAddress !== event.receiveAddress)
+            saleAuthorizationExpired(
+              listing.saleAuthorization,
+              event.createdAt,
+            ) ||
+            (listing.buyerAddress &&
+              listing.buyerAddress !== event.ownerAddress) ||
+            (listing.receiveAddress &&
+              listing.receiveAddress !== event.receiveAddress)
           ) {
             return [];
           }
@@ -2485,18 +3129,34 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           ];
         }
 
-        if (event.id && event.saleAuthorization && event.sellerAddress && typeof event.priceSats === "number") {
+        if (
+          event.id &&
+          event.saleAuthorization &&
+          event.sellerAddress &&
+          typeof event.priceSats === "number"
+        ) {
           const current = records.get(event.id);
           if (!current) {
             return [];
           }
 
-          const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
+          const matchingListing = findMatchingActiveListing(
+            listings,
+            event.saleAuthorization,
+            current.ownerAddress,
+          );
           if (
             current.ownerAddress !== event.sellerAddress ||
-            paymentAmountFromSnapshots(event.paymentOutputs, event.sellerAddress) < event.priceSats ||
-            saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-            (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
+            paymentAmountFromSnapshots(
+              event.paymentOutputs,
+              event.sellerAddress,
+            ) < event.priceSats ||
+            saleAuthorizationExpired(
+              event.saleAuthorization,
+              event.createdAt,
+            ) ||
+            (!matchingListing &&
+              !saleAuthorizationVerified(event.saleAuthorization))
           ) {
             return [];
           }
@@ -2535,9 +3195,13 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           !event.inputAddresses.includes(current.ownerAddress) ||
           saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
           (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
-          (event.listingVersion === "list4" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
-          (event.listingVersion === "list5" && (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET || !event.listingAnchorPresent)) ||
-          (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
+          (event.listingVersion === "list4" &&
+            event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
+          (event.listingVersion === "list5" &&
+            (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET ||
+              !event.listingAnchorPresent)) ||
+          (event.listingVersion === "list2" &&
+            event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
         ) {
           return [];
         }
@@ -2596,17 +3260,22 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         },
       ];
     })
-    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
+    .sort(
+      (left, right) =>
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    );
 
   const pendingSales = pendingEvents
-    .filter((event) =>
-      event.kind === "marketTransfer" &&
-      event.id &&
-      event.ownerAddress &&
-      Number.isSafeInteger(event.priceSats) &&
-      event.priceSats >= 0 &&
-      event.receiveAddress &&
-      event.sellerAddress
+    .filter(
+      (event) =>
+        event.kind === "marketTransfer" &&
+        event.id &&
+        event.ownerAddress &&
+        Number.isSafeInteger(event.priceSats) &&
+        event.priceSats >= 0 &&
+        event.receiveAddress &&
+        event.sellerAddress,
     )
     .map((event) => ({
       amountSats: event.amountSats,
@@ -2644,7 +3313,12 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
   }
 
   const pendingEventTxids = new Set(pendingEvents.map((event) => event.txid));
-  const pendingMutationActivityEvents = events.filter((event) => !event.confirmed && event.kind !== "register" && pendingEventTxids.has(event.txid));
+  const pendingMutationActivityEvents = events.filter(
+    (event) =>
+      !event.confirmed &&
+      event.kind !== "register" &&
+      pendingEventTxids.has(event.txid),
+  );
   const activityEvents = [
     ...acceptedActivityEvents,
     ...pendingRegistrationActivityEvents,
@@ -2652,11 +3326,18 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
   ];
 
   return {
-    activity: idActivityItemsFromEvents(activityEvents).sort(compareActivityItems),
-    listings: [...listings.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid)),
+    activity:
+      idActivityItemsFromEvents(activityEvents).sort(compareActivityItems),
+    listings: [...listings.values()].sort(
+      (left, right) =>
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    ),
     pendingEvents,
     records: accepted,
-    sales: publicMarketplaceSales([...confirmedSales, ...pendingSales]).sort(compareMarketplaceSales),
+    sales: publicMarketplaceSales([...confirmedSales, ...pendingSales]).sort(
+      compareMarketplaceSales,
+    ),
   };
 }
 
@@ -2676,7 +3357,10 @@ function inboxMessagesFromTransactions(txs, address, network) {
       return [];
     }
 
-    const blockTime = typeof tx.status?.block_time === "number" ? tx.status.block_time * 1000 : Date.now();
+    const blockTime =
+      typeof tx.status?.block_time === "number"
+        ? tx.status.block_time * 1000
+        : Date.now();
     const sender = senderAddress(vin, address);
     const message = {
       amountSats: amount,
@@ -2687,7 +3371,8 @@ function inboxMessagesFromTransactions(txs, address, network) {
       memo: protocolMessage.memo,
       network,
       recipients: recipients.length > 0 ? recipients : undefined,
-      replyTo: sender === "Unknown" ? protocolMessage.replyTo ?? "Unknown" : sender,
+      replyTo:
+        sender === "Unknown" ? (protocolMessage.replyTo ?? "Unknown") : sender,
       subject: protocolMessage.subject,
       to: address,
       txid: transactionTxid(tx),
@@ -2722,12 +3407,18 @@ function sentMessagesFromTransactions(txs, address, network) {
     }
 
     const confirmed = transactionConfirmed(tx);
-    const blockTime = typeof tx.status?.block_time === "number" ? tx.status.block_time * 1000 : Date.now();
+    const blockTime =
+      typeof tx.status?.block_time === "number"
+        ? tx.status.block_time * 1000
+        : Date.now();
     const createdAt = new Date(blockTime).toISOString();
 
     return [
       {
-        amountSats: recipients.reduce((total, recipient) => total + recipient.amountSats, 0),
+        amountSats: recipients.reduce(
+          (total, recipient) => total + recipient.amountSats,
+          0,
+        ),
         attachment: protocolMessage.attachment,
         confirmedAt: confirmed ? createdAt : undefined,
         createdAt,
@@ -2741,7 +3432,10 @@ function sentMessagesFromTransactions(txs, address, network) {
         replyTo: address,
         subject: protocolMessage.subject,
         status: confirmed ? "confirmed" : "pending",
-        to: recipients.length === 1 ? payment.display : `${payment.display} +${recipients.length - 1}`,
+        to:
+          recipients.length === 1
+            ? payment.display
+            : `${payment.display} +${recipients.length - 1}`,
         txid,
       },
     ];
@@ -2807,6 +3501,193 @@ async function registryPayload(network) {
   };
 }
 
+function pay2SpeakStateFromTransactions(txs, registryAddress, network) {
+  const campaignMap = new Map();
+  const candidateFunding = [];
+
+  for (const tx of txs) {
+    const txid = transactionTxid(tx);
+    if (!txid) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
+    const vout = Array.isArray(tx.vout) ? tx.vout : [];
+    const messages = decodedProtocolMessages(vout, PAY2SPEAK_PROTOCOL_PREFIX);
+    if (messages.length === 0) {
+      continue;
+    }
+
+    const confirmed = transactionConfirmed(tx);
+    const createdAt = new Date(
+      typeof tx.status?.block_time === "number"
+        ? tx.status.block_time * 1000
+        : Date.now(),
+    ).toISOString();
+    const actorAddress = inputAddresses(vin)[0] ?? "Unknown";
+    const registrySats = pay2SpeakPaymentAmountBeforeProtocol(
+      vout,
+      registryAddress,
+    );
+
+    for (const message of messages) {
+      const parsed = parsePay2SpeakPayload(message);
+      if (!parsed) {
+        continue;
+      }
+
+      if (parsed.kind === "campaign") {
+        if (
+          registrySats < PAY2SPEAK_REGISTRY_PRICE_SATS ||
+          !isValidBitcoinAddress(actorAddress, network)
+        ) {
+          continue;
+        }
+
+        campaignMap.set(txid, {
+          confirmed,
+          createdAt,
+          creatorAddress: actorAddress,
+          fundedGrossSats: 0,
+          fundingCount: 0,
+          handle: parsed.handle,
+          network,
+          registrySats,
+          spaceNumber: parsed.spaceNumber,
+          status: "Funding",
+          targetGrossSats: parsed.targetGrossSats,
+          title: pay2SpeakTitle(parsed.handle, parsed.spaceNumber),
+          txid,
+        });
+        continue;
+      }
+
+      candidateFunding.push({
+        campaignId: parsed.campaignId,
+        confirmed,
+        createdAt,
+        donorAddress: actorAddress,
+        network,
+        question: parsed.question,
+        registrySats,
+        txid,
+      });
+    }
+  }
+
+  const funding = candidateFunding.flatMap((candidate) => {
+    const campaign = campaignMap.get(candidate.campaignId);
+    if (!campaign) {
+      return [];
+    }
+
+    const tx = txs.find((item) => transactionTxid(item) === candidate.txid);
+    const vout = Array.isArray(tx?.vout) ? tx.vout : [];
+    const creatorSats = pay2SpeakPaymentAmountBeforeProtocol(
+      vout,
+      campaign.creatorAddress,
+    );
+    const grossSats = creatorSats + candidate.registrySats;
+    let split;
+    try {
+      split = pay2SpeakFundingSplit(grossSats);
+    } catch {
+      return [];
+    }
+
+    if (
+      split.registrySats !== candidate.registrySats ||
+      split.creatorSats !== creatorSats
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        ...candidate,
+        creatorAddress: campaign.creatorAddress,
+        creatorSats,
+        grossSats,
+      },
+    ];
+  });
+
+  for (const item of funding) {
+    const campaign = campaignMap.get(item.campaignId);
+    if (!campaign) {
+      continue;
+    }
+
+    campaign.fundedGrossSats += item.grossSats;
+    campaign.fundingCount += 1;
+    campaign.status =
+      campaign.fundedGrossSats >= campaign.targetGrossSats
+        ? "Funded"
+        : "Funding";
+  }
+
+  const questions = funding
+    .filter((item) => item.question)
+    .map((item) => ({
+      campaignId: item.campaignId,
+      confirmed: item.confirmed,
+      createdAt: item.createdAt,
+      grossSats: item.grossSats,
+      question: item.question,
+      txid: item.txid,
+    }))
+    .sort(
+      (left, right) =>
+        right.grossSats - left.grossSats ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt),
+    );
+
+  return {
+    campaigns: [...campaignMap.values()].sort(comparePay2SpeakCampaigns),
+    funding: funding.sort(
+      (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
+    ),
+    questions,
+  };
+}
+
+async function pay2SpeakPayload(network) {
+  const registryAddress = pay2SpeakRegistryAddressForNetwork(network);
+  if (!registryAddress) {
+    return {
+      campaigns: [],
+      funding: [],
+      indexedAt: new Date().toISOString(),
+      network,
+      questions: [],
+      registryAddress: "",
+    };
+  }
+
+  const txs = await fetchRegistryTransactions(registryAddress, network);
+  const state = pay2SpeakStateFromTransactions(txs, registryAddress, network);
+  return {
+    ...state,
+    indexedAt: new Date().toISOString(),
+    network,
+    registryAddress,
+    source: mempoolBase(network),
+    stats: {
+      campaigns: state.campaigns.length,
+      confirmedCampaigns: state.campaigns.filter(
+        (campaign) => campaign.confirmed,
+      ).length,
+      funding: state.funding.length,
+      grossSats: state.campaigns.reduce(
+        (total, campaign) => total + campaign.fundedGrossSats,
+        0,
+      ),
+      questions: state.questions.length,
+      transactions: txs.length,
+    },
+  };
+}
+
 async function mailPayload(address, network) {
   const txs = await fetchAddressTransactions(address, network);
   const inboxMessages = inboxMessagesFromTransactions(txs, address, network);
@@ -2823,8 +3704,10 @@ async function mailPayload(address, network) {
       inbox: inboxMessages.filter((message) => message.confirmed).length,
       incoming: inboxMessages.filter((message) => !message.confirmed).length,
       scannedTransactions: txs.length,
-      sent: sentMessages.filter((message) => message.status === "confirmed").length,
-      outbox: sentMessages.filter((message) => message.status !== "confirmed").length,
+      sent: sentMessages.filter((message) => message.status === "confirmed")
+        .length,
+      outbox: sentMessages.filter((message) => message.status !== "confirmed")
+        .length,
     },
   };
 }
@@ -2879,7 +3762,9 @@ async function healthPayload() {
   let tipHeight = null;
   let backend = null;
   try {
-    const tip = await fetchText(`${MEMPOOL_BASE_MAINNET}/api/blocks/tip/height`);
+    const tip = await fetchText(
+      `${MEMPOOL_BASE_MAINNET}/api/blocks/tip/height`,
+    );
     tipHeight = Number(tip);
   } catch {
     tipHeight = null;
@@ -2905,7 +3790,8 @@ async function healthPayload() {
 async function handleRequest(request, response) {
   if (request.method === "OPTIONS") {
     response.writeHead(204, {
-      "Access-Control-Allow-Headers": "Accept, Authorization, Cache-Control, Content-Type",
+      "Access-Control-Allow-Headers":
+        "Accept, Authorization, Cache-Control, Content-Type",
       "Access-Control-Allow-Methods": "GET, OPTIONS",
       "Access-Control-Allow-Origin": CORS_ORIGIN,
     });
@@ -2918,7 +3804,10 @@ async function handleRequest(request, response) {
     return;
   }
 
-  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  const url = new URL(
+    request.url ?? "/",
+    `http://${request.headers.host ?? "localhost"}`,
+  );
   const pathParts = url.pathname.split("/").filter(Boolean);
 
   try {
@@ -2930,16 +3819,41 @@ async function handleRequest(request, response) {
     const network = networkFromSearch(url.searchParams);
 
     if (url.pathname === "/api/v1/registry" || url.pathname === "/api/v1/ids") {
-      jsonResponse(response, 200, await registryPayload(network), "public, max-age=15");
+      jsonResponse(
+        response,
+        200,
+        await registryPayload(network),
+        "public, max-age=15",
+      );
       return;
     }
 
     if (url.pathname === "/api/v1/activity" || url.pathname === "/api/v1/log") {
-      jsonResponse(response, 200, await globalActivityPayload(network), "public, max-age=15");
+      jsonResponse(
+        response,
+        200,
+        await globalActivityPayload(network),
+        "public, max-age=15",
+      );
       return;
     }
 
-    if (pathParts.length === 4 && pathParts[0] === "api" && pathParts[1] === "v1" && pathParts[2] === "ids") {
+    if (url.pathname === "/api/v1/pay2speak") {
+      jsonResponse(
+        response,
+        200,
+        await pay2SpeakPayload(network),
+        "public, max-age=15",
+      );
+      return;
+    }
+
+    if (
+      pathParts.length === 4 &&
+      pathParts[0] === "api" &&
+      pathParts[1] === "v1" &&
+      pathParts[2] === "ids"
+    ) {
       const id = normalizePowId(decodeURIComponent(pathParts[3]));
       const registry = await registryPayload(network);
       const records = registry.records.filter((record) => record.id === id);
@@ -2956,29 +3870,56 @@ async function handleRequest(request, response) {
       return;
     }
 
-    if (pathParts.length === 5 && pathParts[0] === "api" && pathParts[1] === "v1" && pathParts[2] === "address" && pathParts[4] === "mail") {
+    if (
+      pathParts.length === 5 &&
+      pathParts[0] === "api" &&
+      pathParts[1] === "v1" &&
+      pathParts[2] === "address" &&
+      pathParts[4] === "mail"
+    ) {
       const address = decodeURIComponent(pathParts[3]);
       if (!isValidBitcoinAddress(address, network)) {
         errorResponse(response, 400, "Invalid address for network.");
         return;
       }
 
-      jsonResponse(response, 200, await mailPayload(address, network), "public, max-age=10");
+      jsonResponse(
+        response,
+        200,
+        await mailPayload(address, network),
+        "public, max-age=10",
+      );
       return;
     }
 
-    if (pathParts.length === 5 && pathParts[0] === "api" && pathParts[1] === "v1" && pathParts[2] === "tx" && pathParts[4] === "status") {
+    if (
+      pathParts.length === 5 &&
+      pathParts[0] === "api" &&
+      pathParts[1] === "v1" &&
+      pathParts[2] === "tx" &&
+      pathParts[4] === "status"
+    ) {
       const txid = pathParts[3].toLowerCase();
       if (!/^[0-9a-f]{64}$/u.test(txid)) {
         errorResponse(response, 400, "Invalid txid.");
         return;
       }
 
-      jsonResponse(response, 200, await txStatusPayload(txid, network), "no-store");
+      jsonResponse(
+        response,
+        200,
+        await txStatusPayload(txid, network),
+        "no-store",
+      );
       return;
     }
 
-    if (pathParts.length === 4 && pathParts[0] === "api" && pathParts[1] === "v1" && pathParts[2] === "tx") {
+    if (
+      pathParts.length === 4 &&
+      pathParts[0] === "api" &&
+      pathParts[1] === "v1" &&
+      pathParts[2] === "tx"
+    ) {
       const txid = pathParts[3].toLowerCase();
       if (!/^[0-9a-f]{64}$/u.test(txid)) {
         errorResponse(response, 400, "Invalid txid.");
@@ -2997,7 +3938,11 @@ async function handleRequest(request, response) {
 
     errorResponse(response, 404, "Not found.");
   } catch (error) {
-    errorResponse(response, 500, error instanceof Error ? error.message : "Unexpected server error.");
+    errorResponse(
+      response,
+      500,
+      error instanceof Error ? error.message : "Unexpected server error.",
+    );
   }
 }
 

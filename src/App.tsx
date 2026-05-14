@@ -1,4 +1,14 @@
-import { ChangeEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  CSSProperties,
+  FormEvent,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as bitcoin from "bitcoinjs-lib";
 import { Buffer } from "buffer";
 import {
@@ -15,6 +25,7 @@ import {
   Inbox,
   LogOut,
   Mail,
+  Mic2,
   MessageCircle,
   MessageSquareQuote,
   Monitor,
@@ -40,7 +51,9 @@ import * as ecc from "@bitcoinerlab/secp256k1";
 
 bitcoin.initEccLib(ecc);
 
-const globalWithBuffer = globalThis as typeof globalThis & { Buffer?: typeof Buffer };
+const globalWithBuffer = globalThis as typeof globalThis & {
+  Buffer?: typeof Buffer;
+};
 if (!globalWithBuffer.Buffer) {
   globalWithBuffer.Buffer = Buffer;
 }
@@ -63,10 +76,18 @@ type Folder =
   | "browser"
   | "ids"
   | "marketplace"
+  | "pay2speak"
   | "log"
   | "contacts"
   | "custom";
-type SortMode = "value" | "newest" | "oldest" | "thread" | "largest" | "filetype" | "sender";
+type SortMode =
+  | "value"
+  | "newest"
+  | "oldest"
+  | "thread"
+  | "largest"
+  | "filetype"
+  | "sender";
 type FileFilter = "all" | "image" | "pdf" | "document" | "other";
 type ThemeMode = "light" | "dark";
 type BroadcastStatus = "pending" | "confirmed" | "dropped" | "unknown";
@@ -79,7 +100,13 @@ type MailAttachment = {
   data: string;
 };
 
-type AttachmentPreviewKind = "image" | "audio" | "video" | "pdf" | "text" | "unsupported";
+type AttachmentPreviewKind =
+  | "image"
+  | "audio"
+  | "video"
+  | "pdf"
+  | "text"
+  | "unsupported";
 
 type MailRecipient = {
   address: string;
@@ -162,10 +189,15 @@ type UnisatWallet = {
   getNetwork?: () => Promise<string>;
   getPublicKey?: () => Promise<string>;
   disconnect?: () => Promise<void>;
-  switchChain?: (chain: UniSatChain) => Promise<{ enum?: string; network?: string }>;
+  switchChain?: (
+    chain: UniSatChain,
+  ) => Promise<{ enum?: string; network?: string }>;
   switchNetwork?: (network: LegacyBitcoinNetwork) => Promise<string>;
   on?: (event: UniSatEvent, listener: (...args: unknown[]) => void) => void;
-  removeListener?: (event: UniSatEvent, listener: (...args: unknown[]) => void) => void;
+  removeListener?: (
+    event: UniSatEvent,
+    listener: (...args: unknown[]) => void,
+  ) => void;
   signMessage?: (message: string, type?: string) => Promise<string>;
   sendBitcoin?: (
     toAddress: string,
@@ -292,6 +324,51 @@ type PowIdMarketplaceSale = {
   txid: string;
 };
 
+type Pay2SpeakCampaign = {
+  confirmed: boolean;
+  createdAt: string;
+  creatorAddress: string;
+  fundedGrossSats: number;
+  fundingCount: number;
+  handle: string;
+  network: BitcoinNetwork;
+  registrySats: number;
+  spaceNumber: number;
+  status: "Funding" | "Funded";
+  targetGrossSats: number;
+  title: string;
+  txid: string;
+};
+
+type Pay2SpeakFunding = {
+  campaignId: string;
+  confirmed: boolean;
+  createdAt: string;
+  creatorAddress: string;
+  creatorSats: number;
+  donorAddress: string;
+  grossSats: number;
+  network: BitcoinNetwork;
+  question?: string;
+  registrySats: number;
+  txid: string;
+};
+
+type Pay2SpeakQuestion = {
+  campaignId: string;
+  confirmed: boolean;
+  createdAt: string;
+  grossSats: number;
+  question: string;
+  txid: string;
+};
+
+type Pay2SpeakState = {
+  campaigns: Pay2SpeakCampaign[];
+  funding: Pay2SpeakFunding[];
+  questions: Pay2SpeakQuestion[];
+};
+
 type PowIdMarketplaceStats = {
   confirmedSales: number;
   confirmedVolumeSats: number;
@@ -405,100 +482,100 @@ type PowIdChainOrder = {
 
 type PowIdEvent = PowIdChainOrder &
   (
-  | {
-      amountSats: number;
-      confirmed: boolean;
-      createdAt: string;
-      id: string;
-      inputAddresses: string[];
-      kind: "register";
-      network: BitcoinNetwork;
-      ownerAddress: string;
-      pgpKey?: string;
-      receiveAddress: string;
-      txid: string;
-    }
-  | {
-      amountSats: number;
-      confirmed: boolean;
-      createdAt: string;
-      id: string;
-      inputAddresses: string[];
-      kind: "update";
-      network: BitcoinNetwork;
-      receiveAddress: string;
-      txid: string;
-    }
-  | {
-      amountSats: number;
-      confirmed: boolean;
-      createdAt: string;
-      id: string;
-      inputAddresses: string[];
-      kind: "transfer";
-      network: BitcoinNetwork;
-      ownerAddress: string;
-      receiveAddress: string;
-      txid: string;
-    }
-  | {
-      amountSats: number;
-      confirmed: boolean;
-      createdAt: string;
-      id?: string;
-      inputAddresses: string[];
-      kind: "marketTransfer";
-      listingId?: string;
-      network: BitcoinNetwork;
-      ownerAddress: string;
-      paymentOutputs: PowIdPaymentSnapshot[];
-      priceSats?: number;
-      receiveAddress: string;
-      saleAuthorization?: PowIdSaleAuthorization;
-      sellerAddress?: string;
-      spentOutpoints: PowIdSpentOutpoint[];
-      transferVersion: PowIdMarketplaceTransferVersion;
-      txid: string;
-    }
-  | {
-      amountSats: number;
-      confirmed: boolean;
-      createdAt: string;
-      id: string;
-      inputAddresses: string[];
-      kind: "list";
-      listingAnchorPresent: boolean;
-      listingVersion: PowIdListingVersion;
-      network: BitcoinNetwork;
-      priceSats: number;
-      saleAuthorization: PowIdSaleAuthorization;
-      sellerAddress: string;
-      txid: string;
-    }
-  | {
-      amountSats: number;
-      confirmed: boolean;
-      createdAt: string;
-      inputAddresses: string[];
-      kind: "seal";
-      listingId: string;
-      network: BitcoinNetwork;
-      saleAuthorization: PowIdSaleAuthorization;
-      spentOutpoints: PowIdSpentOutpoint[];
-      txid: string;
-    }
-  | {
-      amountSats: number;
-      confirmed: boolean;
-      createdAt: string;
-      delistingVersion: PowIdDelistingVersion;
-      inputAddresses: string[];
-      kind: "delist";
-      listingId: string;
-      network: BitcoinNetwork;
-      spentOutpoints: PowIdSpentOutpoint[];
-      txid: string;
-    }
+    | {
+        amountSats: number;
+        confirmed: boolean;
+        createdAt: string;
+        id: string;
+        inputAddresses: string[];
+        kind: "register";
+        network: BitcoinNetwork;
+        ownerAddress: string;
+        pgpKey?: string;
+        receiveAddress: string;
+        txid: string;
+      }
+    | {
+        amountSats: number;
+        confirmed: boolean;
+        createdAt: string;
+        id: string;
+        inputAddresses: string[];
+        kind: "update";
+        network: BitcoinNetwork;
+        receiveAddress: string;
+        txid: string;
+      }
+    | {
+        amountSats: number;
+        confirmed: boolean;
+        createdAt: string;
+        id: string;
+        inputAddresses: string[];
+        kind: "transfer";
+        network: BitcoinNetwork;
+        ownerAddress: string;
+        receiveAddress: string;
+        txid: string;
+      }
+    | {
+        amountSats: number;
+        confirmed: boolean;
+        createdAt: string;
+        id?: string;
+        inputAddresses: string[];
+        kind: "marketTransfer";
+        listingId?: string;
+        network: BitcoinNetwork;
+        ownerAddress: string;
+        paymentOutputs: PowIdPaymentSnapshot[];
+        priceSats?: number;
+        receiveAddress: string;
+        saleAuthorization?: PowIdSaleAuthorization;
+        sellerAddress?: string;
+        spentOutpoints: PowIdSpentOutpoint[];
+        transferVersion: PowIdMarketplaceTransferVersion;
+        txid: string;
+      }
+    | {
+        amountSats: number;
+        confirmed: boolean;
+        createdAt: string;
+        id: string;
+        inputAddresses: string[];
+        kind: "list";
+        listingAnchorPresent: boolean;
+        listingVersion: PowIdListingVersion;
+        network: BitcoinNetwork;
+        priceSats: number;
+        saleAuthorization: PowIdSaleAuthorization;
+        sellerAddress: string;
+        txid: string;
+      }
+    | {
+        amountSats: number;
+        confirmed: boolean;
+        createdAt: string;
+        inputAddresses: string[];
+        kind: "seal";
+        listingId: string;
+        network: BitcoinNetwork;
+        saleAuthorization: PowIdSaleAuthorization;
+        spentOutpoints: PowIdSpentOutpoint[];
+        txid: string;
+      }
+    | {
+        amountSats: number;
+        confirmed: boolean;
+        createdAt: string;
+        delistingVersion: PowIdDelistingVersion;
+        inputAddresses: string[];
+        kind: "delist";
+        listingId: string;
+        network: BitcoinNetwork;
+        spentOutpoints: PowIdSpentOutpoint[];
+        txid: string;
+      }
   );
 
 type RecipientResolution = {
@@ -593,6 +670,10 @@ type PowRegistryState = {
   sales: PowIdMarketplaceSale[];
 };
 
+type Pay2SpeakApiResponse = Partial<Pay2SpeakState> & {
+  registryAddress?: string;
+};
+
 type PowActivityApiResponse = {
   activity?: PowActivityItem[];
   stats?: {
@@ -643,6 +724,7 @@ const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 const BROWSER_APP_URL = "https://browser.proofofwork.me";
 const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
+const PAY2SPEAK_APP_URL = "https://pay2speak.proofofwork.me";
 const LOG_APP_URL = "https://log.proofofwork.me";
 const GROWTH_APP_URL = "https://growth.proofofwork.me";
 const LOCAL_HOME_APP_URL = HOME_APP_URL;
@@ -651,18 +733,23 @@ const LOCAL_COMPUTER_APP_URL = "/";
 const LOCAL_DESKTOP_APP_URL = "/?desktop=1";
 const LOCAL_BROWSER_APP_URL = "/?browser=1";
 const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
+const LOCAL_PAY2SPEAK_APP_URL = "/?pay2speak=1";
 const LOCAL_LOG_APP_URL = "/?log=1";
 const LOCAL_GROWTH_APP_URL = "/?growth=1";
 const GENERAL_DECK_URL = "/proofofwork-general-deck.pptx";
-const LANDING_TESTIMONIAL_TXID = "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
+const LANDING_TESTIMONIAL_TXID =
+  "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
 const LANDING_TESTIMONIAL_TX_URL = `https://mempool.space/tx/${LANDING_TESTIMONIAL_TXID}`;
-const CANONICAL_WELCOME_TXID = "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b";
+const CANONICAL_WELCOME_TXID =
+  "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b";
 const CANONICAL_WELCOME_HTML =
   '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Welcome to ProofOfWork.Me</title><main style="font-family:system-ui,sans-serif;max-width:680px;margin:40px auto;padding:0 18px;line-height:1.55;color:#111"><p style="color:#06c;font-weight:800;text-transform:uppercase">Bitcoin Computer</p><h1>Welcome to ProofOfWork.Me</h1><p><b>ProofOfWork.Me is a computer built on Bitcoin.</b></p><p>It turns transactions into identity, mail, files, pages, marketplace actions, logs, and proof.</p><p>Your ProofOfWork ID is your Bitcoin-native name. Your Computer is where your ID, messages, files, contacts, pages, and history become usable.</p><p>Most apps ask you to trust a server. ProofOfWork.Me asks you to check the chain. Bitcoin history is the source of truth.</p><p>Claim an ID. Send mail. Save a file. Open a txid in the Browser. Watch the Log.</p><p><b>This is the Bitcoin Computer. Small today. Already real.</b></p><p><code>ProofOfWork.Me</code></p></main>\n';
 const CANONICAL_WELCOME_SENDER = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
 const CANONICAL_WELCOME_RECIPIENT = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
 const CANONICAL_WELCOME_CREATED_AT = "2026-05-13T17:58:01.000Z";
-const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "").trim().replace(/\/+$/u, "");
+const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "")
+  .trim()
+  .replace(/\/+$/u, "");
 const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_REGISTRY_TX_PAGES = 100;
@@ -684,10 +771,17 @@ const ID_LISTING_ANCHOR_TYPE = "seller-utxo-v1";
 const ID_LISTING_TICKET_ANCHOR_TYPE = "sale-ticket-v1";
 const ID_LISTING_ANCHOR_VALUE_SATS = 546;
 const ID_LISTING_ANCHOR_VOUT = 2;
-const ID_LISTING_ANCHOR_SIGHASH_TYPE = bitcoin.Transaction.SIGHASH_SINGLE | bitcoin.Transaction.SIGHASH_ANYONECANPAY;
+const ID_LISTING_ANCHOR_SIGHASH_TYPE =
+  bitcoin.Transaction.SIGHASH_SINGLE | bitcoin.Transaction.SIGHASH_ANYONECANPAY;
 const ID_LISTING_ANCHOR_SEAL_FEE_SATS = 500;
 const ID_REGISTRY_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
+};
+const PAY2SPEAK_PROTOCOL_PREFIX = "pws1:";
+const PAY2SPEAK_REGISTRY_PRICE_SATS = 1000;
+const PAY2SPEAK_SPLIT_THRESHOLD_SATS = 5460;
+const PAY2SPEAK_REGISTRY_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
+  livenet: "bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4",
 };
 const ESTIMATED_INPUT_VBYTES = 160;
 const DUST_SATS = 546;
@@ -699,10 +793,23 @@ const MAX_RECIPIENTS = 10;
 const APP_LINKS = [
   { href: HOME_APP_URL, label: "Home", localHref: LOCAL_HOME_APP_URL },
   { href: ID_APP_URL, label: "IDs", localHref: LOCAL_ID_APP_URL },
-  { href: COMPUTER_APP_URL, label: "Computer", localHref: LOCAL_COMPUTER_APP_URL },
+  {
+    href: COMPUTER_APP_URL,
+    label: "Computer",
+    localHref: LOCAL_COMPUTER_APP_URL,
+  },
   { href: DESKTOP_APP_URL, label: "Desktop", localHref: LOCAL_DESKTOP_APP_URL },
   { href: BROWSER_APP_URL, label: "Browser", localHref: LOCAL_BROWSER_APP_URL },
-  { href: MARKETPLACE_APP_URL, label: "Marketplace", localHref: LOCAL_MARKETPLACE_APP_URL },
+  {
+    href: MARKETPLACE_APP_URL,
+    label: "Marketplace",
+    localHref: LOCAL_MARKETPLACE_APP_URL,
+  },
+  {
+    href: PAY2SPEAK_APP_URL,
+    label: "Pay2Speak",
+    localHref: LOCAL_PAY2SPEAK_APP_URL,
+  },
   { href: LOG_APP_URL, label: "Log", localHref: LOCAL_LOG_APP_URL },
   { href: GROWTH_APP_URL, label: "Growth", localHref: LOCAL_GROWTH_APP_URL },
 ];
@@ -816,7 +923,10 @@ function growthFeeMultiplier(feeRate: number, elasticity: number) {
 }
 
 function growthBtcUsdAtYears(years: number) {
-  const mu = Math.log(GROWTH_MODEL_INPUTS.currentBtcUsd / GROWTH_MODEL_INPUTS.historicalBtcUsd) / GROWTH_MODEL_INPUTS.btcBenchmarkYears;
+  const mu =
+    Math.log(
+      GROWTH_MODEL_INPUTS.currentBtcUsd / GROWTH_MODEL_INPUTS.historicalBtcUsd,
+    ) / GROWTH_MODEL_INPUTS.btcBenchmarkYears;
   return GROWTH_MODEL_INPUTS.currentBtcUsd * Math.exp(mu * Math.max(0, years));
 }
 
@@ -824,17 +934,39 @@ function growthSatsToUsdAtYears(sats: number, years: number) {
   return (sats / 100_000_000) * growthBtcUsdAtYears(years);
 }
 
-function growthModelRow(horizon: { label: string; years: number; adoption: number }): GrowthModelRow {
-  const nodes = GROWTH_MODEL_INPUTS.bitnodesReachableNodes * (1 + GROWTH_MODEL_INPUTS.nodeCagr) ** horizon.years;
+function growthModelRow(horizon: {
+  label: string;
+  years: number;
+  adoption: number;
+}): GrowthModelRow {
+  const nodes =
+    GROWTH_MODEL_INPUTS.bitnodesReachableNodes *
+    (1 + GROWTH_MODEL_INPUTS.nodeCagr) ** horizon.years;
   const agentNodes = nodes * GROWTH_MODEL_INPUTS.agentShare;
   const powids = agentNodes * horizon.adoption;
   const directedPairs = powids * Math.max(0, powids - 1);
-  const idMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.id);
-  const mailMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.mail);
-  const driveMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.drive);
-  const marketplaceMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.marketplace);
-  const browserMultiplier = growthFeeMultiplier(GROWTH_MODEL_INPUTS.canonicalFee, GROWTH_MODEL_INPUTS.elasticities.browser);
-  const rawIdSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 * idMultiplier;
+  const idMultiplier = growthFeeMultiplier(
+    GROWTH_MODEL_INPUTS.canonicalFee,
+    GROWTH_MODEL_INPUTS.elasticities.id,
+  );
+  const mailMultiplier = growthFeeMultiplier(
+    GROWTH_MODEL_INPUTS.canonicalFee,
+    GROWTH_MODEL_INPUTS.elasticities.mail,
+  );
+  const driveMultiplier = growthFeeMultiplier(
+    GROWTH_MODEL_INPUTS.canonicalFee,
+    GROWTH_MODEL_INPUTS.elasticities.drive,
+  );
+  const marketplaceMultiplier = growthFeeMultiplier(
+    GROWTH_MODEL_INPUTS.canonicalFee,
+    GROWTH_MODEL_INPUTS.elasticities.marketplace,
+  );
+  const browserMultiplier = growthFeeMultiplier(
+    GROWTH_MODEL_INPUTS.canonicalFee,
+    GROWTH_MODEL_INPUTS.elasticities.browser,
+  );
+  const rawIdSats =
+    powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 * idMultiplier;
   const rawMailSats =
     directedPairs *
     GROWTH_MODEL_INPUTS.mailEdgeDensity *
@@ -861,10 +993,19 @@ function growthModelRow(horizon: { label: string; years: number; adoption: numbe
     GROWTH_MODEL_INPUTS.valueMultiple *
     browserMultiplier;
   const idWrites = powids * idMultiplier;
-  const mailWrites = directedPairs * GROWTH_MODEL_INPUTS.mailEdgeDensity * GROWTH_MODEL_INPUTS.mailMessagesPerPairPerYear * mailMultiplier;
-  const driveWrites = powids * GROWTH_MODEL_INPUTS.driveFilesPerIdPerYear * driveMultiplier;
-  const marketplaceWrites = powids * GROWTH_MODEL_INPUTS.marketplaceSalesPerIdPerYear * marketplaceMultiplier;
-  const browserWrites = powids * GROWTH_MODEL_INPUTS.browserPagesPerIdPerYear * browserMultiplier;
+  const mailWrites =
+    directedPairs *
+    GROWTH_MODEL_INPUTS.mailEdgeDensity *
+    GROWTH_MODEL_INPUTS.mailMessagesPerPairPerYear *
+    mailMultiplier;
+  const driveWrites =
+    powids * GROWTH_MODEL_INPUTS.driveFilesPerIdPerYear * driveMultiplier;
+  const marketplaceWrites =
+    powids *
+    GROWTH_MODEL_INPUTS.marketplaceSalesPerIdPerYear *
+    marketplaceMultiplier;
+  const browserWrites =
+    powids * GROWTH_MODEL_INPUTS.browserPagesPerIdPerYear * browserMultiplier;
   const rawBlockspaceVbytes =
     idWrites * GROWTH_MODEL_INPUTS.idVbytesPerWrite +
     mailWrites * GROWTH_MODEL_INPUTS.mailVbytesPerWrite +
@@ -872,13 +1013,19 @@ function growthModelRow(horizon: { label: string; years: number; adoption: numbe
     marketplaceWrites * GROWTH_MODEL_INPUTS.marketplaceVbytesPerSale +
     browserWrites * GROWTH_MODEL_INPUTS.browserVbytesPerPage;
   const blockspaceUsageRatio =
-    rawBlockspaceVbytes > 0 ? Math.min(rawBlockspaceVbytes, GROWTH_MODEL_INPUTS.blockspaceVbytesPerYear) / rawBlockspaceVbytes : 1;
+    rawBlockspaceVbytes > 0
+      ? Math.min(
+          rawBlockspaceVbytes,
+          GROWTH_MODEL_INPUTS.blockspaceVbytesPerYear,
+        ) / rawBlockspaceVbytes
+      : 1;
   const idSats = rawIdSats;
   const mailSats = rawMailSats * blockspaceUsageRatio;
   const driveSats = rawDriveSats * blockspaceUsageRatio;
   const marketplaceSats = rawMarketplaceSats * blockspaceUsageRatio;
   const browserSats = rawBrowserSats * blockspaceUsageRatio;
-  const totalSats = idSats + mailSats + driveSats + marketplaceSats + browserSats;
+  const totalSats =
+    idSats + mailSats + driveSats + marketplaceSats + browserSats;
   const btcUsdBase = growthBtcUsdAtYears(horizon.years);
 
   return {
@@ -898,17 +1045,31 @@ function growthModelRow(horizon: { label: string; years: number; adoption: numbe
     powids,
     totalSats,
     totalUsdBase: (totalSats / 100_000_000) * btcUsdBase,
-    totalWrites: idWrites + (mailWrites + driveWrites + marketplaceWrites + browserWrites) * blockspaceUsageRatio,
+    totalWrites:
+      idWrites +
+      (mailWrites + driveWrites + marketplaceWrites + browserWrites) *
+        blockspaceUsageRatio,
   };
 }
 
 function growthModelStartRow(): GrowthModelRow {
-  const idSats = GROWTH_MODEL_INPUTS.currentPowids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
-  const mailSats = GROWTH_MODEL_INPUTS.baselineMailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const driveSats = GROWTH_MODEL_INPUTS.baselineFileFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const marketplaceSats = GROWTH_MODEL_INPUTS.baselineMarketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const browserSats = GROWTH_MODEL_INPUTS.baselineBrowserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const totalSats = idSats + mailSats + driveSats + marketplaceSats + browserSats;
+  const idSats =
+    GROWTH_MODEL_INPUTS.currentPowids ** 2 *
+    GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
+  const mailSats =
+    GROWTH_MODEL_INPUTS.baselineMailFlowSats *
+    GROWTH_MODEL_INPUTS.valueMultiple;
+  const driveSats =
+    GROWTH_MODEL_INPUTS.baselineFileFlowSats *
+    GROWTH_MODEL_INPUTS.valueMultiple;
+  const marketplaceSats =
+    GROWTH_MODEL_INPUTS.baselineMarketplaceVolumeSats *
+    GROWTH_MODEL_INPUTS.valueMultiple;
+  const browserSats =
+    GROWTH_MODEL_INPUTS.baselineBrowserFlowSats *
+    GROWTH_MODEL_INPUTS.valueMultiple;
+  const totalSats =
+    idSats + mailSats + driveSats + marketplaceSats + browserSats;
   const btcUsdBase = growthBtcUsdAtYears(0);
   return {
     adoption: 0,
@@ -943,7 +1104,10 @@ function isIdLaunchRoute() {
 
   const hostname = window.location.hostname.toLowerCase();
   // Production subdomain: id.proofofwork.me. Local/dev preview: ?id-launch=1.
-  return hostname === "id.proofofwork.me" || window.location.search.includes("id-launch=1");
+  return (
+    hostname === "id.proofofwork.me" ||
+    window.location.search.includes("id-launch=1")
+  );
 }
 
 function isLandingRoute() {
@@ -953,12 +1117,21 @@ function isLandingRoute() {
 
   const hostname = window.location.hostname.toLowerCase();
   // Production front door: proofofwork.me. Local/dev preview: ?landing=1.
-  return hostname === "proofofwork.me" || hostname === "www.proofofwork.me" || window.location.search.includes("landing=1");
+  return (
+    hostname === "proofofwork.me" ||
+    hostname === "www.proofofwork.me" ||
+    window.location.search.includes("landing=1")
+  );
 }
 
 function isLocalPreviewHost() {
   const hostname = window.location.hostname.toLowerCase();
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname.endsWith(".localhost");
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname.endsWith(".localhost")
+  );
 }
 
 function appHref(productionHref: string, localHref: string) {
@@ -972,7 +1145,10 @@ function isDesktopRoute() {
 
   const hostname = window.location.hostname.toLowerCase();
   // Production public file desktop: desktop.proofofwork.me. Local/dev preview: ?desktop=1.
-  return hostname === "desktop.proofofwork.me" || window.location.search.includes("desktop=1");
+  return (
+    hostname === "desktop.proofofwork.me" ||
+    window.location.search.includes("desktop=1")
+  );
 }
 
 function isBrowserRoute() {
@@ -982,7 +1158,10 @@ function isBrowserRoute() {
 
   const hostname = window.location.hostname.toLowerCase();
   // Production Bitcoin Browser: browser.proofofwork.me. Local/dev preview: ?browser=1.
-  return hostname === "browser.proofofwork.me" || window.location.search.includes("browser=1");
+  return (
+    hostname === "browser.proofofwork.me" ||
+    window.location.search.includes("browser=1")
+  );
 }
 
 function isMarketplaceRoute() {
@@ -992,17 +1171,46 @@ function isMarketplaceRoute() {
 
   const hostname = window.location.hostname.toLowerCase();
   // Production ID marketplace: marketplace.proofofwork.me. Local/dev preview: ?marketplace=1.
-  return hostname === "marketplace.proofofwork.me" || window.location.search.includes("marketplace=1");
+  return (
+    hostname === "marketplace.proofofwork.me" ||
+    window.location.search.includes("marketplace=1")
+  );
+}
+
+function isPay2SpeakRoute() {
+  if (import.meta.env.VITE_PAY2SPEAK_ONLY === "1") {
+    return true;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  // Production X Space crowdfunding: pay2speak.proofofwork.me. Local/dev preview: ?pay2speak=1.
+  return (
+    hostname === "pay2speak.proofofwork.me" ||
+    window.location.search.includes("pay2speak=1")
+  );
+}
+
+function pay2SpeakCreatorRouteAddress() {
+  const params = new URLSearchParams(window.location.search);
+  return (params.get("creator") ?? "").trim();
 }
 
 function isActivityRoute() {
-  if (import.meta.env.VITE_ACTIVITY_ONLY === "1" || import.meta.env.VITE_LOG_ONLY === "1") {
+  if (
+    import.meta.env.VITE_ACTIVITY_ONLY === "1" ||
+    import.meta.env.VITE_LOG_ONLY === "1"
+  ) {
     return true;
   }
 
   const hostname = window.location.hostname.toLowerCase();
   // Production Bitcoin Computer log: log.proofofwork.me. Local/dev preview: ?log=1 or ?activity=1.
-  return hostname === "log.proofofwork.me" || hostname === "activity.proofofwork.me" || window.location.search.includes("log=1") || window.location.search.includes("activity=1");
+  return (
+    hostname === "log.proofofwork.me" ||
+    hostname === "activity.proofofwork.me" ||
+    window.location.search.includes("log=1") ||
+    window.location.search.includes("activity=1")
+  );
 }
 
 function isGrowthRoute() {
@@ -1012,7 +1220,10 @@ function isGrowthRoute() {
 
   const hostname = window.location.hostname.toLowerCase();
   // Production growth model: growth.proofofwork.me. Local/dev preview: ?growth=1.
-  return hostname === "growth.proofofwork.me" || window.location.search.includes("growth=1");
+  return (
+    hostname === "growth.proofofwork.me" ||
+    window.location.search.includes("growth=1")
+  );
 }
 
 function loadTheme(): ThemeMode {
@@ -1021,7 +1232,9 @@ function loadTheme(): ThemeMode {
     return stored;
   }
 
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -1088,7 +1301,12 @@ function backupFileName() {
 
 function parseBackup(text: string) {
   const parsed = JSON.parse(text) as unknown;
-  if (!isPlainRecord(parsed) || parsed.app !== BACKUP_APP || parsed.version !== BACKUP_VERSION || !isPlainRecord(parsed.data)) {
+  if (
+    !isPlainRecord(parsed) ||
+    parsed.app !== BACKUP_APP ||
+    parsed.version !== BACKUP_VERSION ||
+    !isPlainRecord(parsed.data)
+  ) {
     throw new Error("Backup file is not a supported ProofOfWork.Me backup.");
   }
 
@@ -1119,7 +1337,9 @@ function backupDataSummary(data: Record<string, string>) {
     try {
       const sent = JSON.parse(data[SENT_KEY]) as unknown;
       if (Array.isArray(sent)) {
-        details.push(`${sent.length} sent/outbox message${sent.length === 1 ? "" : "s"}`);
+        details.push(
+          `${sent.length} sent/outbox message${sent.length === 1 ? "" : "s"}`,
+        );
       }
     } catch {
       // Already validated before this helper is used.
@@ -1142,7 +1362,9 @@ function backupDataSummary(data: Record<string, string>) {
     try {
       const contacts = JSON.parse(data[CONTACTS_KEY]) as unknown;
       if (Array.isArray(contacts)) {
-        details.push(`${contacts.length} contact${contacts.length === 1 ? "" : "s"}`);
+        details.push(
+          `${contacts.length} contact${contacts.length === 1 ? "" : "s"}`,
+        );
       }
     } catch {
       // Already validated before this helper is used.
@@ -1153,14 +1375,18 @@ function backupDataSummary(data: Record<string, string>) {
     try {
       const folders = JSON.parse(data[CUSTOM_FOLDERS_KEY]) as unknown;
       if (Array.isArray(folders)) {
-        details.push(`${folders.length} custom folder${folders.length === 1 ? "" : "s"}`);
+        details.push(
+          `${folders.length} custom folder${folders.length === 1 ? "" : "s"}`,
+        );
       }
     } catch {
       // Already validated before this helper is used.
     }
   }
 
-  const draftCount = Object.keys(data).filter((key) => key.startsWith(`${DRAFT_KEY_PREFIX}:`)).length;
+  const draftCount = Object.keys(data).filter((key) =>
+    key.startsWith(`${DRAFT_KEY_PREFIX}:`),
+  ).length;
   if (draftCount > 0) {
     details.push(`${draftCount} draft${draftCount === 1 ? "" : "s"}`);
   }
@@ -1177,7 +1403,9 @@ function byteLength(value: string) {
 }
 
 function bytesToHex(bytes: Uint8Array) {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 function sha256Hex(bytes: Uint8Array) {
@@ -1210,7 +1438,9 @@ function encodeTextBase64Url(value: string) {
 }
 
 function decodeTextBase64Url(value: string) {
-  return new TextDecoder("utf-8", { fatal: false }).decode(base64UrlDecodeBytes(value));
+  return new TextDecoder("utf-8", { fatal: false }).decode(
+    base64UrlDecodeBytes(value),
+  );
 }
 
 function chunkAscii(value: string, maxBytes: number) {
@@ -1245,7 +1475,9 @@ function chunkUtf8(value: string, maxBytes: number) {
 }
 
 function opReturnScriptForPayload(payload: string) {
-  const output = bitcoin.payments.embed({ data: [Buffer.from(payload, "utf8")] }).output;
+  const output = bitcoin.payments.embed({
+    data: [Buffer.from(payload, "utf8")],
+  }).output;
   if (!output) {
     throw new Error("Could not build OP_RETURN output.");
   }
@@ -1258,7 +1490,10 @@ function dataCarrierBytesForPayload(payload: string) {
 }
 
 function dataCarrierBytesForPayloads(payloads: string[]) {
-  return payloads.reduce((total, payload) => total + dataCarrierBytesForPayload(payload), 0);
+  return payloads.reduce(
+    (total, payload) => total + dataCarrierBytesForPayload(payload),
+    0,
+  );
 }
 
 function maxPayloadDataBytes(prefix: string) {
@@ -1300,7 +1535,10 @@ function proofApiUrl(path: string, network: BitcoinNetwork) {
   return `${POW_API_BASE}${path}${separator}network=${encodeURIComponent(network)}`;
 }
 
-async function fetchProofApiJson<T>(path: string, network: BitcoinNetwork): Promise<T> {
+async function fetchProofApiJson<T>(
+  path: string,
+  network: BitcoinNetwork,
+): Promise<T> {
   const response = await fetch(proofApiUrl(path, network), {
     cache: "no-store",
     headers: {
@@ -1310,13 +1548,18 @@ async function fetchProofApiJson<T>(path: string, network: BitcoinNetwork): Prom
 
   if (!response.ok) {
     const responseText = await response.text().catch(() => "");
-    throw new Error(responseText || `ProofOfWork API returned ${response.status}.`);
+    throw new Error(
+      responseText || `ProofOfWork API returned ${response.status}.`,
+    );
   }
 
   return response.json() as Promise<T>;
 }
 
-async function fetchBlockTxidIndex(blockHash: string, network: BitcoinNetwork): Promise<Map<string, number>> {
+async function fetchBlockTxidIndex(
+  blockHash: string,
+  network: BitcoinNetwork,
+): Promise<Map<string, number>> {
   if (!/^[0-9a-fA-F]{64}$/u.test(blockHash)) {
     return new Map();
   }
@@ -1324,9 +1567,12 @@ async function fetchBlockTxidIndex(blockHash: string, network: BitcoinNetwork): 
   const normalizedHash = blockHash.toLowerCase();
   const cacheKey = `${network}:${normalizedHash}`;
   if (!BLOCK_TXID_INDEX_CACHE.has(cacheKey)) {
-    const promise = fetch(`${mempoolBase(network)}/api/block/${normalizedHash}/txids`, {
-      headers: { Accept: "application/json" },
-    })
+    const promise = fetch(
+      `${mempoolBase(network)}/api/block/${normalizedHash}/txids`,
+      {
+        headers: { Accept: "application/json" },
+      },
+    )
       .then((response) => {
         if (!response.ok) {
           throw new Error(`mempool.space returned ${response.status}`);
@@ -1355,7 +1601,9 @@ async function fetchBlockTxidIndex(blockHash: string, network: BitcoinNetwork): 
 }
 
 function xVerificationUrl(record: PowIdRecord) {
-  const action = record.confirmed ? "registered" : "submitted a registration for";
+  const action = record.confirmed
+    ? "registered"
+    : "submitted a registration for";
   const text = [
     `I ${action} ${record.id}@proofofwork.me on Bitcoin.`,
     `Registry tx: ${mempoolTxUrl(record.txid, record.network)}`,
@@ -1369,8 +1617,18 @@ function registryAddressForNetwork(network: BitcoinNetwork) {
   return ID_REGISTRY_ADDRESSES[network] ?? "";
 }
 
+function pay2SpeakRegistryAddressForNetwork(network: BitcoinNetwork) {
+  return PAY2SPEAK_REGISTRY_ADDRESSES[network] ?? "";
+}
+
+function pay2SpeakTitle(handle: string, spaceNumber: number) {
+  return `@${handle} Space #${spaceNumber}`;
+}
+
 function bitcoinNetwork(network: BitcoinNetwork) {
-  return network === "livenet" ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
+  return network === "livenet"
+    ? bitcoin.networks.bitcoin
+    : bitcoin.networks.testnet;
 }
 
 function varIntSize(value: number) {
@@ -1393,11 +1651,17 @@ function outputVbytesForScript(script: Uint8Array) {
   return 8 + varIntSize(script.length) + script.length;
 }
 
-function scriptForAddress(address: string, network: BitcoinNetwork, fieldName: string) {
+function scriptForAddress(
+  address: string,
+  network: BitcoinNetwork,
+  fieldName: string,
+) {
   try {
     return bitcoin.address.toOutputScript(address, bitcoinNetwork(network));
   } catch {
-    throw new Error(`${fieldName} is not a valid ${networkLabel(network)} address.`);
+    throw new Error(
+      `${fieldName} is not a valid ${networkLabel(network)} address.`,
+    );
   }
 }
 
@@ -1424,15 +1688,28 @@ function marketplaceLegacyAnchorScriptPubKey(network: BitcoinNetwork) {
 }
 
 function validPublicKeyHex(value: string) {
-  return /^[0-9a-fA-F]{64}$/u.test(value) || /^(02|03)[0-9a-fA-F]{64}$/u.test(value) || /^04[0-9a-fA-F]{128}$/u.test(value);
+  return (
+    /^[0-9a-fA-F]{64}$/u.test(value) ||
+    /^(02|03)[0-9a-fA-F]{64}$/u.test(value) ||
+    /^04[0-9a-fA-F]{128}$/u.test(value)
+  );
 }
 
 function validSignatureHex(value: string) {
-  return /^[0-9a-fA-F]+$/u.test(value) && value.length >= 18 && value.length <= 146 && value.length % 2 === 0;
+  return (
+    /^[0-9a-fA-F]+$/u.test(value) &&
+    value.length >= 18 &&
+    value.length <= 146 &&
+    value.length % 2 === 0
+  );
 }
 
 function isTaprootScriptPubKey(script: Uint8Array) {
-  return script.length === 34 && script[0] === bitcoin.opcodes.OP_1 && script[1] === 0x20;
+  return (
+    script.length === 34 &&
+    script[0] === bitcoin.opcodes.OP_1 &&
+    script[1] === 0x20
+  );
 }
 
 function signedInputSignature(
@@ -1450,8 +1727,10 @@ function signedInputSignature(
 
   const normalizedPublicKey = publicKeyHex.toLowerCase();
   const partialSig =
-    input?.partialSig?.find((candidate) => bytesToHex(candidate.pubkey).toLowerCase() === normalizedPublicKey) ??
-    input?.partialSig?.[0];
+    input?.partialSig?.find(
+      (candidate) =>
+        bytesToHex(candidate.pubkey).toLowerCase() === normalizedPublicKey,
+    ) ?? input?.partialSig?.[0];
   if (!partialSig?.signature) {
     return undefined;
   }
@@ -1525,14 +1804,29 @@ function BrowserNetworkTabs({
   return (
     <div className="browser-network-control">
       <span>Network</span>
-      <div className="network-tabs browser-network-tabs" aria-label="Browser Bitcoin network">
-        <button aria-pressed={network === "livenet"} onClick={() => onChange("livenet")} type="button">
+      <div
+        className="network-tabs browser-network-tabs"
+        aria-label="Browser Bitcoin network"
+      >
+        <button
+          aria-pressed={network === "livenet"}
+          onClick={() => onChange("livenet")}
+          type="button"
+        >
           Mainnet
         </button>
-        <button aria-pressed={network === "testnet4"} onClick={() => onChange("testnet4")} type="button">
+        <button
+          aria-pressed={network === "testnet4"}
+          onClick={() => onChange("testnet4")}
+          type="button"
+        >
           Testnet4
         </button>
-        <button aria-pressed={network === "testnet"} onClick={() => onChange("testnet")} type="button">
+        <button
+          aria-pressed={network === "testnet"}
+          onClick={() => onChange("testnet")}
+          type="button"
+        >
           Testnet3
         </button>
       </div>
@@ -1545,14 +1839,18 @@ function shortAddress(value: string) {
     return "Unknown";
   }
 
-  return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-8)}` : value;
+  return value.length > 18
+    ? `${value.slice(0, 8)}...${value.slice(-8)}`
+    : value;
 }
 
 function mailKey(message: MailMessage) {
   return `${message.folder}-${message.network}-${message.txid}`;
 }
 
-function sentMessageKey(message: Pick<SentMessage, "from" | "network" | "txid">) {
+function sentMessageKey(
+  message: Pick<SentMessage, "from" | "network" | "txid">,
+) {
   return `${message.network}-${message.from}-${message.txid}`;
 }
 
@@ -1573,7 +1871,9 @@ function broadcastStatusRank(status: BroadcastStatus) {
 }
 
 function preferSentMessage(candidate: SentMessage, current: SentMessage) {
-  const byStatus = broadcastStatusRank(sentDeliveryStatus(candidate)) - broadcastStatusRank(sentDeliveryStatus(current));
+  const byStatus =
+    broadcastStatusRank(sentDeliveryStatus(candidate)) -
+    broadcastStatusRank(sentDeliveryStatus(current));
   if (byStatus !== 0) {
     return byStatus > 0;
   }
@@ -1585,7 +1885,10 @@ function preferSentMessage(candidate: SentMessage, current: SentMessage) {
   return Date.parse(candidate.createdAt) > Date.parse(current.createdAt);
 }
 
-function mergeSentRecord(preferred: SentMessage, fallback: SentMessage): SentMessage {
+function mergeSentRecord(
+  preferred: SentMessage,
+  fallback: SentMessage,
+): SentMessage {
   return {
     ...fallback,
     ...preferred,
@@ -1630,20 +1933,31 @@ function ownedPowIds(records: PowIdRecord[], ownerOrReceiverAddress: string) {
     return [];
   }
 
-  return records.filter((record) => record.ownerAddress === ownerOrReceiverAddress || record.receiveAddress === ownerOrReceiverAddress);
+  return records.filter(
+    (record) =>
+      record.ownerAddress === ownerOrReceiverAddress ||
+      record.receiveAddress === ownerOrReceiverAddress,
+  );
 }
 
 function normalizeSearchQuery(value: string) {
   return value.trim().toLowerCase();
 }
 
-function searchIncludes(values: Array<string | number | undefined>, query: string) {
+function searchIncludes(
+  values: Array<string | number | undefined>,
+  query: string,
+) {
   const normalized = normalizeSearchQuery(query);
   if (!normalized) {
     return true;
   }
 
-  return values.some((value) => String(value ?? "").toLowerCase().includes(normalized));
+  return values.some((value) =>
+    String(value ?? "")
+      .toLowerCase()
+      .includes(normalized),
+  );
 }
 
 function idRecordMatchesSearch(record: PowIdRecord, query: string) {
@@ -1708,7 +2022,10 @@ function pendingIdEventMatchesSearch(event: PowIdPendingEvent, query: string) {
   );
 }
 
-function pendingIdEventTouchesAddress(event: PowIdPendingEvent, targetAddress: string) {
+function pendingIdEventTouchesAddress(
+  event: PowIdPendingEvent,
+  targetAddress: string,
+) {
   if (!targetAddress) {
     return false;
   }
@@ -1723,20 +2040,36 @@ function pendingIdEventTouchesAddress(event: PowIdPendingEvent, targetAddress: s
   ].includes(targetAddress);
 }
 
-function pendingIdEventDirection(event: PowIdPendingEvent, targetAddress: string) {
+function pendingIdEventDirection(
+  event: PowIdPendingEvent,
+  targetAddress: string,
+) {
   if (!targetAddress) {
     return "Pending";
   }
 
-  if ((event.kind === "transfer" || event.kind === "marketTransfer") && (event.ownerAddress === targetAddress || event.receiveAddress === targetAddress)) {
+  if (
+    (event.kind === "transfer" || event.kind === "marketTransfer") &&
+    (event.ownerAddress === targetAddress ||
+      event.receiveAddress === targetAddress)
+  ) {
     return "Incoming";
   }
 
-  if (event.kind === "update" && event.receiveAddress === targetAddress && event.currentOwnerAddress !== targetAddress && !event.inputAddresses.includes(targetAddress)) {
+  if (
+    event.kind === "update" &&
+    event.receiveAddress === targetAddress &&
+    event.currentOwnerAddress !== targetAddress &&
+    !event.inputAddresses.includes(targetAddress)
+  ) {
     return "Incoming";
   }
 
-  if (event.currentOwnerAddress === targetAddress || event.sellerAddress === targetAddress || event.inputAddresses.includes(targetAddress)) {
+  if (
+    event.currentOwnerAddress === targetAddress ||
+    event.sellerAddress === targetAddress ||
+    event.inputAddresses.includes(targetAddress)
+  ) {
     return "Outgoing";
   }
 
@@ -1804,7 +2137,9 @@ function resolveRecipientInput(
     };
   }
 
-  const matchingRecords = registryRecords.filter((record) => record.network === targetNetwork && record.id === id);
+  const matchingRecords = registryRecords.filter(
+    (record) => record.network === targetNetwork && record.id === id,
+  );
   const confirmedRecord = matchingRecords.find((record) => record.confirmed);
   if (confirmedRecord) {
     return {
@@ -1847,7 +2182,12 @@ function resolvePowIdOwnerInput(
 ): PowIdOwnerResolution {
   const input = value.trim();
   if (!input) {
-    return { displayRecipient: "", isId: false, ownerAddress: "", receiveAddress: "" };
+    return {
+      displayRecipient: "",
+      isId: false,
+      ownerAddress: "",
+      receiveAddress: "",
+    };
   }
 
   if (isValidBitcoinAddress(input, targetNetwork)) {
@@ -1882,7 +2222,9 @@ function resolvePowIdOwnerInput(
     };
   }
 
-  const matchingRecords = registryRecords.filter((record) => record.network === targetNetwork && record.id === id);
+  const matchingRecords = registryRecords.filter(
+    (record) => record.network === targetNetwork && record.id === id,
+  );
   const confirmedRecord = matchingRecords.find((record) => record.confirmed);
   if (confirmedRecord) {
     return {
@@ -1951,11 +2293,18 @@ function resolveRecipientInputs(
   let idCount = 0;
 
   for (const input of inputs) {
-    const resolved = resolveRecipientInput(input, targetNetwork, registryRecords, registryAddress);
+    const resolved = resolveRecipientInput(
+      input,
+      targetNetwork,
+      registryRecords,
+      registryAddress,
+    );
     if (resolved.error || !resolved.paymentAddress) {
       return {
         duplicateCount,
-        error: resolved.error || "Enter valid Bitcoin addresses or confirmed ProofOfWork IDs.",
+        error:
+          resolved.error ||
+          "Enter valid Bitcoin addresses or confirmed ProofOfWork IDs.",
         idCount,
         recipients,
       };
@@ -1979,7 +2328,9 @@ function resolveRecipientInputs(
 }
 
 function needsRegistryResolution(value: string, targetNetwork: BitcoinNetwork) {
-  return splitRecipientInputs(value).some((input) => !isValidBitcoinAddress(input, targetNetwork));
+  return splitRecipientInputs(value).some(
+    (input) => !isValidBitcoinAddress(input, targetNetwork),
+  );
 }
 
 function recipientResolutionNote(resolution: MultiRecipientResolution) {
@@ -1991,13 +2342,19 @@ function recipientResolutionNote(resolution: MultiRecipientResolution) {
     return "";
   }
 
-  const pieces = [`${resolution.recipients.length} recipient${resolution.recipients.length === 1 ? "" : "s"}`];
+  const pieces = [
+    `${resolution.recipients.length} recipient${resolution.recipients.length === 1 ? "" : "s"}`,
+  ];
   if (resolution.idCount > 0) {
-    pieces.push(`${resolution.idCount} confirmed ID${resolution.idCount === 1 ? "" : "s"} resolved`);
+    pieces.push(
+      `${resolution.idCount} confirmed ID${resolution.idCount === 1 ? "" : "s"} resolved`,
+    );
   }
 
   if (resolution.duplicateCount > 0) {
-    pieces.push(`${resolution.duplicateCount} duplicate${resolution.duplicateCount === 1 ? "" : "s"} skipped`);
+    pieces.push(
+      `${resolution.duplicateCount} duplicate${resolution.duplicateCount === 1 ? "" : "s"} skipped`,
+    );
   }
 
   return pieces.join(" · ");
@@ -2035,7 +2392,10 @@ function receiveResolutionNote(resolution: RecipientResolution) {
   return "Raw Bitcoin receive address.";
 }
 
-function explorerNetworkFor(messageNetwork: BitcoinNetwork, activeNetwork: BitcoinNetwork) {
+function explorerNetworkFor(
+  messageNetwork: BitcoinNetwork,
+  activeNetwork: BitcoinNetwork,
+) {
   if (messageNetwork === "livenet" || activeNetwork === "livenet") {
     return messageNetwork;
   }
@@ -2052,19 +2412,29 @@ function isInboundFolder(folder: MailMessage["folder"]) {
 }
 
 function peerAddress(message: MailMessage) {
-  return isInboundFolder(message.folder) ? message.from : recipientSummary(message.recipients, message.to);
+  return isInboundFolder(message.folder)
+    ? message.from
+    : recipientSummary(message.recipients, message.to);
 }
 
-function recipientSummary(recipients: MailRecipient[] | undefined, fallback: string) {
+function recipientSummary(
+  recipients: MailRecipient[] | undefined,
+  fallback: string,
+) {
   if (!recipients || recipients.length === 0) {
     return fallback;
   }
 
   const first = recipients[0];
-  return recipients.length === 1 ? first.display : `${first.display} +${recipients.length - 1}`;
+  return recipients.length === 1
+    ? first.display
+    : `${first.display} +${recipients.length - 1}`;
 }
 
-function recipientListText(recipients: MailRecipient[] | undefined, fallback: string) {
+function recipientListText(
+  recipients: MailRecipient[] | undefined,
+  fallback: string,
+) {
   if (!recipients || recipients.length === 0) {
     return fallback;
   }
@@ -2078,18 +2448,25 @@ function recipientInputSummary(value: string) {
     return "No recipient";
   }
 
-  return inputs.length === 1 ? shortAddress(inputs[0]) : `${shortAddress(inputs[0])} +${inputs.length - 1}`;
+  return inputs.length === 1
+    ? shortAddress(inputs[0])
+    : `${shortAddress(inputs[0])} +${inputs.length - 1}`;
 }
 
 function totalRecipientSats(recipients: MailRecipient[]) {
-  return recipients.reduce((total, recipient) => total + recipient.amountSats, 0);
+  return recipients.reduce(
+    (total, recipient) => total + recipient.amountSats,
+    0,
+  );
 }
 
 function messageReplyAmount(message: MailMessage) {
   return message.recipients?.[0]?.amountSats ?? message.amountSats;
 }
 
-function hasAttachment(message: MailMessage): message is MailMessage & { attachment: MailAttachment } {
+function hasAttachment(
+  message: MailMessage,
+): message is MailMessage & { attachment: MailAttachment } {
   return Boolean(message.attachment);
 }
 
@@ -2226,14 +2603,25 @@ function folderSubtitle(folder: Folder) {
     return "Local address book";
   }
 
-  return folder === "archive" ? "Local archived mail" : "Attachments across mail";
+  return folder === "archive"
+    ? "Local archived mail"
+    : "Attachments across mail";
 }
 
-function mailboxSummary(inboxMessages: InboxMessage[], sentMessages: SentMessage[]) {
-  const inboxCount = inboxMessages.filter((message) => message.confirmed).length;
+function mailboxSummary(
+  inboxMessages: InboxMessage[],
+  sentMessages: SentMessage[],
+) {
+  const inboxCount = inboxMessages.filter(
+    (message) => message.confirmed,
+  ).length;
   const incomingCount = inboxMessages.length - inboxCount;
-  const sentCount = sentMessages.filter((message) => isVisibleSentStatus(sentDeliveryStatus(message))).length;
-  const outboxCount = sentMessages.filter((message) => isOutboxStatus(sentDeliveryStatus(message))).length;
+  const sentCount = sentMessages.filter((message) =>
+    isVisibleSentStatus(sentDeliveryStatus(message)),
+  ).length;
+  const outboxCount = sentMessages.filter((message) =>
+    isOutboxStatus(sentDeliveryStatus(message)),
+  ).length;
   return `${inboxCount} inbox, ${incomingCount} incoming, ${sentCount} sent, ${outboxCount} outbox`;
 }
 
@@ -2243,7 +2631,9 @@ function selectedInboundKey(folder: Folder, inboxMessages: InboxMessage[]) {
   }
 
   const confirmed = folder === "inbox";
-  const message = inboxMessages.find((inboxMessage) => inboxMessage.confirmed === confirmed);
+  const message = inboxMessages.find(
+    (inboxMessage) => inboxMessage.confirmed === confirmed,
+  );
   return message ? mailKey({ ...message, folder }) : "";
 }
 
@@ -2260,13 +2650,20 @@ function normalizeSubject(value: string) {
   return value.trim().replace(/\s+/gu, " ").slice(0, 180);
 }
 
-function messageSubject(message: { attachment?: MailAttachment; memo: string; subject?: string }) {
-  const subject = normalizeSubject(message.subject ?? "") || mailSubject(message.memo);
+function messageSubject(message: {
+  attachment?: MailAttachment;
+  memo: string;
+  subject?: string;
+}) {
+  const subject =
+    normalizeSubject(message.subject ?? "") || mailSubject(message.memo);
   if (subject !== "OP_RETURN message") {
     return subject;
   }
 
-  return message.attachment ? `Attachment: ${message.attachment.name}` : subject;
+  return message.attachment
+    ? `Attachment: ${message.attachment.name}`
+    : subject;
 }
 
 function mailPreview(message: { attachment?: MailAttachment; memo: string }) {
@@ -2275,7 +2672,9 @@ function mailPreview(message: { attachment?: MailAttachment; memo: string }) {
     return preview;
   }
 
-  return message.attachment ? `${message.attachment.name} (${formatBytes(message.attachment.size)})` : "";
+  return message.attachment
+    ? `${message.attachment.name} (${formatBytes(message.attachment.size)})`
+    : "";
 }
 
 function formatBytes(bytes: number) {
@@ -2328,7 +2727,10 @@ function isVideoAttachment(attachment: MailAttachment) {
 }
 
 function isPdfAttachment(attachment: MailAttachment) {
-  return attachment.mime.toLowerCase() === "application/pdf" || attachment.name.toLowerCase().endsWith(".pdf");
+  return (
+    attachment.mime.toLowerCase() === "application/pdf" ||
+    attachment.name.toLowerCase().endsWith(".pdf")
+  );
 }
 
 function isTextAttachment(attachment: MailAttachment) {
@@ -2354,7 +2756,9 @@ function isTextAttachment(attachment: MailAttachment) {
   );
 }
 
-function attachmentPreviewKind(attachment: MailAttachment): AttachmentPreviewKind {
+function attachmentPreviewKind(
+  attachment: MailAttachment,
+): AttachmentPreviewKind {
   if (isImageAttachment(attachment)) {
     return "image";
   }
@@ -2380,7 +2784,9 @@ function attachmentPreviewKind(attachment: MailAttachment): AttachmentPreviewKin
 
 function attachmentText(attachment: MailAttachment) {
   try {
-    return new TextDecoder("utf-8", { fatal: false }).decode(base64UrlDecodeBytes(attachment.data));
+    return new TextDecoder("utf-8", { fatal: false }).decode(
+      base64UrlDecodeBytes(attachment.data),
+    );
   } catch {
     return "";
   }
@@ -2448,7 +2854,9 @@ async function attachmentFromFile(file: File): Promise<MailAttachment> {
   }
 
   if (file.size > MAX_ATTACHMENT_BYTES) {
-    throw new Error(`Attachment must be ${formatBytes(MAX_ATTACHMENT_BYTES)} or smaller.`);
+    throw new Error(
+      `Attachment must be ${formatBytes(MAX_ATTACHMENT_BYTES)} or smaller.`,
+    );
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -2468,10 +2876,17 @@ function buildAttachmentPayloads(attachment: MailAttachment) {
   const maxChunkBytes = maxPayloadDataBytes(`${metadataPrefix}999/999:`);
   const chunks = chunkAscii(attachment.data, Math.max(1, maxChunkBytes));
 
-  return chunks.map((chunk, index) => `${metadataPrefix}${index}/${chunks.length}:${chunk}`);
+  return chunks.map(
+    (chunk, index) => `${metadataPrefix}${index}/${chunks.length}:${chunk}`,
+  );
 }
 
-function buildProtocolPayloads(subject: string, message: string, parentTxid?: string, attachment?: MailAttachment) {
+function buildProtocolPayloads(
+  subject: string,
+  message: string,
+  parentTxid?: string,
+  attachment?: MailAttachment,
+) {
   const bodyPrefix = `${PROTOCOL_PREFIX}m:`;
   const bodyChunkBytes = maxPayloadDataBytes(bodyPrefix);
   const payloads: string[] = [];
@@ -2513,7 +2928,12 @@ function powIdError(id: string) {
   return "";
 }
 
-function buildIdRegistrationPayload(id: string, ownerAddress: string, receiveAddress: string, pgpKey: string) {
+function buildIdRegistrationPayload(
+  id: string,
+  ownerAddress: string,
+  receiveAddress: string,
+  pgpKey: string,
+) {
   const pgp = pgpKey.trim();
   return `${ID_PROTOCOL_PREFIX}r2:${encodeTextBase64Url(id)}:${ownerAddress}:${receiveAddress}${pgp ? `:${encodeTextBase64Url(pgp)}` : ""}`;
 }
@@ -2522,7 +2942,11 @@ function buildIdReceiverUpdatePayload(id: string, receiveAddress: string) {
   return `${ID_PROTOCOL_PREFIX}u:${encodeTextBase64Url(id)}:${receiveAddress}`;
 }
 
-function buildIdTransferPayload(id: string, ownerAddress: string, receiveAddress: string) {
+function buildIdTransferPayload(
+  id: string,
+  ownerAddress: string,
+  receiveAddress: string,
+) {
   const receiver = receiveAddress.trim();
   return `${ID_PROTOCOL_PREFIX}t:${encodeTextBase64Url(id)}:${ownerAddress}${receiver ? `:${receiver}` : ""}`;
 }
@@ -2574,21 +2998,44 @@ function saleAuthorizationDraft({
     version,
   };
 
-  if (version === ID_SALE_AUTH_VERSION_ANCHORED || version === ID_SALE_AUTH_VERSION || version === ID_SALE_AUTH_VERSION_TICKET) {
+  if (
+    version === ID_SALE_AUTH_VERSION_ANCHORED ||
+    version === ID_SALE_AUTH_VERSION ||
+    version === ID_SALE_AUTH_VERSION_TICKET
+  ) {
     draft.anchorSigHashType =
-      typeof anchorSigHashType === "number" && Number.isSafeInteger(anchorSigHashType)
+      typeof anchorSigHashType === "number" &&
+      Number.isSafeInteger(anchorSigHashType)
         ? Math.floor(anchorSigHashType)
-        : version === ID_SALE_AUTH_VERSION || version === ID_SALE_AUTH_VERSION_TICKET
+        : version === ID_SALE_AUTH_VERSION ||
+            version === ID_SALE_AUTH_VERSION_TICKET
           ? ID_LISTING_ANCHOR_SIGHASH_TYPE
           : undefined;
     draft.anchorSignature = anchorSignature?.trim().toLowerCase() || undefined;
-    draft.anchorScriptPubKey = anchorScriptPubKey?.trim().toLowerCase() || undefined;
+    draft.anchorScriptPubKey =
+      anchorScriptPubKey?.trim().toLowerCase() || undefined;
     draft.anchorTxid = anchorTxid?.trim().toLowerCase() || undefined;
-    draft.anchorType = anchorType?.trim() || (version === ID_SALE_AUTH_VERSION_TICKET ? ID_LISTING_TICKET_ANCHOR_TYPE : version === ID_SALE_AUTH_VERSION ? ID_LISTING_ANCHOR_TYPE : ID_LISTING_ANCHOR_TYPE_LEGACY);
-    draft.anchorValueSats = typeof anchorValueSats === "number" && Number.isSafeInteger(anchorValueSats) ? Math.floor(anchorValueSats) : ID_LISTING_ANCHOR_VALUE_SATS;
-    draft.anchorVout = typeof anchorVout === "number" && Number.isSafeInteger(anchorVout) ? Math.floor(anchorVout) : ID_LISTING_ANCHOR_VOUT;
+    draft.anchorType =
+      anchorType?.trim() ||
+      (version === ID_SALE_AUTH_VERSION_TICKET
+        ? ID_LISTING_TICKET_ANCHOR_TYPE
+        : version === ID_SALE_AUTH_VERSION
+          ? ID_LISTING_ANCHOR_TYPE
+          : ID_LISTING_ANCHOR_TYPE_LEGACY);
+    draft.anchorValueSats =
+      typeof anchorValueSats === "number" &&
+      Number.isSafeInteger(anchorValueSats)
+        ? Math.floor(anchorValueSats)
+        : ID_LISTING_ANCHOR_VALUE_SATS;
+    draft.anchorVout =
+      typeof anchorVout === "number" && Number.isSafeInteger(anchorVout)
+        ? Math.floor(anchorVout)
+        : ID_LISTING_ANCHOR_VOUT;
 
-    if (version === ID_SALE_AUTH_VERSION_ANCHORED && !draft.anchorScriptPubKey) {
+    if (
+      version === ID_SALE_AUTH_VERSION_ANCHORED &&
+      !draft.anchorScriptPubKey
+    ) {
       draft.anchorScriptPubKey = marketplaceLegacyAnchorScriptPubKey("livenet");
     }
   }
@@ -2609,7 +3056,11 @@ function saleAuthorizationMessage(authorization: PowIdSaleAuthorizationDraft) {
     `expiresAt:${authorization.expiresAt || ""}`,
   ];
 
-  if (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION || authorization.version === ID_SALE_AUTH_VERSION_TICKET) {
+  if (
+    authorization.version === ID_SALE_AUTH_VERSION_ANCHORED ||
+    authorization.version === ID_SALE_AUTH_VERSION ||
+    authorization.version === ID_SALE_AUTH_VERSION_TICKET
+  ) {
     lines.push(
       `anchorType:${authorization.anchorType || ""}`,
       `anchorTxid:${authorization.anchorTxid || ""}`,
@@ -2624,24 +3075,39 @@ function saleAuthorizationMessage(authorization: PowIdSaleAuthorizationDraft) {
   return lines.join("\n");
 }
 
-function saleAuthorizationWithoutSignature(authorization: PowIdSaleAuthorization): PowIdSaleAuthorizationDraft {
+function saleAuthorizationWithoutSignature(
+  authorization: PowIdSaleAuthorization,
+): PowIdSaleAuthorizationDraft {
   return saleAuthorizationDraft(authorization);
 }
 
-function parseSaleAuthorizationText(value: string, targetNetwork: BitcoinNetwork): PowIdSaleAuthorization {
+function parseSaleAuthorizationText(
+  value: string,
+  targetNetwork: BitcoinNetwork,
+): PowIdSaleAuthorization {
   const parsed = JSON.parse(value) as unknown;
   if (!isPlainRecord(parsed)) {
     throw new Error("Sale authorization must be a JSON object.");
   }
 
   const id = normalizePowId(typeof parsed.id === "string" ? parsed.id : "");
-  const sellerAddress = typeof parsed.sellerAddress === "string" ? parsed.sellerAddress.trim() : "";
-  const buyerAddress = typeof parsed.buyerAddress === "string" ? parsed.buyerAddress.trim() : "";
-  const receiveAddress = typeof parsed.receiveAddress === "string" ? parsed.receiveAddress.trim() : "";
-  const signature = typeof parsed.signature === "string" ? parsed.signature.trim() : "";
+  const sellerAddress =
+    typeof parsed.sellerAddress === "string" ? parsed.sellerAddress.trim() : "";
+  const buyerAddress =
+    typeof parsed.buyerAddress === "string" ? parsed.buyerAddress.trim() : "";
+  const receiveAddress =
+    typeof parsed.receiveAddress === "string"
+      ? parsed.receiveAddress.trim()
+      : "";
+  const signature =
+    typeof parsed.signature === "string" ? parsed.signature.trim() : "";
   const nonce = typeof parsed.nonce === "string" ? parsed.nonce.trim() : "";
-  const expiresAt = typeof parsed.expiresAt === "string" ? parsed.expiresAt.trim() : "";
-  const priceSats = typeof parsed.priceSats === "number" ? Math.floor(parsed.priceSats) : Number.NaN;
+  const expiresAt =
+    typeof parsed.expiresAt === "string" ? parsed.expiresAt.trim() : "";
+  const priceSats =
+    typeof parsed.priceSats === "number"
+      ? Math.floor(parsed.priceSats)
+      : Number.NaN;
   const version =
     parsed.version === ID_SALE_AUTH_VERSION_LEGACY
       ? ID_SALE_AUTH_VERSION_LEGACY
@@ -2652,14 +3118,36 @@ function parseSaleAuthorizationText(value: string, targetNetwork: BitcoinNetwork
           : parsed.version === ID_SALE_AUTH_VERSION_TICKET
             ? ID_SALE_AUTH_VERSION_TICKET
             : "";
-  const anchorType = typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
-  const anchorSigHashType = typeof parsed.anchorSigHashType === "number" ? Math.floor(parsed.anchorSigHashType) : Number.NaN;
-  const anchorSignature = typeof parsed.anchorSignature === "string" ? parsed.anchorSignature.trim().toLowerCase() : "";
-  const anchorScriptPubKey = typeof parsed.anchorScriptPubKey === "string" ? parsed.anchorScriptPubKey.trim().toLowerCase() : "";
-  const anchorTxid = typeof parsed.anchorTxid === "string" ? parsed.anchorTxid.trim().toLowerCase() : "";
-  const anchorVout = typeof parsed.anchorVout === "number" ? Math.floor(parsed.anchorVout) : Number.NaN;
-  const anchorValueSats = typeof parsed.anchorValueSats === "number" ? Math.floor(parsed.anchorValueSats) : Number.NaN;
-  const sellerPublicKey = typeof parsed.sellerPublicKey === "string" ? parsed.sellerPublicKey.trim().toLowerCase() : "";
+  const anchorType =
+    typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
+  const anchorSigHashType =
+    typeof parsed.anchorSigHashType === "number"
+      ? Math.floor(parsed.anchorSigHashType)
+      : Number.NaN;
+  const anchorSignature =
+    typeof parsed.anchorSignature === "string"
+      ? parsed.anchorSignature.trim().toLowerCase()
+      : "";
+  const anchorScriptPubKey =
+    typeof parsed.anchorScriptPubKey === "string"
+      ? parsed.anchorScriptPubKey.trim().toLowerCase()
+      : "";
+  const anchorTxid =
+    typeof parsed.anchorTxid === "string"
+      ? parsed.anchorTxid.trim().toLowerCase()
+      : "";
+  const anchorVout =
+    typeof parsed.anchorVout === "number"
+      ? Math.floor(parsed.anchorVout)
+      : Number.NaN;
+  const anchorValueSats =
+    typeof parsed.anchorValueSats === "number"
+      ? Math.floor(parsed.anchorValueSats)
+      : Number.NaN;
+  const sellerPublicKey =
+    typeof parsed.sellerPublicKey === "string"
+      ? parsed.sellerPublicKey.trim().toLowerCase()
+      : "";
 
   if (!version) {
     throw new Error("Sale authorization version is not supported.");
@@ -2769,17 +3257,19 @@ function parseSaleAuthorizationText(value: string, targetNetwork: BitcoinNetwork
   };
 }
 
-function parseSaleAuthorizationJson(value: string, targetNetwork: BitcoinNetwork): PowIdSaleAuthorization {
+function parseSaleAuthorizationJson(
+  value: string,
+  targetNetwork: BitcoinNetwork,
+): PowIdSaleAuthorization {
   return parseSaleAuthorizationText(value, targetNetwork);
 }
 
 function saleAuthorizationCanBroadcast(authorization: PowIdSaleAuthorization) {
   return (
-    (
-      authorization.version === ID_SALE_AUTH_VERSION_ANCHORED ||
+    (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED ||
       authorization.version === ID_SALE_AUTH_VERSION ||
-      (authorization.version === ID_SALE_AUTH_VERSION_TICKET && saleAuthorizationUsesSaleTicketAnchor(authorization))
-    ) &&
+      (authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+        saleAuthorizationUsesSaleTicketAnchor(authorization))) &&
     Boolean(authorization.id && authorization.nonce)
   );
 }
@@ -2790,13 +3280,19 @@ function saleAuthorizationVerified(_authorization: PowIdSaleAuthorization) {
   return false;
 }
 
-function saleAuthorizationTermsMatch(left: PowIdSaleAuthorization, right: PowIdSaleAuthorization) {
+function saleAuthorizationTermsMatch(
+  left: PowIdSaleAuthorization,
+  right: PowIdSaleAuthorization,
+) {
   const leftTerms = saleAuthorizationDraft(left);
   const rightTerms = saleAuthorizationDraft(right);
   return JSON.stringify(leftTerms) === JSON.stringify(rightTerms);
 }
 
-function saleAuthorizationTermsMatchIgnoringSeal(left: PowIdSaleAuthorization, right: PowIdSaleAuthorization) {
+function saleAuthorizationTermsMatchIgnoringSeal(
+  left: PowIdSaleAuthorization,
+  right: PowIdSaleAuthorization,
+) {
   const leftTerms = saleAuthorizationDraft({
     ...left,
     anchorSignature: undefined,
@@ -2830,7 +3326,9 @@ function findMatchingActiveListing(
   return undefined;
 }
 
-function saleAuthorizationHasAnchor(authorization: PowIdSaleAuthorization): authorization is PowIdSaleAuthorization & {
+function saleAuthorizationHasAnchor(
+  authorization: PowIdSaleAuthorization,
+): authorization is PowIdSaleAuthorization & {
   anchorSigHashType?: number;
   anchorSignature?: string;
   anchorScriptPubKey: string;
@@ -2841,8 +3339,12 @@ function saleAuthorizationHasAnchor(authorization: PowIdSaleAuthorization): auth
   sellerPublicKey?: string;
 } {
   return (
-    (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED || authorization.version === ID_SALE_AUTH_VERSION || authorization.version === ID_SALE_AUTH_VERSION_TICKET) &&
-    (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY || authorization.anchorType === ID_LISTING_ANCHOR_TYPE || authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE) &&
+    (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED ||
+      authorization.version === ID_SALE_AUTH_VERSION ||
+      authorization.version === ID_SALE_AUTH_VERSION_TICKET) &&
+    (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY ||
+      authorization.anchorType === ID_LISTING_ANCHOR_TYPE ||
+      authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE) &&
     typeof authorization.anchorScriptPubKey === "string" &&
     /^[0-9a-f]+$/u.test(authorization.anchorScriptPubKey) &&
     typeof authorization.anchorVout === "number" &&
@@ -2853,7 +3355,9 @@ function saleAuthorizationHasAnchor(authorization: PowIdSaleAuthorization): auth
   );
 }
 
-function saleAuthorizationUsesSellerUtxoAnchor(authorization: PowIdSaleAuthorization): authorization is PowIdSaleAuthorization & {
+function saleAuthorizationUsesSellerUtxoAnchor(
+  authorization: PowIdSaleAuthorization,
+): authorization is PowIdSaleAuthorization & {
   anchorSigHashType: number;
   anchorSignature: string;
   anchorScriptPubKey: string;
@@ -2877,7 +3381,9 @@ function saleAuthorizationUsesSellerUtxoAnchor(authorization: PowIdSaleAuthoriza
   );
 }
 
-function saleAuthorizationUsesSaleTicketAnchor(authorization: PowIdSaleAuthorization): authorization is PowIdSaleAuthorization & {
+function saleAuthorizationUsesSaleTicketAnchor(
+  authorization: PowIdSaleAuthorization,
+): authorization is PowIdSaleAuthorization & {
   anchorSigHashType: number;
   anchorSignature: string;
   anchorScriptPubKey: string;
@@ -2947,17 +3453,31 @@ function activeListingAnchorOutpointsForAddress(
   });
 }
 
-function spendsListingAnchor(spentOutpoints: PowIdSpentOutpoint[], listing: PowIdListing) {
+function spendsListingAnchor(
+  spentOutpoints: PowIdSpentOutpoint[],
+  listing: PowIdListing,
+) {
   const anchor = listingAnchorOutpoint(listing);
-  return Boolean(anchor && spentOutpoints.some((outpoint) => outpoint.txid === anchor.txid && outpoint.vout === anchor.vout));
+  return Boolean(
+    anchor &&
+    spentOutpoints.some(
+      (outpoint) =>
+        outpoint.txid === anchor.txid && outpoint.vout === anchor.vout,
+    ),
+  );
 }
 
 function sellerPaymentRequiredSats(listing: PowIdListing) {
-  const anchorValue = saleAuthorizationHasAnchor(listing.saleAuthorization) ? listing.saleAuthorization.anchorValueSats : 0;
+  const anchorValue = saleAuthorizationHasAnchor(listing.saleAuthorization)
+    ? listing.saleAuthorization.anchorValueSats
+    : 0;
   return listing.priceSats + anchorValue;
 }
 
-function listingAnchorIsPresent(vout: Array<Record<string, unknown>>, authorization: PowIdSaleAuthorization) {
+function listingAnchorIsPresent(
+  vout: Array<Record<string, unknown>>,
+  authorization: PowIdSaleAuthorization,
+) {
   if (!saleAuthorizationHasAnchor(authorization)) {
     return false;
   }
@@ -2991,14 +3511,24 @@ function listingAnchorIsPresent(vout: Array<Record<string, unknown>>, authorizat
   );
 }
 
-async function listingAnchorSpent(listing: PowIdListing, network: BitcoinNetwork) {
+async function listingAnchorSpent(
+  listing: PowIdListing,
+  network: BitcoinNetwork,
+) {
   const anchor = listingAnchorOutpoint(listing);
-  if ((listing.listingVersion !== "list3" && listing.listingVersion !== "list4" && listing.listingVersion !== "list5") || !anchor) {
+  if (
+    (listing.listingVersion !== "list3" &&
+      listing.listingVersion !== "list4" &&
+      listing.listingVersion !== "list5") ||
+    !anchor
+  ) {
     return false;
   }
 
   try {
-    const response = await fetch(`${mempoolBase(network)}/api/tx/${anchor.txid}/outspend/${anchor.vout}`);
+    const response = await fetch(
+      `${mempoolBase(network)}/api/tx/${anchor.txid}/outspend/${anchor.vout}`,
+    );
     if (!response.ok) {
       return false;
     }
@@ -3010,12 +3540,20 @@ async function listingAnchorSpent(listing: PowIdListing, network: BitcoinNetwork
   }
 }
 
-async function filterSpendableListings(listings: PowIdListing[], network: BitcoinNetwork) {
-  const spentStates = await Promise.all(listings.map((listing) => listingAnchorSpent(listing, network)));
+async function filterSpendableListings(
+  listings: PowIdListing[],
+  network: BitcoinNetwork,
+) {
+  const spentStates = await Promise.all(
+    listings.map((listing) => listingAnchorSpent(listing, network)),
+  );
   return listings.filter((_listing, index) => !spentStates[index]);
 }
 
-function saleAuthorizationExpired(authorization: PowIdSaleAuthorization, eventCreatedAt: string) {
+function saleAuthorizationExpired(
+  authorization: PowIdSaleAuthorization,
+  eventCreatedAt: string,
+) {
   if (!authorization.expiresAt) {
     return false;
   }
@@ -3025,49 +3563,84 @@ function saleAuthorizationExpired(authorization: PowIdSaleAuthorization, eventCr
 
 function compareRegistryEventOrder(left: PowIdEvent, right: PowIdEvent) {
   if (left.confirmed && right.confirmed) {
-    const leftHeight = typeof left.blockHeight === "number" && Number.isSafeInteger(left.blockHeight) ? left.blockHeight : Number.POSITIVE_INFINITY;
-    const rightHeight = typeof right.blockHeight === "number" && Number.isSafeInteger(right.blockHeight) ? right.blockHeight : Number.POSITIVE_INFINITY;
+    const leftHeight =
+      typeof left.blockHeight === "number" &&
+      Number.isSafeInteger(left.blockHeight)
+        ? left.blockHeight
+        : Number.POSITIVE_INFINITY;
+    const rightHeight =
+      typeof right.blockHeight === "number" &&
+      Number.isSafeInteger(right.blockHeight)
+        ? right.blockHeight
+        : Number.POSITIVE_INFINITY;
     if (leftHeight !== rightHeight) {
       return leftHeight - rightHeight;
     }
 
-    const leftIndex = typeof left.blockIndex === "number" && Number.isSafeInteger(left.blockIndex) ? left.blockIndex : Number.POSITIVE_INFINITY;
-    const rightIndex = typeof right.blockIndex === "number" && Number.isSafeInteger(right.blockIndex) ? right.blockIndex : Number.POSITIVE_INFINITY;
+    const leftIndex =
+      typeof left.blockIndex === "number" &&
+      Number.isSafeInteger(left.blockIndex)
+        ? left.blockIndex
+        : Number.POSITIVE_INFINITY;
+    const rightIndex =
+      typeof right.blockIndex === "number" &&
+      Number.isSafeInteger(right.blockIndex)
+        ? right.blockIndex
+        : Number.POSITIVE_INFINITY;
     if (leftIndex !== rightIndex) {
       return leftIndex - rightIndex;
     }
   }
 
-  return Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.txid.localeCompare(right.txid);
+  return (
+    Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+    left.txid.localeCompare(right.txid)
+  );
 }
 
 function buildIdMarketplaceTransferPayload(
   listingId: string,
   ownerAddress: string,
   receiveAddress: string,
-  version: Extract<PowIdMarketplaceTransferVersion, "buy3" | "buy4" | "buy5"> = "buy5",
+  version: Extract<
+    PowIdMarketplaceTransferVersion,
+    "buy3" | "buy4" | "buy5"
+  > = "buy5",
 ) {
   const receiver = receiveAddress.trim();
   return `${ID_PROTOCOL_PREFIX}${version}:${listingId}:${ownerAddress}${receiver ? `:${receiver}` : ""}`;
 }
 
-function marketplaceTransferVersionForListing(listing: PowIdListing): Extract<PowIdMarketplaceTransferVersion, "buy3" | "buy4" | "buy5"> {
-  return listing.listingVersion === "list3" ? "buy3" : listing.listingVersion === "list4" ? "buy4" : "buy5";
+function marketplaceTransferVersionForListing(
+  listing: PowIdListing,
+): Extract<PowIdMarketplaceTransferVersion, "buy3" | "buy4" | "buy5"> {
+  return listing.listingVersion === "list3"
+    ? "buy3"
+    : listing.listingVersion === "list4"
+      ? "buy4"
+      : "buy5";
 }
 
 function listingCanBePurchased(listing: PowIdListing) {
   return (
     listing.listingVersion === "list3" ||
     listing.listingVersion === "list4" ||
-    (listing.listingVersion === "list5" && saleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization))
+    (listing.listingVersion === "list5" &&
+      saleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization))
   );
 }
 
-function buildIdListingPayload(authorization: PowIdSaleAuthorization, version: Extract<PowIdListingVersion, "list4" | "list5"> = "list5") {
+function buildIdListingPayload(
+  authorization: PowIdSaleAuthorization,
+  version: Extract<PowIdListingVersion, "list4" | "list5"> = "list5",
+) {
   return `${ID_PROTOCOL_PREFIX}${version}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
 }
 
-function buildIdSaleSealPayload(listingId: string, authorization: PowIdSaleAuthorization) {
+function buildIdSaleSealPayload(
+  listingId: string,
+  authorization: PowIdSaleAuthorization,
+) {
   if (!saleAuthorizationUsesSaleTicketAnchor(authorization)) {
     throw new Error("Sale-ticket seal signature is invalid.");
   }
@@ -3075,7 +3648,10 @@ function buildIdSaleSealPayload(listingId: string, authorization: PowIdSaleAutho
   return `${ID_PROTOCOL_PREFIX}seal5:${listingId}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
 }
 
-function buildIdDelistingPayload(listingId: string, version: PowIdDelistingVersion = "delist5") {
+function buildIdDelistingPayload(
+  listingId: string,
+  version: PowIdDelistingVersion = "delist5",
+) {
   return `${ID_PROTOCOL_PREFIX}${version}:${listingId}`;
 }
 
@@ -3089,7 +3665,10 @@ function protocolOutputScripts(payloads: string[]) {
     return script;
   });
 
-  const aggregateBytes = scripts.reduce((total, script) => total + script.length, 0);
+  const aggregateBytes = scripts.reduce(
+    (total, script) => total + script.length,
+    0,
+  );
   if (aggregateBytes > MAX_DATA_CARRIER_BYTES) {
     throw new Error(
       `OP_RETURN data-carrier scripts use ${aggregateBytes.toLocaleString()} bytes; limit is ${MAX_DATA_CARRIER_BYTES.toLocaleString()} bytes.`,
@@ -3110,12 +3689,18 @@ function sortMessages(messages: MailMessage[], sortMode: SortMode) {
   for (const message of sorted) {
     const thread = rootTxid(message);
     const previous = threadActivity.get(thread) ?? 0;
-    threadActivity.set(thread, Math.max(previous, Date.parse(message.createdAt)));
+    threadActivity.set(
+      thread,
+      Math.max(previous, Date.parse(message.createdAt)),
+    );
   }
 
   sorted.sort((left, right) => {
     if (sortMode === "value") {
-      return right.amountSats - left.amountSats || Date.parse(right.createdAt) - Date.parse(left.createdAt);
+      return (
+        right.amountSats - left.amountSats ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt)
+      );
     }
 
     if (sortMode === "newest") {
@@ -3127,29 +3712,49 @@ function sortMessages(messages: MailMessage[], sortMode: SortMode) {
     }
 
     if (sortMode === "thread") {
-      const byActivity = (threadActivity.get(rootTxid(right)) ?? 0) - (threadActivity.get(rootTxid(left)) ?? 0);
+      const byActivity =
+        (threadActivity.get(rootTxid(right)) ?? 0) -
+        (threadActivity.get(rootTxid(left)) ?? 0);
       if (byActivity !== 0) {
         return byActivity;
       }
 
       const byThread = rootTxid(left).localeCompare(rootTxid(right));
-      return byThread || Date.parse(left.createdAt) - Date.parse(right.createdAt);
+      return (
+        byThread || Date.parse(left.createdAt) - Date.parse(right.createdAt)
+      );
     }
 
     if (sortMode === "largest") {
-      return (right.attachment?.size ?? 0) - (left.attachment?.size ?? 0) || Date.parse(right.createdAt) - Date.parse(left.createdAt);
+      return (
+        (right.attachment?.size ?? 0) - (left.attachment?.size ?? 0) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt)
+      );
     }
 
     if (sortMode === "filetype") {
-      const byType = (left.attachment?.mime ?? "").localeCompare(right.attachment?.mime ?? "");
-      return byType || (left.attachment?.name ?? "").localeCompare(right.attachment?.name ?? "");
+      const byType = (left.attachment?.mime ?? "").localeCompare(
+        right.attachment?.mime ?? "",
+      );
+      return (
+        byType ||
+        (left.attachment?.name ?? "").localeCompare(
+          right.attachment?.name ?? "",
+        )
+      );
     }
 
     if (sortMode === "sender") {
-      return peerAddress(left).localeCompare(peerAddress(right)) || Date.parse(right.createdAt) - Date.parse(left.createdAt);
+      return (
+        peerAddress(left).localeCompare(peerAddress(right)) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt)
+      );
     }
 
-    return right.amountSats - left.amountSats || Date.parse(right.createdAt) - Date.parse(left.createdAt);
+    return (
+      right.amountSats - left.amountSats ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt)
+    );
   });
 
   return sorted;
@@ -3184,7 +3789,9 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-async function getWalletNetwork(wallet: UnisatWallet): Promise<BitcoinNetwork | undefined> {
+async function getWalletNetwork(
+  wallet: UnisatWallet,
+): Promise<BitcoinNetwork | undefined> {
   const chain = await wallet.getChain?.().catch(() => undefined);
   if (chain?.enum === "BITCOIN_MAINNET") {
     return "livenet";
@@ -3197,10 +3804,15 @@ async function getWalletNetwork(wallet: UnisatWallet): Promise<BitcoinNetwork | 
   }
 
   const walletNetwork = await wallet.getNetwork?.().catch(() => undefined);
-  return walletNetwork === "livenet" || walletNetwork === "testnet" ? walletNetwork : undefined;
+  return walletNetwork === "livenet" || walletNetwork === "testnet"
+    ? walletNetwork
+    : undefined;
 }
 
-async function switchWalletNetwork(wallet: UnisatWallet, network: BitcoinNetwork) {
+async function switchWalletNetwork(
+  wallet: UnisatWallet,
+  network: BitcoinNetwork,
+) {
   if (wallet.switchChain) {
     await wallet.switchChain(chainForNetwork(network));
     return;
@@ -3208,14 +3820,19 @@ async function switchWalletNetwork(wallet: UnisatWallet, network: BitcoinNetwork
 
   if (wallet.switchNetwork) {
     if (network === "testnet4") {
-      throw new Error("This UniSat version cannot switch to testnet4 through the legacy switchNetwork API.");
+      throw new Error(
+        "This UniSat version cannot switch to testnet4 through the legacy switchNetwork API.",
+      );
     }
 
     await wallet.switchNetwork(network);
   }
 }
 
-function storedMailRecipients(value: unknown, network: BitcoinNetwork): MailRecipient[] {
+function storedMailRecipients(
+  value: unknown,
+  network: BitcoinNetwork,
+): MailRecipient[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -3226,12 +3843,19 @@ function storedMailRecipients(value: unknown, network: BitcoinNetwork): MailReci
     }
 
     const recipient = item as Partial<MailRecipient>;
-    if (typeof recipient.address !== "string" || !isValidBitcoinAddress(recipient.address, network)) {
+    if (
+      typeof recipient.address !== "string" ||
+      !isValidBitcoinAddress(recipient.address, network)
+    ) {
       return [];
     }
 
-    const amountSats = typeof recipient.amountSats === "number" && recipient.amountSats > 0 ? Math.floor(recipient.amountSats) : DEFAULT_AMOUNT_SATS;
-    const id = typeof recipient.id === "string" ? normalizePowId(recipient.id) : "";
+    const amountSats =
+      typeof recipient.amountSats === "number" && recipient.amountSats > 0
+        ? Math.floor(recipient.amountSats)
+        : DEFAULT_AMOUNT_SATS;
+    const id =
+      typeof recipient.id === "string" ? normalizePowId(recipient.id) : "";
     const display =
       typeof recipient.display === "string" && recipient.display.trim()
         ? recipient.display.trim()
@@ -3275,26 +3899,46 @@ function loadSentMessages(): SentMessage[] {
       }
 
       const network: BitcoinNetwork =
-        sent.network === "livenet" || sent.network === "testnet" || sent.network === "testnet4" ? sent.network : "livenet";
+        sent.network === "livenet" ||
+        sent.network === "testnet" ||
+        sent.network === "testnet4"
+          ? sent.network
+          : "livenet";
       const recipients = storedMailRecipients(sent.recipients, network);
       const toRecipients = storedMailRecipients(sent.toRecipients, network);
       const ccRecipients = storedMailRecipients(sent.ccRecipients, network);
 
       return [
         {
-          amountSats: typeof sent.amountSats === "number" ? sent.amountSats : DEFAULT_AMOUNT_SATS,
+          amountSats:
+            typeof sent.amountSats === "number"
+              ? sent.amountSats
+              : DEFAULT_AMOUNT_SATS,
           attachment: storedAttachment(sent.attachment),
-          confirmedAt: typeof sent.confirmedAt === "string" ? sent.confirmedAt : undefined,
-          createdAt: typeof sent.createdAt === "string" ? sent.createdAt : new Date().toISOString(),
-          droppedAt: typeof sent.droppedAt === "string" ? sent.droppedAt : undefined,
-          feeRate: typeof sent.feeRate === "number" ? sent.feeRate : DEFAULT_FEE_RATE,
+          confirmedAt:
+            typeof sent.confirmedAt === "string" ? sent.confirmedAt : undefined,
+          createdAt:
+            typeof sent.createdAt === "string"
+              ? sent.createdAt
+              : new Date().toISOString(),
+          droppedAt:
+            typeof sent.droppedAt === "string" ? sent.droppedAt : undefined,
+          feeRate:
+            typeof sent.feeRate === "number" ? sent.feeRate : DEFAULT_FEE_RATE,
           from: sent.from,
-          lastCheckedAt: typeof sent.lastCheckedAt === "string" ? sent.lastCheckedAt : undefined,
+          lastCheckedAt:
+            typeof sent.lastCheckedAt === "string"
+              ? sent.lastCheckedAt
+              : undefined,
           memo: sent.memo,
           network,
-          parentTxid: typeof sent.parentTxid === "string" ? sent.parentTxid : undefined,
+          parentTxid:
+            typeof sent.parentTxid === "string" ? sent.parentTxid : undefined,
           recipients: recipients.length > 0 ? recipients : undefined,
-          subject: typeof sent.subject === "string" ? sent.subject.slice(0, 180) : undefined,
+          subject:
+            typeof sent.subject === "string"
+              ? sent.subject.slice(0, 180)
+              : undefined,
           toRecipients: toRecipients.length > 0 ? toRecipients : undefined,
           ccRecipients: ccRecipients.length > 0 ? ccRecipients : undefined,
           replyTo: typeof sent.replyTo === "string" ? sent.replyTo : sent.from,
@@ -3338,7 +3982,13 @@ function loadMailPreferences(): MailPreferences {
         }
 
         if (Array.isArray(preference.folders)) {
-          const folders = [...new Set(preference.folders.filter((folder) => typeof folder === "string" && folder.trim()).map((folder) => folder.trim()))];
+          const folders = [
+            ...new Set(
+              preference.folders
+                .filter((folder) => typeof folder === "string" && folder.trim())
+                .map((folder) => folder.trim()),
+            ),
+          ];
           if (folders.length > 0) {
             normalized.folders = folders;
           }
@@ -3371,7 +4021,11 @@ function customFolderId(name: string) {
 }
 
 function sortCustomFolders(folders: CustomFolderRecord[]) {
-  return [...folders].sort((left, right) => left.name.localeCompare(right.name) || left.createdAt.localeCompare(right.createdAt));
+  return [...folders].sort(
+    (left, right) =>
+      left.name.localeCompare(right.name) ||
+      left.createdAt.localeCompare(right.createdAt),
+  );
 }
 
 function storedCustomFolder(value: unknown): CustomFolderRecord | undefined {
@@ -3381,13 +4035,18 @@ function storedCustomFolder(value: unknown): CustomFolderRecord | undefined {
 
   const folder = value as Partial<CustomFolderRecord>;
   const id = typeof folder.id === "string" ? folder.id.trim().slice(0, 80) : "";
-  const name = typeof folder.name === "string" ? normalizeFolderName(folder.name) : "";
+  const name =
+    typeof folder.name === "string" ? normalizeFolderName(folder.name) : "";
   if (!id || !name) {
     return undefined;
   }
 
   return {
-    createdAt: typeof folder.createdAt === "string" && !Number.isNaN(Date.parse(folder.createdAt)) ? folder.createdAt : new Date().toISOString(),
+    createdAt:
+      typeof folder.createdAt === "string" &&
+      !Number.isNaN(Date.parse(folder.createdAt))
+        ? folder.createdAt
+        : new Date().toISOString(),
     id,
     name,
   };
@@ -3401,17 +4060,22 @@ function loadCustomFolders(): CustomFolderRecord[] {
       return [];
     }
 
-    return sortCustomFolders(parsed.flatMap((folder): CustomFolderRecord[] => {
-      const normalized = storedCustomFolder(folder);
-      return normalized ? [normalized] : [];
-    }));
+    return sortCustomFolders(
+      parsed.flatMap((folder): CustomFolderRecord[] => {
+        const normalized = storedCustomFolder(folder);
+        return normalized ? [normalized] : [];
+      }),
+    );
   } catch {
     return [];
   }
 }
 
 function saveCustomFolders(folders: CustomFolderRecord[]) {
-  localStorage.setItem(CUSTOM_FOLDERS_KEY, JSON.stringify(sortCustomFolders(folders)));
+  localStorage.setItem(
+    CUSTOM_FOLDERS_KEY,
+    JSON.stringify(sortCustomFolders(folders)),
+  );
 }
 
 function normalizeContactName(name: string, fallback: string) {
@@ -3422,7 +4086,9 @@ function contactTarget(contact: Pick<ContactRecord, "address" | "powId">) {
   return contact.powId ? `${contact.powId}@proofofwork.me` : contact.address;
 }
 
-function contactKey(contact: Pick<ContactRecord, "address" | "network" | "powId">) {
+function contactKey(
+  contact: Pick<ContactRecord, "address" | "network" | "powId">,
+) {
   return `${contact.network}:${contact.powId ? `id:${contact.powId}` : `addr:${contact.address}`}`;
 }
 
@@ -3437,7 +4103,10 @@ function sortContacts(contacts: ContactRecord[]) {
       return byNetwork;
     }
 
-    return left.name.localeCompare(right.name) || contactTarget(left).localeCompare(contactTarget(right));
+    return (
+      left.name.localeCompare(right.name) ||
+      contactTarget(left).localeCompare(contactTarget(right))
+    );
   });
 }
 
@@ -3448,21 +4117,43 @@ function storedContact(value: unknown): ContactRecord | undefined {
 
   const contact = value as Partial<ContactRecord>;
   const network: BitcoinNetwork | undefined =
-    contact.network === "livenet" || contact.network === "testnet" || contact.network === "testnet4" ? contact.network : undefined;
+    contact.network === "livenet" ||
+    contact.network === "testnet" ||
+    contact.network === "testnet4"
+      ? contact.network
+      : undefined;
 
-  if (!network || typeof contact.address !== "string" || !isValidBitcoinAddress(contact.address, network)) {
+  if (
+    !network ||
+    typeof contact.address !== "string" ||
+    !isValidBitcoinAddress(contact.address, network)
+  ) {
     return undefined;
   }
 
-  const powId = typeof contact.powId === "string" ? normalizePowId(contact.powId) : "";
-  const target = powId ? `${powId}@proofofwork.me` : shortAddress(contact.address);
-  const createdAt = typeof contact.createdAt === "string" && !Number.isNaN(Date.parse(contact.createdAt)) ? contact.createdAt : new Date().toISOString();
-  const updatedAt = typeof contact.updatedAt === "string" && !Number.isNaN(Date.parse(contact.updatedAt)) ? contact.updatedAt : createdAt;
+  const powId =
+    typeof contact.powId === "string" ? normalizePowId(contact.powId) : "";
+  const target = powId
+    ? `${powId}@proofofwork.me`
+    : shortAddress(contact.address);
+  const createdAt =
+    typeof contact.createdAt === "string" &&
+    !Number.isNaN(Date.parse(contact.createdAt))
+      ? contact.createdAt
+      : new Date().toISOString();
+  const updatedAt =
+    typeof contact.updatedAt === "string" &&
+    !Number.isNaN(Date.parse(contact.updatedAt))
+      ? contact.updatedAt
+      : createdAt;
 
   return {
     address: contact.address,
     createdAt,
-    name: normalizeContactName(typeof contact.name === "string" ? contact.name : "", target),
+    name: normalizeContactName(
+      typeof contact.name === "string" ? contact.name : "",
+      target,
+    ),
     network,
     powId: powId || undefined,
     source: contact.source === "registry" ? "registry" : "manual",
@@ -3478,10 +4169,12 @@ function loadContacts(): ContactRecord[] {
       return [];
     }
 
-    return sortContacts(parsed.flatMap((contact): ContactRecord[] => {
-      const normalized = storedContact(contact);
-      return normalized ? [normalized] : [];
-    }));
+    return sortContacts(
+      parsed.flatMap((contact): ContactRecord[] => {
+        const normalized = storedContact(contact);
+        return normalized ? [normalized] : [];
+      }),
+    );
   } catch {
     return [];
   }
@@ -3493,7 +4186,9 @@ function saveContacts(contacts: ContactRecord[]) {
 
 function upsertContact(contacts: ContactRecord[], contact: ContactRecord) {
   const key = contactKey(contact);
-  const next = new Map(contacts.map((current) => [contactKey(current), current]));
+  const next = new Map(
+    contacts.map((current) => [contactKey(current), current]),
+  );
   const existing = next.get(key);
   next.set(key, {
     ...existing,
@@ -3576,9 +4271,16 @@ function contactFromInput(
     };
   }
 
-  const resolved = resolveRecipientInput(trimmedTarget, network, registryRecords, registryAddress);
+  const resolved = resolveRecipientInput(
+    trimmedTarget,
+    network,
+    registryRecords,
+    registryAddress,
+  );
   if (resolved.error || !resolved.paymentAddress || !resolved.id) {
-    throw new Error(resolved.error || "Enter a valid address or confirmed ProofOfWork ID.");
+    throw new Error(
+      resolved.error || "Enter a valid address or confirmed ProofOfWork ID.",
+    );
   }
 
   const fallback = `${resolved.id}@proofofwork.me`;
@@ -3625,7 +4327,10 @@ function storedAttachment(value: unknown): MailAttachment | undefined {
   };
 }
 
-function loadDraft(address: string, network: BitcoinNetwork): DraftMessage | undefined {
+function loadDraft(
+  address: string,
+  network: BitcoinNetwork,
+): DraftMessage | undefined {
   try {
     const stored = localStorage.getItem(draftKey(address, network));
     if (!stored) {
@@ -3633,22 +4338,38 @@ function loadDraft(address: string, network: BitcoinNetwork): DraftMessage | und
     }
 
     const draft = JSON.parse(stored) as Partial<DraftMessage>;
-    const amountSats = typeof draft.amountSats === "number" && Number.isFinite(draft.amountSats) ? draft.amountSats : DEFAULT_AMOUNT_SATS;
-    const feeRate = typeof draft.feeRate === "number" && Number.isFinite(draft.feeRate) ? draft.feeRate : DEFAULT_FEE_RATE;
-    const parentTxid = typeof draft.parentTxid === "string" && /^[0-9a-fA-F]{64}$/.test(draft.parentTxid) ? draft.parentTxid.toLowerCase() : undefined;
-    const updatedAt = typeof draft.updatedAt === "string" && !Number.isNaN(Date.parse(draft.updatedAt)) ? draft.updatedAt : new Date().toISOString();
+    const amountSats =
+      typeof draft.amountSats === "number" && Number.isFinite(draft.amountSats)
+        ? draft.amountSats
+        : DEFAULT_AMOUNT_SATS;
+    const feeRate =
+      typeof draft.feeRate === "number" && Number.isFinite(draft.feeRate)
+        ? draft.feeRate
+        : DEFAULT_FEE_RATE;
+    const parentTxid =
+      typeof draft.parentTxid === "string" &&
+      /^[0-9a-fA-F]{64}$/.test(draft.parentTxid)
+        ? draft.parentTxid.toLowerCase()
+        : undefined;
+    const updatedAt =
+      typeof draft.updatedAt === "string" &&
+      !Number.isNaN(Date.parse(draft.updatedAt))
+        ? draft.updatedAt
+        : new Date().toISOString();
 
     return {
       amountSats,
       attachment: storedAttachment(draft.attachment),
-      ccRecipient: typeof draft.ccRecipient === "string" ? draft.ccRecipient : "",
+      ccRecipient:
+        typeof draft.ccRecipient === "string" ? draft.ccRecipient : "",
       feeRate,
       from: address,
       memo: typeof draft.memo === "string" ? draft.memo : DEFAULT_MEMO,
       network,
       parentTxid,
       recipient: typeof draft.recipient === "string" ? draft.recipient : "",
-      subject: typeof draft.subject === "string" ? draft.subject.slice(0, 180) : "",
+      subject:
+        typeof draft.subject === "string" ? draft.subject.slice(0, 180) : "",
       updatedAt,
     };
   } catch {
@@ -3657,7 +4378,10 @@ function loadDraft(address: string, network: BitcoinNetwork): DraftMessage | und
 }
 
 function saveDraft(draft: DraftMessage) {
-  localStorage.setItem(draftKey(draft.from, draft.network), JSON.stringify(draft));
+  localStorage.setItem(
+    draftKey(draft.from, draft.network),
+    JSON.stringify(draft),
+  );
 }
 
 function clearDraft(address: string, network: BitcoinNetwork) {
@@ -3667,13 +4391,13 @@ function clearDraft(address: string, network: BitcoinNetwork) {
 function isDraftContentful(draft: DraftMessage) {
   return Boolean(
     draft.recipient.trim() ||
-      draft.ccRecipient?.trim() ||
-      draft.subject?.trim() ||
-      draft.memo.trim() ||
-      draft.attachment ||
-      draft.parentTxid ||
-      draft.amountSats !== DEFAULT_AMOUNT_SATS ||
-      draft.feeRate !== DEFAULT_FEE_RATE,
+    draft.ccRecipient?.trim() ||
+    draft.subject?.trim() ||
+    draft.memo.trim() ||
+    draft.attachment ||
+    draft.parentTxid ||
+    draft.amountSats !== DEFAULT_AMOUNT_SATS ||
+    draft.feeRate !== DEFAULT_FEE_RATE,
   );
 }
 
@@ -3705,14 +4429,26 @@ function decodedOpReturnMessages(vout: Array<Record<string, unknown>>) {
     .filter(Boolean);
 }
 
-function decodedProtocolMessages(vout: Array<Record<string, unknown>>, prefix: string) {
-  return decodedOpReturnMessages(vout).filter((message) => message.startsWith(prefix));
+function decodedProtocolMessages(
+  vout: Array<Record<string, unknown>>,
+  prefix: string,
+) {
+  return decodedOpReturnMessages(vout).filter((message) =>
+    message.startsWith(prefix),
+  );
 }
 
 function proofProtocolDataBytesForVout(vout: Array<Record<string, unknown>>) {
   return decodedOpReturnMessages(vout)
-    .filter((message) => message.startsWith(PROTOCOL_PREFIX) || message.startsWith(ID_PROTOCOL_PREFIX))
-    .reduce((total, message) => total + new TextEncoder().encode(message).byteLength, 0);
+    .filter(
+      (message) =>
+        message.startsWith(PROTOCOL_PREFIX) ||
+        message.startsWith(ID_PROTOCOL_PREFIX),
+    )
+    .reduce(
+      (total, message) => total + new TextEncoder().encode(message).byteLength,
+      0,
+    );
 }
 
 function firstProtocolOutputIndex(vout: Array<Record<string, unknown>>) {
@@ -3721,7 +4457,9 @@ function firstProtocolOutputIndex(vout: Array<Record<string, unknown>>) {
       return false;
     }
 
-    return decodedOpReturnMessages([output]).some((message) => message.startsWith(PROTOCOL_PREFIX));
+    return decodedOpReturnMessages([output]).some((message) =>
+      message.startsWith(PROTOCOL_PREFIX),
+    );
   });
 }
 
@@ -3735,7 +4473,10 @@ function firstIdProtocolOutputIndex(vout: Array<Record<string, unknown>>) {
   });
 }
 
-function parseAttachmentPayload(payload: string, current: AttachmentAccumulator | undefined) {
+function parseAttachmentPayload(
+  payload: string,
+  current: AttachmentAccumulator | undefined,
+) {
   const parts = payload.split(":");
   if (parts.length !== 7) {
     return current;
@@ -3745,13 +4486,25 @@ function parseAttachmentPayload(payload: string, current: AttachmentAccumulator 
   const size = Number(sizeText);
   const part = partText.match(/^(\d+)\/(\d+)$/);
 
-  if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_ATTACHMENT_BYTES || !/^[0-9a-f]{64}$/i.test(sha256) || !part) {
+  if (
+    !Number.isSafeInteger(size) ||
+    size <= 0 ||
+    size > MAX_ATTACHMENT_BYTES ||
+    !/^[0-9a-f]{64}$/i.test(sha256) ||
+    !part
+  ) {
     return current;
   }
 
   const index = Number(part[1]);
   const total = Number(part[2]);
-  if (!Number.isSafeInteger(index) || !Number.isSafeInteger(total) || total < 1 || index < 0 || index >= total) {
+  if (
+    !Number.isSafeInteger(index) ||
+    !Number.isSafeInteger(total) ||
+    total < 1 ||
+    index < 0 ||
+    index >= total
+  ) {
     return current;
   }
 
@@ -3765,7 +4518,12 @@ function parseAttachmentPayload(payload: string, current: AttachmentAccumulator 
   }
 
   const accumulator =
-    current && current.mime === mime && current.name === name && current.size === size && current.sha256 === sha256.toLowerCase() && current.total === total
+    current &&
+    current.mime === mime &&
+    current.name === name &&
+    current.size === size &&
+    current.sha256 === sha256.toLowerCase() &&
+    current.total === total
       ? current
       : {
           chunks: Array.from({ length: total }, () => ""),
@@ -3780,7 +4538,9 @@ function parseAttachmentPayload(payload: string, current: AttachmentAccumulator 
   return accumulator;
 }
 
-function attachmentFromAccumulator(accumulator: AttachmentAccumulator | undefined): MailAttachment | undefined {
+function attachmentFromAccumulator(
+  accumulator: AttachmentAccumulator | undefined,
+): MailAttachment | undefined {
   if (!accumulator || accumulator.chunks.some((chunk) => !chunk)) {
     return undefined;
   }
@@ -3788,7 +4548,10 @@ function attachmentFromAccumulator(accumulator: AttachmentAccumulator | undefine
   const data = accumulator.chunks.join("");
   try {
     const bytes = base64UrlDecodeBytes(data);
-    if (bytes.byteLength !== accumulator.size || sha256Hex(bytes) !== accumulator.sha256) {
+    if (
+      bytes.byteLength !== accumulator.size ||
+      sha256Hex(bytes) !== accumulator.sha256
+    ) {
       return undefined;
     }
   } catch {
@@ -3845,7 +4608,10 @@ function extractProtocolMemo(vout: Array<Record<string, unknown>>) {
     }
 
     if (payload.startsWith("a:")) {
-      attachmentAccumulator = parseAttachmentPayload(payload, attachmentAccumulator);
+      attachmentAccumulator = parseAttachmentPayload(
+        payload,
+        attachmentAccumulator,
+      );
     }
   }
 
@@ -3877,14 +4643,22 @@ function extractProtocolMemo(vout: Array<Record<string, unknown>>) {
   return protocolMessage;
 }
 
-function receivedPaymentAmount(vout: Array<Record<string, unknown>>, address: string) {
+function receivedPaymentAmount(
+  vout: Array<Record<string, unknown>>,
+  address: string,
+) {
   const protocolIndex = firstProtocolOutputIndex(vout);
   const amount = vout.reduce((total, output, index) => {
-    if (output.scriptpubkey_address !== address || typeof output.value !== "number") {
+    if (
+      output.scriptpubkey_address !== address ||
+      typeof output.value !== "number"
+    ) {
       return total;
     }
 
-    return protocolIndex === -1 || index < protocolIndex ? total + output.value : total;
+    return protocolIndex === -1 || index < protocolIndex
+      ? total + output.value
+      : total;
   }, 0);
 
   if (amount > 0) {
@@ -3896,13 +4670,17 @@ function receivedPaymentAmount(vout: Array<Record<string, unknown>>, address: st
   }
 
   const fallbackOutput = vout.find(
-    (output) => output.scriptpubkey_address === address && typeof output.value === "number",
+    (output) =>
+      output.scriptpubkey_address === address &&
+      typeof output.value === "number",
   );
 
   return typeof fallbackOutput?.value === "number" ? fallbackOutput.value : 0;
 }
 
-function protocolPaymentOutputs(vout: Array<Record<string, unknown>>): MailRecipient[] {
+function protocolPaymentOutputs(
+  vout: Array<Record<string, unknown>>,
+): MailRecipient[] {
   const protocolIndex = firstProtocolOutputIndex(vout);
   if (protocolIndex === -1) {
     return [];
@@ -3929,35 +4707,59 @@ function protocolPaymentOutputs(vout: Array<Record<string, unknown>>): MailRecip
   });
 }
 
-function senderAddress(vin: Array<Record<string, unknown>>, targetAddress: string) {
+function senderAddress(
+  vin: Array<Record<string, unknown>>,
+  targetAddress: string,
+) {
   const inputAddresses = vin
     .map((input) => {
       const prevout = input.prevout as Record<string, unknown> | undefined;
-      return typeof prevout?.scriptpubkey_address === "string" ? prevout.scriptpubkey_address : "";
+      return typeof prevout?.scriptpubkey_address === "string"
+        ? prevout.scriptpubkey_address
+        : "";
     })
     .filter(Boolean);
 
-  return inputAddresses.find((inputAddress) => inputAddress !== targetAddress) ?? inputAddresses[0] ?? "Unknown";
+  return (
+    inputAddresses.find((inputAddress) => inputAddress !== targetAddress) ??
+    inputAddresses[0] ??
+    "Unknown"
+  );
 }
 
 function transactionInputAddresses(vin: Array<Record<string, unknown>>) {
   return vin
     .map((input) => {
       const prevout = input.prevout as Record<string, unknown> | undefined;
-      return typeof prevout?.scriptpubkey_address === "string" ? prevout.scriptpubkey_address : "";
+      return typeof prevout?.scriptpubkey_address === "string"
+        ? prevout.scriptpubkey_address
+        : "";
     })
     .filter(Boolean);
 }
 
-function transactionSpentOutpoints(vin: Array<Record<string, unknown>>): PowIdSpentOutpoint[] {
+function transactionSpentOutpoints(
+  vin: Array<Record<string, unknown>>,
+): PowIdSpentOutpoint[] {
   return vin.flatMap((input): PowIdSpentOutpoint[] => {
-    const txid = typeof input.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(input.txid) ? input.txid.toLowerCase() : "";
-    const vout = typeof input.vout === "number" && Number.isSafeInteger(input.vout) && input.vout >= 0 ? input.vout : -1;
+    const txid =
+      typeof input.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(input.txid)
+        ? input.txid.toLowerCase()
+        : "";
+    const vout =
+      typeof input.vout === "number" &&
+      Number.isSafeInteger(input.vout) &&
+      input.vout >= 0
+        ? input.vout
+        : -1;
     return txid && vout >= 0 ? [{ txid, vout }] : [];
   });
 }
 
-function registryPaymentAmount(vout: Array<Record<string, unknown>>, registryAddress: string) {
+function registryPaymentAmount(
+  vout: Array<Record<string, unknown>>,
+  registryAddress: string,
+) {
   const protocolIndex = firstIdProtocolOutputIndex(vout);
   return vout.reduce((total, output, index) => {
     if (
@@ -3973,11 +4775,434 @@ function registryPaymentAmount(vout: Array<Record<string, unknown>>, registryAdd
   }, 0);
 }
 
-function idEventMinimumPaymentSats(kind: "register" | "update" | "transfer" | "marketTransfer" | "list" | "seal" | "delist") {
-  return kind === "register" ? ID_REGISTRATION_PRICE_SATS : ID_MUTATION_PRICE_SATS;
+function firstPay2SpeakOutputIndex(vout: Array<Record<string, unknown>>) {
+  return vout.findIndex((output) => {
+    if (output.scriptpubkey_type !== "op_return") {
+      return false;
+    }
+
+    return (
+      decodedProtocolMessages([output], PAY2SPEAK_PROTOCOL_PREFIX).length > 0
+    );
+  });
 }
 
-function paymentOutputsBeforeIdProtocol(vout: Array<Record<string, unknown>>): PowIdPaymentSnapshot[] {
+function pay2SpeakPaymentAmountBeforeProtocol(
+  vout: Array<Record<string, unknown>>,
+  address: string,
+) {
+  const protocolIndex = firstPay2SpeakOutputIndex(vout);
+  return vout.reduce((total, output, index) => {
+    if (
+      output.scriptpubkey_address === address &&
+      typeof output.value === "number" &&
+      output.value > 0 &&
+      (protocolIndex === -1 || index < protocolIndex)
+    ) {
+      return total + output.value;
+    }
+
+    return total;
+  }, 0);
+}
+
+function normalizeXHandle(value: string) {
+  return value.trim().replace(/^@+/u, "").toLowerCase();
+}
+
+function pay2SpeakHandleError(handle: string) {
+  if (!/^[a-z0-9_]{1,15}$/u.test(handle)) {
+    return "Use a valid X handle without @.";
+  }
+
+  return "";
+}
+
+function pay2SpeakFundingSplit(grossSats: number) {
+  const gross = Math.floor(grossSats);
+  if (!Number.isSafeInteger(gross) || gross <= PAY2SPEAK_REGISTRY_PRICE_SATS) {
+    throw new Error("Contribution must be greater than 1,000 sats.");
+  }
+
+  const registrySats =
+    gross < PAY2SPEAK_SPLIT_THRESHOLD_SATS
+      ? PAY2SPEAK_REGISTRY_PRICE_SATS
+      : Math.floor(gross / 10);
+  const creatorSats = gross - registrySats;
+  if (creatorSats <= 0) {
+    throw new Error("Contribution must leave a positive creator amount.");
+  }
+
+  return { creatorSats, grossSats: gross, registrySats };
+}
+
+function buildPay2SpeakCampaignPayload(
+  spaceNumber: number,
+  handle: string,
+  targetGrossSats: number,
+) {
+  const normalizedHandle = normalizeXHandle(handle);
+  return `${PAY2SPEAK_PROTOCOL_PREFIX}c:${Math.floor(spaceNumber)}:${normalizedHandle}:${Math.floor(targetGrossSats)}`;
+}
+
+function buildPay2SpeakFundingPayload(campaignId: string, question: string) {
+  const normalizedCampaignId = campaignId.trim().toLowerCase();
+  const encodedQuestion = question.trim()
+    ? encodeTextBase64Url(question.trim())
+    : "";
+  return `${PAY2SPEAK_PROTOCOL_PREFIX}f:${normalizedCampaignId}:${encodedQuestion}`;
+}
+
+function parsePay2SpeakPayload(message: string) {
+  if (!message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX)) {
+    return null;
+  }
+
+  const payload = message.slice(PAY2SPEAK_PROTOCOL_PREFIX.length);
+  const parts = payload.split(":");
+  if (parts[0] === "c" && parts.length === 4) {
+    const spaceNumber = Number(parts[1]);
+    const handle = normalizeXHandle(parts[2] ?? "");
+    const targetGrossSats = Number(parts[3]);
+    if (
+      !Number.isSafeInteger(spaceNumber) ||
+      spaceNumber < 0 ||
+      pay2SpeakHandleError(handle) ||
+      !Number.isSafeInteger(targetGrossSats) ||
+      targetGrossSats <= PAY2SPEAK_REGISTRY_PRICE_SATS
+    ) {
+      return null;
+    }
+
+    return {
+      handle,
+      kind: "campaign" as const,
+      spaceNumber,
+      targetGrossSats,
+    };
+  }
+
+  if (
+    parts[0] === "f" &&
+    parts.length >= 2 &&
+    parts.length <= 3 &&
+    /^[0-9a-fA-F]{64}$/u.test(parts[1] ?? "")
+  ) {
+    const encodedQuestion = parts[2] ?? "";
+    let question = "";
+    try {
+      question = encodedQuestion
+        ? decodeTextBase64Url(encodedQuestion).trim().slice(0, 500)
+        : "";
+    } catch {
+      return null;
+    }
+
+    return {
+      campaignId: String(parts[1]).toLowerCase(),
+      kind: "funding" as const,
+      question: question || undefined,
+    };
+  }
+
+  return null;
+}
+
+function pay2SpeakStateFromTransactions(
+  txs: Array<Record<string, unknown>>,
+  registryAddress: string,
+  targetNetwork: BitcoinNetwork,
+): Pay2SpeakState {
+  const campaignMap = new Map<string, Pay2SpeakCampaign>();
+  const candidateFunding: Pay2SpeakFunding[] = [];
+
+  for (const tx of txs) {
+    const txid = transactionTxid(tx);
+    if (!txid) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin)
+      ? (tx.vin as Array<Record<string, unknown>>)
+      : [];
+    const vout = Array.isArray(tx.vout)
+      ? (tx.vout as Array<Record<string, unknown>>)
+      : [];
+    const messages = decodedProtocolMessages(vout, PAY2SPEAK_PROTOCOL_PREFIX);
+    if (messages.length === 0) {
+      continue;
+    }
+
+    const confirmed = transactionConfirmed(tx);
+    const status = tx.status as Record<string, unknown> | undefined;
+    const blockTime =
+      typeof status?.block_time === "number"
+        ? status.block_time * 1000
+        : Date.now();
+    const createdAt = new Date(blockTime).toISOString();
+    const inputAddresses = transactionInputAddresses(vin);
+    const actorAddress = inputAddresses[0] ?? "Unknown";
+
+    for (const message of messages) {
+      const parsed = parsePay2SpeakPayload(message);
+      if (!parsed) {
+        continue;
+      }
+
+      const registrySats = pay2SpeakPaymentAmountBeforeProtocol(
+        vout,
+        registryAddress,
+      );
+      if (parsed.kind === "campaign") {
+        if (
+          registrySats < PAY2SPEAK_REGISTRY_PRICE_SATS ||
+          !isValidBitcoinAddress(actorAddress, targetNetwork)
+        ) {
+          continue;
+        }
+
+        campaignMap.set(txid, {
+          confirmed,
+          createdAt,
+          creatorAddress: actorAddress,
+          fundedGrossSats: 0,
+          fundingCount: 0,
+          handle: parsed.handle,
+          network: targetNetwork,
+          registrySats,
+          spaceNumber: parsed.spaceNumber,
+          status: "Funding",
+          targetGrossSats: parsed.targetGrossSats,
+          title: pay2SpeakTitle(parsed.handle, parsed.spaceNumber),
+          txid,
+        });
+        continue;
+      }
+
+      const campaign = campaignMap.get(parsed.campaignId);
+      const creatorAddress = campaign?.creatorAddress ?? "";
+      if (!creatorAddress) {
+        candidateFunding.push({
+          campaignId: parsed.campaignId,
+          confirmed,
+          createdAt,
+          creatorAddress: "",
+          creatorSats: 0,
+          donorAddress: actorAddress,
+          grossSats: 0,
+          network: targetNetwork,
+          question: parsed.question,
+          registrySats,
+          txid,
+        });
+        continue;
+      }
+
+      const creatorSats = pay2SpeakPaymentAmountBeforeProtocol(
+        vout,
+        creatorAddress,
+      );
+      const grossSats = creatorSats + registrySats;
+      let expected;
+      try {
+        expected = pay2SpeakFundingSplit(grossSats);
+      } catch {
+        continue;
+      }
+
+      if (
+        expected.registrySats !== registrySats ||
+        expected.creatorSats !== creatorSats
+      ) {
+        continue;
+      }
+
+      candidateFunding.push({
+        campaignId: parsed.campaignId,
+        confirmed,
+        createdAt,
+        creatorAddress,
+        creatorSats,
+        donorAddress: actorAddress,
+        grossSats,
+        network: targetNetwork,
+        question: parsed.question,
+        registrySats,
+        txid,
+      });
+    }
+  }
+
+  const validFunding = candidateFunding.flatMap(
+    (funding): Pay2SpeakFunding[] => {
+      const campaign = campaignMap.get(funding.campaignId);
+      if (!campaign) {
+        return [];
+      }
+
+      const withCreator = funding.creatorAddress
+        ? funding
+        : (() => {
+            const tx = txs.find(
+              (item) => transactionTxid(item) === funding.txid,
+            );
+            const vout = Array.isArray(tx?.vout)
+              ? (tx?.vout as Array<Record<string, unknown>>)
+              : [];
+            const creatorSats = pay2SpeakPaymentAmountBeforeProtocol(
+              vout,
+              campaign.creatorAddress,
+            );
+            const grossSats = creatorSats + funding.registrySats;
+            try {
+              const expected = pay2SpeakFundingSplit(grossSats);
+              if (
+                expected.registrySats !== funding.registrySats ||
+                expected.creatorSats !== creatorSats
+              ) {
+                return null;
+              }
+            } catch {
+              return null;
+            }
+
+            return {
+              ...funding,
+              creatorAddress: campaign.creatorAddress,
+              creatorSats,
+              grossSats,
+            };
+          })();
+
+      return withCreator &&
+        withCreator.grossSats > PAY2SPEAK_REGISTRY_PRICE_SATS
+        ? [withCreator]
+        : [];
+    },
+  );
+
+  for (const funding of validFunding) {
+    const campaign = campaignMap.get(funding.campaignId);
+    if (!campaign) {
+      continue;
+    }
+
+    campaign.fundedGrossSats += funding.grossSats;
+    campaign.fundingCount += 1;
+    campaign.status =
+      campaign.fundedGrossSats >= campaign.targetGrossSats
+        ? "Funded"
+        : "Funding";
+  }
+
+  const campaigns = [...campaignMap.values()].sort(comparePay2SpeakCampaigns);
+  const questions = validFunding
+    .filter((funding): funding is Pay2SpeakFunding & { question: string } =>
+      Boolean(funding.question),
+    )
+    .map((funding) => ({
+      campaignId: funding.campaignId,
+      confirmed: funding.confirmed,
+      createdAt: funding.createdAt,
+      grossSats: funding.grossSats,
+      question: funding.question,
+      txid: funding.txid,
+    }))
+    .sort(
+      (left, right) =>
+        right.grossSats - left.grossSats ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt),
+    );
+
+  return {
+    campaigns,
+    funding: validFunding.sort(
+      (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
+    ),
+    questions,
+  };
+}
+
+function comparePay2SpeakCampaigns(
+  left: Pay2SpeakCampaign,
+  right: Pay2SpeakCampaign,
+) {
+  if (left.confirmed !== right.confirmed) {
+    return Number(right.confirmed) - Number(left.confirmed);
+  }
+
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    left.txid.localeCompare(right.txid)
+  );
+}
+
+function pay2SpeakCampaignProgress(campaign: Pay2SpeakCampaign) {
+  if (campaign.targetGrossSats <= 0) {
+    return 0;
+  }
+
+  return Math.min(
+    100,
+    Math.round((campaign.fundedGrossSats / campaign.targetGrossSats) * 100),
+  );
+}
+
+function pay2SpeakCreatorUrl(creatorAddress: string) {
+  const localHref = `/?pay2speak=1&creator=${encodeURIComponent(creatorAddress)}`;
+  const productionHref = `${PAY2SPEAK_APP_URL}/?creator=${encodeURIComponent(creatorAddress)}`;
+  return appHref(productionHref, localHref);
+}
+
+function Pay2SpeakProgressBar({
+  label,
+  progress,
+}: {
+  label: string;
+  progress: number;
+}) {
+  return (
+    <div
+      aria-label={label}
+      style={{
+        background: "var(--surface-soft)",
+        border: "1px solid var(--border)",
+        borderRadius: 999,
+        height: 10,
+        overflow: "hidden",
+      }}
+    >
+      <span
+        style={{
+          background: "linear-gradient(90deg, var(--accent), var(--green))",
+          display: "block",
+          height: "100%",
+          minWidth: 2,
+          width: `${Math.max(0, Math.min(100, progress))}%`,
+        }}
+      />
+    </div>
+  );
+}
+
+function idEventMinimumPaymentSats(
+  kind:
+    | "register"
+    | "update"
+    | "transfer"
+    | "marketTransfer"
+    | "list"
+    | "seal"
+    | "delist",
+) {
+  return kind === "register"
+    ? ID_REGISTRATION_PRICE_SATS
+    : ID_MUTATION_PRICE_SATS;
+}
+
+function paymentOutputsBeforeIdProtocol(
+  vout: Array<Record<string, unknown>>,
+): PowIdPaymentSnapshot[] {
   const protocolIndex = firstIdProtocolOutputIndex(vout);
   return vout.flatMap((output, index): PowIdPaymentSnapshot[] => {
     if (
@@ -3993,11 +5218,21 @@ function paymentOutputsBeforeIdProtocol(vout: Array<Record<string, unknown>>): P
   });
 }
 
-function paymentAmountFromSnapshots(outputs: PowIdPaymentSnapshot[], address: string) {
-  return outputs.reduce((total, output) => total + (output.address === address ? output.amountSats : 0), 0);
+function paymentAmountFromSnapshots(
+  outputs: PowIdPaymentSnapshot[],
+  address: string,
+) {
+  return outputs.reduce(
+    (total, output) =>
+      total + (output.address === address ? output.amountSats : 0),
+    0,
+  );
 }
 
-function paymentAmountBeforeIdProtocol(vout: Array<Record<string, unknown>>, address: string) {
+function paymentAmountBeforeIdProtocol(
+  vout: Array<Record<string, unknown>>,
+  address: string,
+) {
   const protocolIndex = firstIdProtocolOutputIndex(vout);
   return vout.reduce((total, output, index) => {
     if (
@@ -4013,7 +5248,10 @@ function paymentAmountBeforeIdProtocol(vout: Array<Record<string, unknown>>, add
   }, 0);
 }
 
-function parseIdRegistrationPayload(payload: string, targetNetwork: BitcoinNetwork) {
+function parseIdRegistrationPayload(
+  payload: string,
+  targetNetwork: BitcoinNetwork,
+) {
   let rawId = "";
   let ownerAddress = "";
   let receiveAddress = "";
@@ -4054,7 +5292,11 @@ function parseIdRegistrationPayload(payload: string, targetNetwork: BitcoinNetwo
   }
 
   const id = normalizePowId(rawId);
-  if (powIdError(id) || !isValidBitcoinAddress(ownerAddress, targetNetwork) || !isValidBitcoinAddress(receiveAddress, targetNetwork)) {
+  if (
+    powIdError(id) ||
+    !isValidBitcoinAddress(ownerAddress, targetNetwork) ||
+    !isValidBitcoinAddress(receiveAddress, targetNetwork)
+  ) {
     return null;
   }
 
@@ -4075,7 +5317,10 @@ function parseIdRegistrationPayload(payload: string, targetNetwork: BitcoinNetwo
   };
 }
 
-function parseIdReceiverUpdatePayload(payload: string, targetNetwork: BitcoinNetwork) {
+function parseIdReceiverUpdatePayload(
+  payload: string,
+  targetNetwork: BitcoinNetwork,
+) {
   if (!payload.startsWith("u:")) {
     return null;
   }
@@ -4104,7 +5349,10 @@ function parseIdReceiverUpdatePayload(payload: string, targetNetwork: BitcoinNet
   };
 }
 
-function parseIdTransferPayload(payload: string, targetNetwork: BitcoinNetwork) {
+function parseIdTransferPayload(
+  payload: string,
+  targetNetwork: BitcoinNetwork,
+) {
   if (!payload.startsWith("t:")) {
     return null;
   }
@@ -4139,16 +5387,30 @@ function parseIdTransferPayload(payload: string, targetNetwork: BitcoinNetwork) 
   };
 }
 
-function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: BitcoinNetwork) {
+function parseIdMarketplaceTransferPayload(
+  payload: string,
+  targetNetwork: BitcoinNetwork,
+) {
   const parts = payload.split(":");
-  if (payload.startsWith("buy3:") || payload.startsWith("buy4:") || payload.startsWith("buy5:")) {
-    if (parts.length < 3 || parts.length > 4 || !/^[0-9a-fA-F]{64}$/u.test(parts[1])) {
+  if (
+    payload.startsWith("buy3:") ||
+    payload.startsWith("buy4:") ||
+    payload.startsWith("buy5:")
+  ) {
+    if (
+      parts.length < 3 ||
+      parts.length > 4 ||
+      !/^[0-9a-fA-F]{64}$/u.test(parts[1])
+    ) {
       return null;
     }
 
     const [, listingId, owner, receiver] = parts;
     const receiveAddress = receiver?.trim() || owner;
-    if (!isValidBitcoinAddress(owner, targetNetwork) || !isValidBitcoinAddress(receiveAddress, targetNetwork)) {
+    if (
+      !isValidBitcoinAddress(owner, targetNetwork) ||
+      !isValidBitcoinAddress(receiveAddress, targetNetwork)
+    ) {
       return null;
     }
 
@@ -4156,7 +5418,11 @@ function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: Bitco
       listingId: listingId.toLowerCase(),
       ownerAddress: owner,
       receiveAddress,
-      transferVersion: payload.startsWith("buy5:") ? "buy5" as const : payload.startsWith("buy4:") ? "buy4" as const : "buy3" as const,
+      transferVersion: payload.startsWith("buy5:")
+        ? ("buy5" as const)
+        : payload.startsWith("buy4:")
+          ? ("buy4" as const)
+          : ("buy3" as const),
     };
   }
 
@@ -4171,13 +5437,19 @@ function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: Bitco
   const [, authorizationEncoded, owner, receiver] = parts;
   let authorization: PowIdSaleAuthorization;
   try {
-    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), targetNetwork);
+    authorization = parseSaleAuthorizationJson(
+      decodeTextBase64Url(authorizationEncoded),
+      targetNetwork,
+    );
   } catch {
     return null;
   }
 
   const receiveAddress = receiver?.trim() || owner;
-  if (!isValidBitcoinAddress(owner, targetNetwork) || !isValidBitcoinAddress(receiveAddress, targetNetwork)) {
+  if (
+    !isValidBitcoinAddress(owner, targetNetwork) ||
+    !isValidBitcoinAddress(receiveAddress, targetNetwork)
+  ) {
     return null;
   }
 
@@ -4185,7 +5457,10 @@ function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: Bitco
     return null;
   }
 
-  if (authorization.receiveAddress && authorization.receiveAddress !== receiveAddress) {
+  if (
+    authorization.receiveAddress &&
+    authorization.receiveAddress !== receiveAddress
+  ) {
     return null;
   }
 
@@ -4201,8 +5476,21 @@ function parseIdMarketplaceTransferPayload(payload: string, targetNetwork: Bitco
 }
 
 function parseIdListingPayload(payload: string, targetNetwork: BitcoinNetwork) {
-  const listingVersion: PowIdListingVersion = payload.startsWith("list5:") ? "list5" : payload.startsWith("list4:") ? "list4" : payload.startsWith("list3:") ? "list3" : payload.startsWith("list2:") ? "list2" : "list2";
-  if (!payload.startsWith("list2:") && !payload.startsWith("list3:") && !payload.startsWith("list4:") && !payload.startsWith("list5:")) {
+  const listingVersion: PowIdListingVersion = payload.startsWith("list5:")
+    ? "list5"
+    : payload.startsWith("list4:")
+      ? "list4"
+      : payload.startsWith("list3:")
+        ? "list3"
+        : payload.startsWith("list2:")
+          ? "list2"
+          : "list2";
+  if (
+    !payload.startsWith("list2:") &&
+    !payload.startsWith("list3:") &&
+    !payload.startsWith("list4:") &&
+    !payload.startsWith("list5:")
+  ) {
     return null;
   }
 
@@ -4214,7 +5502,10 @@ function parseIdListingPayload(payload: string, targetNetwork: BitcoinNetwork) {
   const [, authorizationEncoded] = parts;
   let authorization: PowIdSaleAuthorization;
   try {
-    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), targetNetwork);
+    authorization = parseSaleAuthorizationJson(
+      decodeTextBase64Url(authorizationEncoded),
+      targetNetwork,
+    );
   } catch {
     return null;
   }
@@ -4228,7 +5519,10 @@ function parseIdListingPayload(payload: string, targetNetwork: BitcoinNetwork) {
   };
 }
 
-function parseIdSaleSealPayload(payload: string, targetNetwork: BitcoinNetwork) {
+function parseIdSaleSealPayload(
+  payload: string,
+  targetNetwork: BitcoinNetwork,
+) {
   if (!payload.startsWith("seal5:")) {
     return null;
   }
@@ -4241,7 +5535,10 @@ function parseIdSaleSealPayload(payload: string, targetNetwork: BitcoinNetwork) 
   const [, listingId, authorizationEncoded] = parts;
   let authorization: PowIdSaleAuthorization;
   try {
-    authorization = parseSaleAuthorizationJson(decodeTextBase64Url(authorizationEncoded), targetNetwork);
+    authorization = parseSaleAuthorizationJson(
+      decodeTextBase64Url(authorizationEncoded),
+      targetNetwork,
+    );
   } catch {
     return null;
   }
@@ -4253,8 +5550,21 @@ function parseIdSaleSealPayload(payload: string, targetNetwork: BitcoinNetwork) 
 }
 
 function parseIdDelistingPayload(payload: string) {
-  const delistingVersion: PowIdDelistingVersion = payload.startsWith("delist5:") ? "delist5" : payload.startsWith("delist4:") ? "delist4" : payload.startsWith("delist3:") ? "delist3" : payload.startsWith("delist2:") ? "delist2" : "delist2";
-  if (!payload.startsWith("delist2:") && !payload.startsWith("delist3:") && !payload.startsWith("delist4:") && !payload.startsWith("delist5:")) {
+  const delistingVersion: PowIdDelistingVersion = payload.startsWith("delist5:")
+    ? "delist5"
+    : payload.startsWith("delist4:")
+      ? "delist4"
+      : payload.startsWith("delist3:")
+        ? "delist3"
+        : payload.startsWith("delist2:")
+          ? "delist2"
+          : "delist2";
+  if (
+    !payload.startsWith("delist2:") &&
+    !payload.startsWith("delist3:") &&
+    !payload.startsWith("delist4:") &&
+    !payload.startsWith("delist5:")
+  ) {
     return null;
   }
 
@@ -4294,7 +5604,10 @@ function parseIdEventPayload(payload: string, targetNetwork: BitcoinNetwork) {
     };
   }
 
-  const marketplaceTransfer = parseIdMarketplaceTransferPayload(payload, targetNetwork);
+  const marketplaceTransfer = parseIdMarketplaceTransferPayload(
+    payload,
+    targetNetwork,
+  );
   if (marketplaceTransfer) {
     return {
       kind: "marketTransfer" as const,
@@ -4329,22 +5642,35 @@ function parseIdEventPayload(payload: string, targetNetwork: BitcoinNetwork) {
   return null;
 }
 
-async function fetchAddressTransactionsPage(targetAddress: string, targetNetwork: BitcoinNetwork, path: string) {
-  const response = await fetch(`${mempoolBase(targetNetwork)}/api/address/${targetAddress}/${path}`);
+async function fetchAddressTransactionsPage(
+  targetAddress: string,
+  targetNetwork: BitcoinNetwork,
+  path: string,
+) {
+  const response = await fetch(
+    `${mempoolBase(targetNetwork)}/api/address/${targetAddress}/${path}`,
+  );
   if (!response.ok) {
     throw new Error(`mempool.space returned ${response.status}`);
   }
 
   const transactions = await response.json();
-  return Array.isArray(transactions) ? (transactions as Array<Record<string, unknown>>) : [];
+  return Array.isArray(transactions)
+    ? (transactions as Array<Record<string, unknown>>)
+    : [];
 }
 
-async function fetchAddressTransactions(targetAddress: string, targetNetwork: BitcoinNetwork) {
+async function fetchAddressTransactions(
+  targetAddress: string,
+  targetNetwork: BitcoinNetwork,
+) {
   return fetchAddressTransactionsPage(targetAddress, targetNetwork, "txs");
 }
 
 function transactionTxid(tx: Record<string, unknown>) {
-  return typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid) ? tx.txid.toLowerCase() : "";
+  return typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid)
+    ? tx.txid.toLowerCase()
+    : "";
 }
 
 function transactionConfirmed(tx: Record<string, unknown>) {
@@ -4355,22 +5681,34 @@ function transactionConfirmed(tx: Record<string, unknown>) {
 function transactionBlockHash(tx: Record<string, unknown>) {
   const status = tx.status as Record<string, unknown> | undefined;
   const blockHash = status?.block_hash;
-  return typeof blockHash === "string" && /^[0-9a-fA-F]{64}$/u.test(blockHash) ? blockHash.toLowerCase() : "";
+  return typeof blockHash === "string" && /^[0-9a-fA-F]{64}$/u.test(blockHash)
+    ? blockHash.toLowerCase()
+    : "";
 }
 
 function transactionBlockHeight(tx: Record<string, unknown>) {
   const status = tx.status as Record<string, unknown> | undefined;
   const height = status?.block_height;
-  return typeof height === "number" && Number.isSafeInteger(height) && height >= 0 ? height : undefined;
+  return typeof height === "number" &&
+    Number.isSafeInteger(height) &&
+    height >= 0
+    ? height
+    : undefined;
 }
 
 function transactionBlockIndex(tx: Record<string, unknown>) {
   const status = tx.status as Record<string, unknown> | undefined;
-  const index = tx._powBlockIndex ?? status?.block_index ?? status?.block_tx_index;
-  return typeof index === "number" && Number.isSafeInteger(index) && index >= 0 ? index : undefined;
+  const index =
+    tx._powBlockIndex ?? status?.block_index ?? status?.block_tx_index;
+  return typeof index === "number" && Number.isSafeInteger(index) && index >= 0
+    ? index
+    : undefined;
 }
 
-async function annotateBlockOrder(txs: Array<Record<string, unknown>>, targetNetwork: BitcoinNetwork) {
+async function annotateBlockOrder(
+  txs: Array<Record<string, unknown>>,
+  targetNetwork: BitcoinNetwork,
+) {
   const blockCounts = new Map<string, number>();
   for (const tx of txs) {
     if (!transactionConfirmed(tx)) {
@@ -4383,7 +5721,9 @@ async function annotateBlockOrder(txs: Array<Record<string, unknown>>, targetNet
     }
   }
 
-  const blockHashes = [...blockCounts].filter(([, count]) => count > 1).map(([blockHash]) => blockHash);
+  const blockHashes = [...blockCounts]
+    .filter(([, count]) => count > 1)
+    .map(([blockHash]) => blockHash);
 
   if (blockHashes.length === 0) {
     return txs;
@@ -4392,7 +5732,9 @@ async function annotateBlockOrder(txs: Array<Record<string, unknown>>, targetNet
   const blockIndexes = new Map<string, Map<string, number>>();
   await Promise.all(
     blockHashes.map(async (blockHash) => {
-      const index = await fetchBlockTxidIndex(blockHash, targetNetwork).catch(() => null);
+      const index = await fetchBlockTxidIndex(blockHash, targetNetwork).catch(
+        () => null,
+      );
       if (index) {
         blockIndexes.set(blockHash, index);
       }
@@ -4413,7 +5755,9 @@ async function annotateBlockOrder(txs: Array<Record<string, unknown>>, targetNet
 
 function oldestConfirmedTxid(txs: Array<Record<string, unknown>>) {
   const confirmedTxs = txs.filter(transactionConfirmed);
-  return confirmedTxs.length > 0 ? transactionTxid(confirmedTxs[confirmedTxs.length - 1]) : "";
+  return confirmedTxs.length > 0
+    ? transactionTxid(confirmedTxs[confirmedTxs.length - 1])
+    : "";
 }
 
 function dedupeTransactions(txs: Array<Record<string, unknown>>) {
@@ -4426,7 +5770,10 @@ function dedupeTransactions(txs: Array<Record<string, unknown>>) {
     }
 
     const current = merged.get(txid);
-    if (!current || (transactionConfirmed(tx) && !transactionConfirmed(current))) {
+    if (
+      !current ||
+      (transactionConfirmed(tx) && !transactionConfirmed(current))
+    ) {
       merged.set(txid, tx);
     }
   }
@@ -4434,13 +5781,27 @@ function dedupeTransactions(txs: Array<Record<string, unknown>>) {
   return [...merged.values()];
 }
 
-async function fetchRegistryTransactions(registryAddress: string, targetNetwork: BitcoinNetwork) {
-  const recentTxs = await fetchAddressTransactions(registryAddress, targetNetwork);
-  const mempoolTxs = await fetchAddressTransactionsPage(registryAddress, targetNetwork, "txs/mempool");
+async function fetchRegistryTransactions(
+  registryAddress: string,
+  targetNetwork: BitcoinNetwork,
+) {
+  const recentTxs = await fetchAddressTransactions(
+    registryAddress,
+    targetNetwork,
+  );
+  const mempoolTxs = await fetchAddressTransactionsPage(
+    registryAddress,
+    targetNetwork,
+    "txs/mempool",
+  );
 
   let chainPage: Array<Record<string, unknown>>;
   try {
-    chainPage = await fetchAddressTransactionsPage(registryAddress, targetNetwork, "txs/chain");
+    chainPage = await fetchAddressTransactionsPage(
+      registryAddress,
+      targetNetwork,
+      "txs/chain",
+    );
   } catch {
     chainPage = recentTxs.filter(transactionConfirmed);
   }
@@ -4459,7 +5820,11 @@ async function fetchRegistryTransactions(registryAddress: string, targetNetwork:
     }
 
     cursors.add(cursor);
-    const nextPage = await fetchAddressTransactionsPage(registryAddress, targetNetwork, `txs/chain/${cursor}`);
+    const nextPage = await fetchAddressTransactionsPage(
+      registryAddress,
+      targetNetwork,
+      `txs/chain/${cursor}`,
+    );
     if (nextPage.length === 0) {
       break;
     }
@@ -4477,43 +5842,50 @@ function inboxMessagesFromTransactions(
   targetAddress: string,
   targetNetwork: BitcoinNetwork,
 ): InboxMessage[] {
-  return txs
-    .flatMap((tx): InboxMessage[] => {
-      const vin = Array.isArray(tx.vin) ? (tx.vin as Array<Record<string, unknown>>) : [];
-      const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
-      const protocolMessage = extractProtocolMemo(vout);
-      const amount = receivedPaymentAmount(vout, targetAddress);
-      const recipients = protocolPaymentOutputs(vout);
+  return txs.flatMap((tx): InboxMessage[] => {
+    const vin = Array.isArray(tx.vin)
+      ? (tx.vin as Array<Record<string, unknown>>)
+      : [];
+    const vout = Array.isArray(tx.vout)
+      ? (tx.vout as Array<Record<string, unknown>>)
+      : [];
+    const protocolMessage = extractProtocolMemo(vout);
+    const amount = receivedPaymentAmount(vout, targetAddress);
+    const recipients = protocolPaymentOutputs(vout);
 
-      if (!protocolMessage || amount <= 0) {
-        return [];
-      }
+    if (!protocolMessage || amount <= 0) {
+      return [];
+    }
 
-      const status = tx.status as Record<string, unknown> | undefined;
-      const blockTime = typeof status?.block_time === "number" ? status.block_time * 1000 : Date.now();
-      const sender = senderAddress(vin, targetAddress);
+    const status = tx.status as Record<string, unknown> | undefined;
+    const blockTime =
+      typeof status?.block_time === "number"
+        ? status.block_time * 1000
+        : Date.now();
+    const sender = senderAddress(vin, targetAddress);
 
-      const message: InboxMessage = {
-        txid: String(tx.txid),
-        network: targetNetwork,
-        from: sender,
-        to: targetAddress,
-        amountSats: amount,
-        memo: protocolMessage.memo,
-        subject: protocolMessage.subject,
-        attachment: protocolMessage.attachment,
-        replyTo: sender === "Unknown" ? protocolMessage.replyTo ?? "Unknown" : sender,
-        recipients: recipients.length > 0 ? recipients : undefined,
-        confirmed: Boolean(status?.confirmed),
-        createdAt: new Date(blockTime).toISOString(),
-      };
+    const message: InboxMessage = {
+      txid: String(tx.txid),
+      network: targetNetwork,
+      from: sender,
+      to: targetAddress,
+      amountSats: amount,
+      memo: protocolMessage.memo,
+      subject: protocolMessage.subject,
+      attachment: protocolMessage.attachment,
+      replyTo:
+        sender === "Unknown" ? (protocolMessage.replyTo ?? "Unknown") : sender,
+      recipients: recipients.length > 0 ? recipients : undefined,
+      confirmed: Boolean(status?.confirmed),
+      createdAt: new Date(blockTime).toISOString(),
+    };
 
-      if (protocolMessage.parentTxid) {
-        message.parentTxid = protocolMessage.parentTxid;
-      }
+    if (protocolMessage.parentTxid) {
+      message.parentTxid = protocolMessage.parentTxid;
+    }
 
-      return [message];
-    });
+    return [message];
+  });
 }
 
 function sentMessagesFromTransactions(
@@ -4522,8 +5894,12 @@ function sentMessagesFromTransactions(
   targetNetwork: BitcoinNetwork,
 ): SentMessage[] {
   return txs.flatMap((tx): SentMessage[] => {
-    const vin = Array.isArray(tx.vin) ? (tx.vin as Array<Record<string, unknown>>) : [];
-    const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
+    const vin = Array.isArray(tx.vin)
+      ? (tx.vin as Array<Record<string, unknown>>)
+      : [];
+    const vout = Array.isArray(tx.vout)
+      ? (tx.vout as Array<Record<string, unknown>>)
+      : [];
     const inputAddresses = transactionInputAddresses(vin);
 
     if (!inputAddresses.includes(targetAddress)) {
@@ -4533,7 +5909,10 @@ function sentMessagesFromTransactions(
     const protocolMessage = extractProtocolMemo(vout);
     const recipients = protocolPaymentOutputs(vout);
     const payment = recipients[0];
-    const txid = typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/.test(tx.txid) ? tx.txid.toLowerCase() : "";
+    const txid =
+      typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/.test(tx.txid)
+        ? tx.txid.toLowerCase()
+        : "";
 
     if (!protocolMessage || !payment || !txid) {
       return [];
@@ -4541,7 +5920,10 @@ function sentMessagesFromTransactions(
 
     const status = tx.status as Record<string, unknown> | undefined;
     const confirmed = Boolean(status?.confirmed);
-    const blockTime = typeof status?.block_time === "number" ? status.block_time * 1000 : Date.now();
+    const blockTime =
+      typeof status?.block_time === "number"
+        ? status.block_time * 1000
+        : Date.now();
     const createdAt = new Date(blockTime).toISOString();
 
     return [
@@ -4567,30 +5949,53 @@ function sentMessagesFromTransactions(
   });
 }
 
-async function fetchAddressMail(targetAddress: string, targetNetwork: BitcoinNetwork) {
+async function fetchAddressMail(
+  targetAddress: string,
+  targetNetwork: BitcoinNetwork,
+) {
   if (POW_API_BASE) {
-    const payload = await fetchProofApiJson<PowMailApiResponse>(`/api/v1/address/${encodeURIComponent(targetAddress)}/mail`, targetNetwork);
+    const payload = await fetchProofApiJson<PowMailApiResponse>(
+      `/api/v1/address/${encodeURIComponent(targetAddress)}/mail`,
+      targetNetwork,
+    );
     return {
-      inboxMessages: Array.isArray(payload.inboxMessages) ? payload.inboxMessages : [],
-      sentMessages: Array.isArray(payload.sentMessages) ? payload.sentMessages : [],
+      inboxMessages: Array.isArray(payload.inboxMessages)
+        ? payload.inboxMessages
+        : [],
+      sentMessages: Array.isArray(payload.sentMessages)
+        ? payload.sentMessages
+        : [],
     };
   }
 
   const txs = await fetchAddressTransactions(targetAddress, targetNetwork);
   return {
-    inboxMessages: inboxMessagesFromTransactions(txs, targetAddress, targetNetwork),
-    sentMessages: sentMessagesFromTransactions(txs, targetAddress, targetNetwork),
+    inboxMessages: inboxMessagesFromTransactions(
+      txs,
+      targetAddress,
+      targetNetwork,
+    ),
+    sentMessages: sentMessagesFromTransactions(
+      txs,
+      targetAddress,
+      targetNetwork,
+    ),
   };
 }
 
-async function fetchTransactionJson(txid: string, targetNetwork: BitcoinNetwork) {
+async function fetchTransactionJson(
+  txid: string,
+  targetNetwork: BitcoinNetwork,
+) {
   const normalizedTxid = txid.trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
     throw new Error("Enter a valid Bitcoin txid.");
   }
 
   if (POW_API_BASE) {
-    const payload = await fetchProofApiJson<{ tx?: Record<string, unknown> | null }>(`/api/v1/tx/${encodeURIComponent(normalizedTxid)}`, targetNetwork);
+    const payload = await fetchProofApiJson<{
+      tx?: Record<string, unknown> | null;
+    }>(`/api/v1/tx/${encodeURIComponent(normalizedTxid)}`, targetNetwork);
     if (!payload.tx) {
       throw new Error("Transaction not found.");
     }
@@ -4598,14 +6003,21 @@ async function fetchTransactionJson(txid: string, targetNetwork: BitcoinNetwork)
     return payload.tx;
   }
 
-  const response = await fetch(`${mempoolBase(targetNetwork)}/api/tx/${normalizedTxid}`, {
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
+  const response = await fetch(
+    `${mempoolBase(targetNetwork)}/api/tx/${normalizedTxid}`,
+    {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
     },
-  });
+  );
   if (!response.ok) {
-    throw new Error(response.status === 404 ? "Transaction not found." : `Transaction lookup returned ${response.status}.`);
+    throw new Error(
+      response.status === 404
+        ? "Transaction not found."
+        : `Transaction lookup returned ${response.status}.`,
+    );
   }
 
   return response.json() as Promise<Record<string, unknown>>;
@@ -4614,7 +6026,11 @@ async function fetchTransactionJson(txid: string, targetNetwork: BitcoinNetwork)
 function isBrowserHtmlAttachment(attachment: MailAttachment) {
   const mime = attachment.mime.toLowerCase().split(";")[0].trim();
   const name = attachment.name.toLowerCase();
-  return mime === "text/html" || mime === "application/xhtml+xml" || /\.x?html?$/u.test(name);
+  return (
+    mime === "text/html" ||
+    mime === "application/xhtml+xml" ||
+    /\.x?html?$/u.test(name)
+  );
 }
 
 function isBrowserHtmlMessageBody(value: string) {
@@ -4627,7 +6043,9 @@ function isBrowserHtmlMessageBody(value: string) {
     /^<!doctype\s+html[\s>]/iu.test(text) ||
     /^<html[\s>]/iu.test(text) ||
     /<\/(?:html|head|body)>/iu.test(text) ||
-    /^<(?:a|article|body|button|canvas|code|div|form|h[1-6]|head|img|input|main|ol|p|pre|script|section|span|style|svg|table|ul)(?:\s|>|\/)/iu.test(text)
+    /^<(?:a|article|body|button|canvas|code|div|form|h[1-6]|head|img|input|main|ol|p|pre|script|section|span|style|svg|table|ul)(?:\s|>|\/)/iu.test(
+      text,
+    )
   );
 }
 
@@ -4642,7 +6060,9 @@ function canonicalWelcomeAttachment(): MailAttachment {
   };
 }
 
-function canonicalWelcomeFileMessage(): MailMessage & { attachment: MailAttachment } {
+function canonicalWelcomeFileMessage(): MailMessage & {
+  attachment: MailAttachment;
+} {
   return {
     amountSats: DEFAULT_AMOUNT_SATS,
     attachment: canonicalWelcomeAttachment(),
@@ -4666,20 +6086,36 @@ function canonicalWelcomeFileMessage(): MailMessage & { attachment: MailAttachme
   };
 }
 
-function withCanonicalWelcomeFile(messages: MailMessage[], network: BitcoinNetwork) {
+function withCanonicalWelcomeFile(
+  messages: MailMessage[],
+  network: BitcoinNetwork,
+) {
   if (network !== "livenet") {
     return messages;
   }
 
-  const withoutExistingWelcome = messages.filter((message) => message.txid !== CANONICAL_WELCOME_TXID);
+  const withoutExistingWelcome = messages.filter(
+    (message) => message.txid !== CANONICAL_WELCOME_TXID,
+  );
   return [canonicalWelcomeFileMessage(), ...withoutExistingWelcome];
 }
 
 function fileSurfaceMessages(messages: MailMessage[]) {
   return messages
-    .filter((message) => Boolean(message.attachment) || isBrowserHtmlMessageBody(message.memo))
+    .filter(
+      (message) =>
+        Boolean(message.attachment) || isBrowserHtmlMessageBody(message.memo),
+    )
     .map((message): MailMessage & { attachment: MailAttachment } =>
-      message.attachment ? { ...message, attachment: message.attachment } : { ...message, attachment: browserMessageBodyAttachment(message.memo, message.subject) },
+      message.attachment
+        ? { ...message, attachment: message.attachment }
+        : {
+            ...message,
+            attachment: browserMessageBodyAttachment(
+              message.memo,
+              message.subject,
+            ),
+          },
     );
 }
 
@@ -4697,10 +6133,21 @@ function browserTxUrl(txid: string, network: BitcoinNetwork) {
   return `${BROWSER_APP_URL}/tx/${txid}${network === "livenet" ? "" : `?network=${encodeURIComponent(network)}`}`;
 }
 
-function browserMessageBodyAttachment(html: string, subject?: string): MailAttachment {
+function browserMessageBodyAttachment(
+  html: string,
+  subject?: string,
+): MailAttachment {
   const bytes = new TextEncoder().encode(html);
-  const safeSubject = (subject ?? "").trim().replace(/[^\w.-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
-  const name = safeSubject ? (safeSubject.toLowerCase().endsWith(".html") ? safeSubject : `${safeSubject}.html`) : "message-body.html";
+  const safeSubject = (subject ?? "")
+    .trim()
+    .replace(/[^\w.-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 80);
+  const name = safeSubject
+    ? safeSubject.toLowerCase().endsWith(".html")
+      ? safeSubject
+      : `${safeSubject}.html`
+    : "message-body.html";
 
   return {
     data: base64UrlEncodeBytes(bytes),
@@ -4711,23 +6158,45 @@ function browserMessageBodyAttachment(html: string, subject?: string): MailAttac
   };
 }
 
-function browserPageFromTransaction(tx: Record<string, unknown>, targetNetwork: BitcoinNetwork): BrowserPage {
-  const txid = typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid) ? tx.txid.toLowerCase() : "";
+function browserPageFromTransaction(
+  tx: Record<string, unknown>,
+  targetNetwork: BitcoinNetwork,
+): BrowserPage {
+  const txid =
+    typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid)
+      ? tx.txid.toLowerCase()
+      : "";
   if (!txid) {
     throw new Error("Transaction payload did not include a valid txid.");
   }
 
-  const vin = Array.isArray(tx.vin) ? (tx.vin as Array<Record<string, unknown>>) : [];
-  const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
+  const vin = Array.isArray(tx.vin)
+    ? (tx.vin as Array<Record<string, unknown>>)
+    : [];
+  const vout = Array.isArray(tx.vout)
+    ? (tx.vout as Array<Record<string, unknown>>)
+    : [];
   const protocolMessage = extractProtocolMemo(vout);
   if (!protocolMessage) {
     throw new Error("This transaction does not contain a ProofOfWork message.");
   }
 
-  const htmlAttachment = protocolMessage.attachment && isBrowserHtmlAttachment(protocolMessage.attachment) ? protocolMessage.attachment : undefined;
-  const htmlBody = isBrowserHtmlMessageBody(protocolMessage.memo) ? protocolMessage.memo : "";
-  const attachment = htmlAttachment ?? (htmlBody ? browserMessageBodyAttachment(htmlBody, protocolMessage.subject) : undefined);
-  const source: BrowserPage["source"] = htmlAttachment ? "attachment" : "message";
+  const htmlAttachment =
+    protocolMessage.attachment &&
+    isBrowserHtmlAttachment(protocolMessage.attachment)
+      ? protocolMessage.attachment
+      : undefined;
+  const htmlBody = isBrowserHtmlMessageBody(protocolMessage.memo)
+    ? protocolMessage.memo
+    : "";
+  const attachment =
+    htmlAttachment ??
+    (htmlBody
+      ? browserMessageBodyAttachment(htmlBody, protocolMessage.subject)
+      : undefined);
+  const source: BrowserPage["source"] = htmlAttachment
+    ? "attachment"
+    : "message";
 
   if (!attachment) {
     throw new Error(
@@ -4743,7 +6212,10 @@ function browserPageFromTransaction(tx: Record<string, unknown>, targetNetwork: 
   }
 
   const status = tx.status as Record<string, unknown> | undefined;
-  const blockTime = typeof status?.block_time === "number" ? status.block_time * 1000 : Date.now();
+  const blockTime =
+    typeof status?.block_time === "number"
+      ? status.block_time * 1000
+      : Date.now();
   const recipients = protocolPaymentOutputs(vout);
   const inputAddresses = transactionInputAddresses(vin);
 
@@ -4762,10 +6234,16 @@ function browserPageFromTransaction(tx: Record<string, unknown>, targetNetwork: 
 }
 
 async function fetchBrowserPage(txid: string, targetNetwork: BitcoinNetwork) {
-  return browserPageFromTransaction(await fetchTransactionJson(txid, targetNetwork), targetNetwork);
+  return browserPageFromTransaction(
+    await fetchTransactionJson(txid, targetNetwork),
+    targetNetwork,
+  );
 }
 
-function publicDesktopMail(inboxMessages: InboxMessage[], sentMessages: SentMessage[]): MailMessage[] {
+function publicDesktopMail(
+  inboxMessages: InboxMessage[],
+  sentMessages: SentMessage[],
+): MailMessage[] {
   return [
     ...inboxMessages
       .filter((message) => message.confirmed)
@@ -4791,7 +6269,9 @@ function emptyMarketplaceStats(): PowIdMarketplaceStats {
   };
 }
 
-function marketplaceStatsFromSales(sales: PowIdMarketplaceSale[]): PowIdMarketplaceStats {
+function marketplaceStatsFromSales(
+  sales: PowIdMarketplaceSale[],
+): PowIdMarketplaceStats {
   return sales.reduce((stats, sale) => {
     if (sale.confirmed) {
       stats.confirmedSales += 1;
@@ -4821,7 +6301,11 @@ function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
       createdAt: event.createdAt,
       dataBytes: event.dataBytes,
       network: event.network,
-      tags: [status, networkLabel(event.network), `${event.amountSats.toLocaleString()} sats`],
+      tags: [
+        status,
+        networkLabel(event.network),
+        `${event.amountSats.toLocaleString()} sats`,
+      ],
       txid: event.txid,
     };
 
@@ -4863,17 +6347,25 @@ function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
     }
 
     if (event.kind === "list") {
-      const anchorVout = event.saleAuthorization.anchorVout ?? ID_LISTING_ANCHOR_VOUT;
+      const anchorVout =
+        event.saleAuthorization.anchorVout ?? ID_LISTING_ANCHOR_VOUT;
       return {
         ...base,
         actor: event.sellerAddress,
         counterparty: event.saleAuthorization.buyerAddress,
         description: `${event.id}@proofofwork.me listed for ${event.priceSats.toLocaleString()} sats by ${shortAddress(event.sellerAddress)}.`,
-        detail: event.listingVersion === "list5" ? "Sale-ticket listing" : "Legacy listing",
+        detail:
+          event.listingVersion === "list5"
+            ? "Sale-ticket listing"
+            : "Legacy listing",
         id: event.id,
         kind: "id-list",
         listingId: event.txid,
-        tags: [...base.tags, "Listing", `${event.priceSats.toLocaleString()} sale sats`],
+        tags: [
+          ...base.tags,
+          "Listing",
+          `${event.priceSats.toLocaleString()} sale sats`,
+        ],
         title: event.confirmed ? "ID listed" : "ID listing pending",
         utxo: `${event.txid}:${anchorVout}`,
       };
@@ -4887,7 +6379,9 @@ function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
         kind: "id-seal",
         listingId: event.listingId,
         tags: [...base.tags, "Seal"],
-        title: event.confirmed ? "Sale ticket sealed" : "Sale-ticket seal pending",
+        title: event.confirmed
+          ? "Sale ticket sealed"
+          : "Sale-ticket seal pending",
       };
     }
 
@@ -4908,17 +6402,26 @@ function activityItemsFromIdEvents(events: PowIdEvent[]): PowActivityItem[] {
       actor: event.ownerAddress,
       counterparty: event.sellerAddress,
       description: `${event.id ? `${event.id}@proofofwork.me` : "ID"} purchased by ${shortAddress(event.ownerAddress)}${event.sellerAddress ? ` from ${shortAddress(event.sellerAddress)}` : ""}.`,
-      detail: event.listingId ? `Listing ${shortAddress(event.listingId)}` : undefined,
+      detail: event.listingId
+        ? `Listing ${shortAddress(event.listingId)}`
+        : undefined,
       id: event.id,
       kind: "id-buy",
       listingId: event.listingId,
-      tags: [...base.tags, "Marketplace buy", event.priceSats ? `${event.priceSats.toLocaleString()} sale sats` : ""].filter(Boolean),
+      tags: [
+        ...base.tags,
+        "Marketplace buy",
+        event.priceSats ? `${event.priceSats.toLocaleString()} sale sats` : "",
+      ].filter(Boolean),
       title: event.confirmed ? "ID purchased" : "ID purchase pending",
     };
   });
 }
 
-function activityItemsFromAddressMail(inboxMessages: InboxMessage[], sentMessages: SentMessage[]): PowActivityItem[] {
+function activityItemsFromAddressMail(
+  inboxMessages: InboxMessage[],
+  sentMessages: SentMessage[],
+): PowActivityItem[] {
   const inboxItems = inboxMessages.map((message): PowActivityItem => {
     const isFile = Boolean(message.attachment);
     const isReply = Boolean(message.parentTxid);
@@ -4929,7 +6432,9 @@ function activityItemsFromAddressMail(inboxMessages: InboxMessage[], sentMessage
       counterparty: message.to,
       createdAt: message.createdAt,
       description: `${message.confirmed ? "Received" : "Incoming"} ${isFile ? "file" : isReply ? "reply" : "mail"} from ${shortAddress(message.from)} for ${message.amountSats.toLocaleString()} sats.`,
-      detail: message.attachment ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}` : messageSubject(message),
+      detail: message.attachment
+        ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}`
+        : messageSubject(message),
       kind: isFile ? "file" : isReply ? "reply" : "mail",
       network: message.network,
       tags: [
@@ -4942,7 +6447,11 @@ function activityItemsFromAddressMail(inboxMessages: InboxMessage[], sentMessage
         message.attachment?.mime ?? "",
         message.attachment?.name ?? "",
       ].filter(Boolean),
-      title: isFile ? "File received" : isReply ? "Reply received" : "Mail received",
+      title: isFile
+        ? "File received"
+        : isReply
+          ? "Reply received"
+          : "Mail received",
       txid: message.txid,
     };
   });
@@ -4959,11 +6468,17 @@ function activityItemsFromAddressMail(inboxMessages: InboxMessage[], sentMessage
       counterparty: message.to,
       createdAt: message.createdAt,
       description: `${confirmed ? "Sent" : deliveryStatus === "dropped" ? "Dropped" : "Pending"} ${isFile ? "file" : isReply ? "reply" : "mail"} to ${message.to} for ${message.amountSats.toLocaleString()} sats.`,
-      detail: message.attachment ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}` : messageSubject(message),
+      detail: message.attachment
+        ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}`
+        : messageSubject(message),
       kind: isFile ? "file" : isReply ? "reply" : "mail",
       network: message.network,
       tags: [
-        confirmed ? "Confirmed" : deliveryStatus === "dropped" ? "Dropped" : "Pending",
+        confirmed
+          ? "Confirmed"
+          : deliveryStatus === "dropped"
+            ? "Dropped"
+            : "Pending",
         networkLabel(message.network),
         "Outbound",
         `${message.amountSats.toLocaleString()} sats`,
@@ -4981,11 +6496,20 @@ function activityItemsFromAddressMail(inboxMessages: InboxMessage[], sentMessage
 }
 
 function compareActivityItems(left: PowActivityItem, right: PowActivityItem) {
-  return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.txid.localeCompare(left.txid);
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    right.txid.localeCompare(left.txid)
+  );
 }
 
-function compareMarketplaceSales(left: PowIdMarketplaceSale, right: PowIdMarketplaceSale) {
-  return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.txid.localeCompare(left.txid);
+function compareMarketplaceSales(
+  left: PowIdMarketplaceSale,
+  right: PowIdMarketplaceSale,
+) {
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    right.txid.localeCompare(left.txid)
+  );
 }
 
 function activityMatchesSearch(item: PowActivityItem, query: string) {
@@ -5016,10 +6540,17 @@ function idRegistryStateFromTransactions(
   targetNetwork: BitcoinNetwork,
 ): PowRegistryState {
   const events = txs.flatMap((tx): PowIdEvent[] => {
-    const vin = Array.isArray(tx.vin) ? (tx.vin as Array<Record<string, unknown>>) : [];
-    const vout = Array.isArray(tx.vout) ? (tx.vout as Array<Record<string, unknown>>) : [];
+    const vin = Array.isArray(tx.vin)
+      ? (tx.vin as Array<Record<string, unknown>>)
+      : [];
+    const vout = Array.isArray(tx.vout)
+      ? (tx.vout as Array<Record<string, unknown>>)
+      : [];
     const amount = registryPaymentAmount(vout, registryAddress);
-    const txid = typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid) ? tx.txid.toLowerCase() : "";
+    const txid =
+      typeof tx.txid === "string" && /^[0-9a-fA-F]{64}$/u.test(tx.txid)
+        ? tx.txid.toLowerCase()
+        : "";
 
     if (!txid || amount <= 0) {
       return [];
@@ -5039,7 +6570,10 @@ function idRegistryStateFromTransactions(
 
     const status = tx.status as Record<string, unknown> | undefined;
     const confirmed = Boolean(status?.confirmed);
-    const blockTime = typeof status?.block_time === "number" ? status.block_time * 1000 : Date.now();
+    const blockTime =
+      typeof status?.block_time === "number"
+        ? status.block_time * 1000
+        : Date.now();
     const baseEvent = {
       amountSats: amount,
       blockHeight: transactionBlockHeight(tx),
@@ -5103,7 +6637,10 @@ function idRegistryStateFromTransactions(
           ...baseEvent,
           id: eventMessage.id,
           kind: "list",
-          listingAnchorPresent: listingAnchorIsPresent(vout, eventMessage.saleAuthorization),
+          listingAnchorPresent: listingAnchorIsPresent(
+            vout,
+            eventMessage.saleAuthorization,
+          ),
           listingVersion: eventMessage.listingVersion,
           priceSats: eventMessage.priceSats,
           saleAuthorization: eventMessage.saleAuthorization,
@@ -5151,8 +6688,15 @@ function idRegistryStateFromTransactions(
     .filter((event) => event.confirmed)
     .sort(compareRegistryEventOrder);
   const pendingRegistrations = events
-    .filter((event): event is Extract<PowIdEvent, { kind: "register" }> => !event.confirmed && event.kind === "register")
-    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
+    .filter(
+      (event): event is Extract<PowIdEvent, { kind: "register" }> =>
+        !event.confirmed && event.kind === "register",
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    );
   const records = new Map<string, PowIdRecord>();
   const listings = new Map<string, PowIdListing>();
   const confirmedSales: PowIdMarketplaceSale[] = [];
@@ -5192,9 +6736,15 @@ function idRegistryStateFromTransactions(
       const listing = listings.get(event.listingId);
       const current = listing ? records.get(listing.id) : undefined;
       const anchorOk =
-        (event.delistingVersion !== "delist3" && event.delistingVersion !== "delist5") ||
+        (event.delistingVersion !== "delist3" &&
+          event.delistingVersion !== "delist5") ||
         (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
-      if (listing && current && event.inputAddresses.includes(current.ownerAddress) && anchorOk) {
+      if (
+        listing &&
+        current &&
+        event.inputAddresses.includes(current.ownerAddress) &&
+        anchorOk
+      ) {
         listings.delete(event.listingId);
         acceptedActivityEvents.push(event);
       }
@@ -5212,7 +6762,10 @@ function idRegistryStateFromTransactions(
         !event.inputAddresses.includes(current.ownerAddress) ||
         !saleAuthorizationUsesSaleTicketAnchor(event.saleAuthorization) ||
         event.saleAuthorization.anchorTxid !== listing.listingId ||
-        !saleAuthorizationTermsMatchIgnoringSeal(listing.saleAuthorization, event.saleAuthorization)
+        !saleAuthorizationTermsMatchIgnoringSeal(
+          listing.saleAuthorization,
+          event.saleAuthorization,
+        )
       ) {
         continue;
       }
@@ -5233,22 +6786,41 @@ function idRegistryStateFromTransactions(
     }
 
     if (event.kind === "marketTransfer") {
-      if (event.transferVersion === "buy3" || event.transferVersion === "buy4" || event.transferVersion === "buy5") {
-        const listing = event.listingId ? listings.get(event.listingId) : undefined;
+      if (
+        event.transferVersion === "buy3" ||
+        event.transferVersion === "buy4" ||
+        event.transferVersion === "buy5"
+      ) {
+        const listing = event.listingId
+          ? listings.get(event.listingId)
+          : undefined;
         const current = listing ? records.get(listing.id) : undefined;
-        const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
+        const sellerPaymentSats = listing
+          ? paymentAmountFromSnapshots(
+              event.paymentOutputs,
+              listing.sellerAddress,
+            )
+          : 0;
         if (
           !listing ||
           !current ||
-          (event.transferVersion === "buy3" && listing.listingVersion !== "list3") ||
-          (event.transferVersion === "buy4" && listing.listingVersion !== "list4") ||
-          (event.transferVersion === "buy5" && listing.listingVersion !== "list5") ||
+          (event.transferVersion === "buy3" &&
+            listing.listingVersion !== "list3") ||
+          (event.transferVersion === "buy4" &&
+            listing.listingVersion !== "list4") ||
+          (event.transferVersion === "buy5" &&
+            listing.listingVersion !== "list5") ||
           current.ownerAddress !== listing.sellerAddress ||
           !spendsListingAnchor(event.spentOutpoints, listing) ||
           sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
-          saleAuthorizationExpired(listing.saleAuthorization, event.createdAt) ||
-          (listing.buyerAddress && listing.buyerAddress !== event.ownerAddress) ||
-          (listing.receiveAddress && listing.receiveAddress !== event.receiveAddress)
+          saleAuthorizationExpired(
+            listing.saleAuthorization,
+            event.createdAt,
+          ) ||
+          (listing.buyerAddress &&
+            listing.buyerAddress !== event.ownerAddress) ||
+          (listing.receiveAddress &&
+            listing.receiveAddress !== event.receiveAddress)
         ) {
           continue;
         }
@@ -5280,18 +6852,31 @@ function idRegistryStateFromTransactions(
         continue;
       }
 
-      if (event.id && event.saleAuthorization && event.sellerAddress && typeof event.priceSats === "number") {
+      if (
+        event.id &&
+        event.saleAuthorization &&
+        event.sellerAddress &&
+        typeof event.priceSats === "number"
+      ) {
         const current = records.get(event.id);
         if (!current) {
           continue;
         }
 
-        const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
+        const matchingListing = findMatchingActiveListing(
+          listings,
+          event.saleAuthorization,
+          current.ownerAddress,
+        );
         if (
           current.ownerAddress !== event.sellerAddress ||
-          paymentAmountFromSnapshots(event.paymentOutputs, event.sellerAddress) < event.priceSats ||
+          paymentAmountFromSnapshots(
+            event.paymentOutputs,
+            event.sellerAddress,
+          ) < event.priceSats ||
           saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-          (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
+          (!matchingListing &&
+            !saleAuthorizationVerified(event.saleAuthorization))
         ) {
           continue;
         }
@@ -5335,9 +6920,13 @@ function idRegistryStateFromTransactions(
         !event.inputAddresses.includes(current.ownerAddress) ||
         saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
         (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
-        (event.listingVersion === "list4" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
-        (event.listingVersion === "list5" && (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET || !event.listingAnchorPresent)) ||
-        (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
+        (event.listingVersion === "list4" &&
+          event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
+        (event.listingVersion === "list5" &&
+          (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET ||
+            !event.listingAnchorPresent)) ||
+        (event.listingVersion === "list2" &&
+          event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
       ) {
         continue;
       }
@@ -5406,9 +6995,17 @@ function idRegistryStateFromTransactions(
         const listing = listings.get(event.listingId);
         const current = listing ? records.get(listing.id) : undefined;
         const anchorOk =
-          (event.delistingVersion !== "delist3" && event.delistingVersion !== "delist5") ||
-          (listing ? spendsListingAnchor(event.spentOutpoints, listing) : false);
-        if (!listing || !current || !event.inputAddresses.includes(current.ownerAddress) || !anchorOk) {
+          (event.delistingVersion !== "delist3" &&
+            event.delistingVersion !== "delist5") ||
+          (listing
+            ? spendsListingAnchor(event.spentOutpoints, listing)
+            : false);
+        if (
+          !listing ||
+          !current ||
+          !event.inputAddresses.includes(current.ownerAddress) ||
+          !anchorOk
+        ) {
           return [];
         }
 
@@ -5436,12 +7033,15 @@ function idRegistryStateFromTransactions(
           !listing ||
           !current ||
           listing.listingVersion !== "list5" ||
-            current.ownerAddress !== listing.sellerAddress ||
-            !event.inputAddresses.includes(current.ownerAddress) ||
-            !saleAuthorizationUsesSaleTicketAnchor(event.saleAuthorization) ||
-            event.saleAuthorization.anchorTxid !== listing.listingId ||
-            !saleAuthorizationTermsMatchIgnoringSeal(listing.saleAuthorization, event.saleAuthorization)
-          ) {
+          current.ownerAddress !== listing.sellerAddress ||
+          !event.inputAddresses.includes(current.ownerAddress) ||
+          !saleAuthorizationUsesSaleTicketAnchor(event.saleAuthorization) ||
+          event.saleAuthorization.anchorTxid !== listing.listingId ||
+          !saleAuthorizationTermsMatchIgnoringSeal(
+            listing.saleAuthorization,
+            event.saleAuthorization,
+          )
+        ) {
           return [];
         }
 
@@ -5463,22 +7063,41 @@ function idRegistryStateFromTransactions(
       }
 
       if (event.kind === "marketTransfer") {
-        if (event.transferVersion === "buy3" || event.transferVersion === "buy4" || event.transferVersion === "buy5") {
-          const listing = event.listingId ? listings.get(event.listingId) : undefined;
+        if (
+          event.transferVersion === "buy3" ||
+          event.transferVersion === "buy4" ||
+          event.transferVersion === "buy5"
+        ) {
+          const listing = event.listingId
+            ? listings.get(event.listingId)
+            : undefined;
           const current = listing ? records.get(listing.id) : undefined;
-          const sellerPaymentSats = listing ? paymentAmountFromSnapshots(event.paymentOutputs, listing.sellerAddress) : 0;
+          const sellerPaymentSats = listing
+            ? paymentAmountFromSnapshots(
+                event.paymentOutputs,
+                listing.sellerAddress,
+              )
+            : 0;
           if (
             !listing ||
             !current ||
-            (event.transferVersion === "buy3" && listing.listingVersion !== "list3") ||
-            (event.transferVersion === "buy4" && listing.listingVersion !== "list4") ||
-            (event.transferVersion === "buy5" && listing.listingVersion !== "list5") ||
+            (event.transferVersion === "buy3" &&
+              listing.listingVersion !== "list3") ||
+            (event.transferVersion === "buy4" &&
+              listing.listingVersion !== "list4") ||
+            (event.transferVersion === "buy5" &&
+              listing.listingVersion !== "list5") ||
             current.ownerAddress !== listing.sellerAddress ||
             !spendsListingAnchor(event.spentOutpoints, listing) ||
             sellerPaymentSats < sellerPaymentRequiredSats(listing) ||
-            saleAuthorizationExpired(listing.saleAuthorization, event.createdAt) ||
-            (listing.buyerAddress && listing.buyerAddress !== event.ownerAddress) ||
-            (listing.receiveAddress && listing.receiveAddress !== event.receiveAddress)
+            saleAuthorizationExpired(
+              listing.saleAuthorization,
+              event.createdAt,
+            ) ||
+            (listing.buyerAddress &&
+              listing.buyerAddress !== event.ownerAddress) ||
+            (listing.receiveAddress &&
+              listing.receiveAddress !== event.receiveAddress)
           ) {
             return [];
           }
@@ -5504,18 +7123,34 @@ function idRegistryStateFromTransactions(
           ];
         }
 
-        if (event.id && event.saleAuthorization && event.sellerAddress && typeof event.priceSats === "number") {
+        if (
+          event.id &&
+          event.saleAuthorization &&
+          event.sellerAddress &&
+          typeof event.priceSats === "number"
+        ) {
           const current = records.get(event.id);
           if (!current) {
             return [];
           }
 
-          const matchingListing = findMatchingActiveListing(listings, event.saleAuthorization, current.ownerAddress);
+          const matchingListing = findMatchingActiveListing(
+            listings,
+            event.saleAuthorization,
+            current.ownerAddress,
+          );
           if (
             current.ownerAddress !== event.sellerAddress ||
-            paymentAmountFromSnapshots(event.paymentOutputs, event.sellerAddress) < event.priceSats ||
-            saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
-            (!matchingListing && !saleAuthorizationVerified(event.saleAuthorization))
+            paymentAmountFromSnapshots(
+              event.paymentOutputs,
+              event.sellerAddress,
+            ) < event.priceSats ||
+            saleAuthorizationExpired(
+              event.saleAuthorization,
+              event.createdAt,
+            ) ||
+            (!matchingListing &&
+              !saleAuthorizationVerified(event.saleAuthorization))
           ) {
             return [];
           }
@@ -5554,9 +7189,13 @@ function idRegistryStateFromTransactions(
           !event.inputAddresses.includes(current.ownerAddress) ||
           saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
           (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
-          (event.listingVersion === "list4" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
-          (event.listingVersion === "list5" && (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET || !event.listingAnchorPresent)) ||
-          (event.listingVersion === "list2" && event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
+          (event.listingVersion === "list4" &&
+            event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
+          (event.listingVersion === "list5" &&
+            (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET ||
+              !event.listingAnchorPresent)) ||
+          (event.listingVersion === "list2" &&
+            event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
         ) {
           return [];
         }
@@ -5615,25 +7254,32 @@ function idRegistryStateFromTransactions(
         },
       ];
     })
-    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid));
+    .sort(
+      (left, right) =>
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    );
 
   const pendingSales: PowIdMarketplaceSale[] = pendingEvents
-    .filter((event): event is PowIdPendingEvent & {
-      id: string;
-      kind: "marketTransfer";
-      ownerAddress: string;
-      priceSats: number;
-      receiveAddress: string;
-      sellerAddress: string;
-    } =>
-      event.kind === "marketTransfer" &&
-      Boolean(event.id) &&
-      Boolean(event.ownerAddress) &&
-      typeof event.priceSats === "number" &&
-      Number.isSafeInteger(event.priceSats) &&
-      event.priceSats >= 0 &&
-      Boolean(event.receiveAddress) &&
-      Boolean(event.sellerAddress),
+    .filter(
+      (
+        event,
+      ): event is PowIdPendingEvent & {
+        id: string;
+        kind: "marketTransfer";
+        ownerAddress: string;
+        priceSats: number;
+        receiveAddress: string;
+        sellerAddress: string;
+      } =>
+        event.kind === "marketTransfer" &&
+        Boolean(event.id) &&
+        Boolean(event.ownerAddress) &&
+        typeof event.priceSats === "number" &&
+        Number.isSafeInteger(event.priceSats) &&
+        event.priceSats >= 0 &&
+        Boolean(event.receiveAddress) &&
+        Boolean(event.sellerAddress),
     )
     .map((event) => ({
       amountSats: event.amountSats,
@@ -5672,7 +7318,10 @@ function idRegistryStateFromTransactions(
 
   const pendingEventTxids = new Set(pendingEvents.map((event) => event.txid));
   const pendingMutationActivityEvents = events.filter(
-    (event) => !event.confirmed && event.kind !== "register" && pendingEventTxids.has(event.txid),
+    (event) =>
+      !event.confirmed &&
+      event.kind !== "register" &&
+      pendingEventTxids.has(event.txid),
   );
   const activityEvents = [
     ...acceptedActivityEvents,
@@ -5681,11 +7330,18 @@ function idRegistryStateFromTransactions(
   ];
 
   return {
-    activity: activityItemsFromIdEvents(activityEvents).sort(compareActivityItems),
-    listings: [...listings.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.txid.localeCompare(right.txid)),
+    activity:
+      activityItemsFromIdEvents(activityEvents).sort(compareActivityItems),
+    listings: [...listings.values()].sort(
+      (left, right) =>
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    ),
     pendingEvents,
     records: accepted,
-    sales: publicMarketplaceSales([...confirmedSales, ...pendingSales]).sort(compareMarketplaceSales),
+    sales: publicMarketplaceSales([...confirmedSales, ...pendingSales]).sort(
+      compareMarketplaceSales,
+    ),
   };
 }
 
@@ -5694,7 +7350,8 @@ function idRecordsFromTransactions(
   registryAddress: string,
   targetNetwork: BitcoinNetwork,
 ): PowIdRecord[] {
-  return idRegistryStateFromTransactions(txs, registryAddress, targetNetwork).records;
+  return idRegistryStateFromTransactions(txs, registryAddress, targetNetwork)
+    .records;
 }
 
 function idListingsFromTransactions(
@@ -5702,52 +7359,108 @@ function idListingsFromTransactions(
   registryAddress: string,
   targetNetwork: BitcoinNetwork,
 ): PowIdListing[] {
-  return idRegistryStateFromTransactions(txs, registryAddress, targetNetwork).listings;
+  return idRegistryStateFromTransactions(txs, registryAddress, targetNetwork)
+    .listings;
 }
 
-async function fetchIdRegistry(targetNetwork: BitcoinNetwork): Promise<PowIdRecord[]> {
+async function fetchIdRegistry(
+  targetNetwork: BitcoinNetwork,
+): Promise<PowIdRecord[]> {
   return (await fetchIdRegistryState(targetNetwork)).records;
 }
 
-async function fetchIdRegistryState(targetNetwork: BitcoinNetwork): Promise<PowRegistryState> {
+async function fetchIdRegistryState(
+  targetNetwork: BitcoinNetwork,
+): Promise<PowRegistryState> {
   const registryAddress = registryAddressForNetwork(targetNetwork);
   if (!registryAddress) {
-    return { activity: [], listings: [], pendingEvents: [], records: [], sales: [] };
+    return {
+      activity: [],
+      listings: [],
+      pendingEvents: [],
+      records: [],
+      sales: [],
+    };
   }
 
   if (POW_API_BASE) {
-    const payload = await fetchProofApiJson<PowRegistryApiResponse>("/api/v1/registry", targetNetwork);
+    const payload = await fetchProofApiJson<PowRegistryApiResponse>(
+      "/api/v1/registry",
+      targetNetwork,
+    );
     const listings = Array.isArray(payload.listings) ? payload.listings : [];
     return {
       activity: Array.isArray(payload.activity) ? payload.activity : [],
       listings: await filterSpendableListings(listings, targetNetwork),
-      pendingEvents: Array.isArray(payload.pendingEvents) ? payload.pendingEvents : [],
+      pendingEvents: Array.isArray(payload.pendingEvents)
+        ? payload.pendingEvents
+        : [],
       records: Array.isArray(payload.records) ? payload.records : [],
       sales: Array.isArray(payload.sales) ? payload.sales : [],
     };
   }
 
   const txs = await fetchRegistryTransactions(registryAddress, targetNetwork);
-  const state = idRegistryStateFromTransactions(txs, registryAddress, targetNetwork);
+  const state = idRegistryStateFromTransactions(
+    txs,
+    registryAddress,
+    targetNetwork,
+  );
   return {
     ...state,
     listings: await filterSpendableListings(state.listings, targetNetwork),
   };
 }
 
-async function fetchGlobalActivity(targetNetwork: BitcoinNetwork): Promise<PowActivityItem[]> {
+async function fetchGlobalActivity(
+  targetNetwork: BitcoinNetwork,
+): Promise<PowActivityItem[]> {
   if (POW_API_BASE) {
-    const payload = await fetchProofApiJson<PowActivityApiResponse>("/api/v1/log", targetNetwork);
+    const payload = await fetchProofApiJson<PowActivityApiResponse>(
+      "/api/v1/log",
+      targetNetwork,
+    );
     return Array.isArray(payload.activity) ? payload.activity : [];
   }
 
   return (await fetchIdRegistryState(targetNetwork)).activity;
 }
 
-async function fetchUtxos(ownerAddress: string, ownerNetwork: BitcoinNetwork): Promise<MempoolUtxo[]> {
-  const response = await fetch(`${mempoolBase(ownerNetwork)}/api/address/${ownerAddress}/utxo`);
+async function fetchPay2SpeakState(
+  targetNetwork: BitcoinNetwork,
+): Promise<Pay2SpeakState> {
+  const registryAddress = pay2SpeakRegistryAddressForNetwork(targetNetwork);
+  if (!registryAddress) {
+    return { campaigns: [], funding: [], questions: [] };
+  }
+
+  if (POW_API_BASE) {
+    const payload = await fetchProofApiJson<Pay2SpeakApiResponse>(
+      "/api/v1/pay2speak",
+      targetNetwork,
+    );
+    return {
+      campaigns: Array.isArray(payload.campaigns) ? payload.campaigns : [],
+      funding: Array.isArray(payload.funding) ? payload.funding : [],
+      questions: Array.isArray(payload.questions) ? payload.questions : [],
+    };
+  }
+
+  const txs = await fetchRegistryTransactions(registryAddress, targetNetwork);
+  return pay2SpeakStateFromTransactions(txs, registryAddress, targetNetwork);
+}
+
+async function fetchUtxos(
+  ownerAddress: string,
+  ownerNetwork: BitcoinNetwork,
+): Promise<MempoolUtxo[]> {
+  const response = await fetch(
+    `${mempoolBase(ownerNetwork)}/api/address/${ownerAddress}/utxo`,
+  );
   if (!response.ok) {
-    throw new Error(`Could not load wallet UTXOs: mempool.space returned ${response.status}.`);
+    throw new Error(
+      `Could not load wallet UTXOs: mempool.space returned ${response.status}.`,
+    );
   }
 
   const rawUtxos = (await response.json()) as Array<Record<string, unknown>>;
@@ -5765,27 +7478,38 @@ async function fetchUtxos(ownerAddress: string, ownerNetwork: BitcoinNetwork): P
       return [{ txid, vout, value, status }];
     })
     .sort((left, right) => {
-      const byConfirmation = Number(Boolean(right.status?.confirmed)) - Number(Boolean(left.status?.confirmed));
+      const byConfirmation =
+        Number(Boolean(right.status?.confirmed)) -
+        Number(Boolean(left.status?.confirmed));
       return byConfirmation || right.value - left.value;
     });
 }
 
 async function fetchTransactionHex(txid: string, ownerNetwork: BitcoinNetwork) {
-  const response = await fetch(`${mempoolBase(ownerNetwork)}/api/tx/${txid}/hex`);
+  const response = await fetch(
+    `${mempoolBase(ownerNetwork)}/api/tx/${txid}/hex`,
+  );
   if (!response.ok) {
-    throw new Error(`Could not load previous transaction ${shortAddress(txid)}.`);
+    throw new Error(
+      `Could not load previous transaction ${shortAddress(txid)}.`,
+    );
   }
 
   return response.text();
 }
 
-async function loadUtxoPreviousOutput(utxo: MempoolUtxo, network: BitcoinNetwork) {
+async function loadUtxoPreviousOutput(
+  utxo: MempoolUtxo,
+  network: BitcoinNetwork,
+) {
   const previousTxHex = await fetchTransactionHex(utxo.txid, network);
   const previousTx = bitcoin.Transaction.fromHex(previousTxHex);
   const previousOutput = previousTx.outs[utxo.vout];
 
   if (!previousOutput) {
-    throw new Error(`Previous output ${shortAddress(utxo.txid)}:${utxo.vout} could not be read.`);
+    throw new Error(
+      `Previous output ${shortAddress(utxo.txid)}:${utxo.vout} could not be read.`,
+    );
   }
 
   return {
@@ -5795,18 +7519,30 @@ async function loadUtxoPreviousOutput(utxo: MempoolUtxo, network: BitcoinNetwork
   };
 }
 
-async function chooseSellerAnchorPlan(fromAddress: string, network: BitcoinNetwork, priceSats: number) {
+async function chooseSellerAnchorPlan(
+  fromAddress: string,
+  network: BitcoinNetwork,
+  priceSats: number,
+) {
   const walletUtxos = await fetchUtxos(fromAddress, network);
   const confirmedUtxos = walletUtxos
     .filter((utxo) => utxo.status?.confirmed && utxo.value >= DUST_SATS)
-    .sort((left, right) => left.value - right.value || left.txid.localeCompare(right.txid) || left.vout - right.vout);
+    .sort(
+      (left, right) =>
+        left.value - right.value ||
+        left.txid.localeCompare(right.txid) ||
+        left.vout - right.vout,
+    );
 
   if (confirmedUtxos.length < 2) {
-    throw new Error("A hardened listing needs at least two confirmed wallet UTXOs: one reserved as the sale anchor and one to publish the listing.");
+    throw new Error(
+      "A hardened listing needs at least two confirmed wallet UTXOs: one reserved as the sale anchor and one to publish the listing.",
+    );
   }
 
   const anchor = confirmedUtxos[0];
-  const sealTargetSats = Math.floor(priceSats) + anchor.value + ID_LISTING_ANCHOR_SEAL_FEE_SATS;
+  const sealTargetSats =
+    Math.floor(priceSats) + anchor.value + ID_LISTING_ANCHOR_SEAL_FEE_SATS;
   const fillerUtxos: MempoolUtxo[] = [];
   let totalSats = anchor.value;
 
@@ -5819,18 +7555,28 @@ async function chooseSellerAnchorPlan(fromAddress: string, network: BitcoinNetwo
   }
 
   if (totalSats < sealTargetSats) {
-    throw new Error(`Need confirmed wallet UTXOs covering at least ${sealTargetSats.toLocaleString()} sats to create the seller anchor seal.`);
+    throw new Error(
+      `Need confirmed wallet UTXOs covering at least ${sealTargetSats.toLocaleString()} sats to create the seller anchor seal.`,
+    );
   }
 
   return {
     anchorUtxo: await loadUtxoPreviousOutput(anchor, network),
-    sealFundingUtxos: await Promise.all(fillerUtxos.map((utxo) => loadUtxoPreviousOutput(utxo, network))),
+    sealFundingUtxos: await Promise.all(
+      fillerUtxos.map((utxo) => loadUtxoPreviousOutput(utxo, network)),
+    ),
   };
 }
 
-async function fetchBroadcastStatus(txid: string, ownerNetwork: BitcoinNetwork): Promise<BroadcastStatus> {
+async function fetchBroadcastStatus(
+  txid: string,
+  ownerNetwork: BitcoinNetwork,
+): Promise<BroadcastStatus> {
   if (POW_API_BASE) {
-    const payload = await fetchProofApiJson<PowTxStatusApiResponse>(`/api/v1/tx/${encodeURIComponent(txid)}/status`, ownerNetwork);
+    const payload = await fetchProofApiJson<PowTxStatusApiResponse>(
+      `/api/v1/tx/${encodeURIComponent(txid)}/status`,
+      ownerNetwork,
+    );
     return normalizeBroadcastStatus(payload.status);
   }
 
@@ -5856,17 +7602,25 @@ function broadcastTargetsFor(
 ) {
   return mergeSentMessages(
     [...localSent, ...recoveredSent].filter(
-      (message) => message.from === ownerAddress && message.network === ownerNetwork && sentDeliveryStatus(message) !== "confirmed",
+      (message) =>
+        message.from === ownerAddress &&
+        message.network === ownerNetwork &&
+        sentDeliveryStatus(message) !== "confirmed",
     ),
   );
 }
 
-async function checkBroadcastTargets(targets: SentMessage[]): Promise<BroadcastCheckSummary> {
+async function checkBroadcastTargets(
+  targets: SentMessage[],
+): Promise<BroadcastCheckSummary> {
   const checkedAt = new Date().toISOString();
   const results = await Promise.all(
     targets.map(async (message): Promise<BroadcastCheckResult> => {
       try {
-        const nextStatus = await fetchBroadcastStatus(message.txid, message.network);
+        const nextStatus = await fetchBroadcastStatus(
+          message.txid,
+          message.network,
+        );
         return {
           from: message.from,
           network: message.network,
@@ -5884,9 +7638,15 @@ async function checkBroadcastTargets(targets: SentMessage[]): Promise<BroadcastC
     }),
   );
 
-  const confirmed = results.filter((result) => result.status === "confirmed").length;
-  const dropped = results.filter((result) => result.status === "dropped").length;
-  const pending = results.filter((result) => result.status === "pending").length;
+  const confirmed = results.filter(
+    (result) => result.status === "confirmed",
+  ).length;
+  const dropped = results.filter(
+    (result) => result.status === "dropped",
+  ).length;
+  const pending = results.filter(
+    (result) => result.status === "pending",
+  ).length;
 
   return {
     checkedAt,
@@ -5898,10 +7658,16 @@ async function checkBroadcastTargets(targets: SentMessage[]): Promise<BroadcastC
   };
 }
 
-function applyBroadcastCheckResults<T extends SentMessage>(messages: T[], summary: BroadcastCheckSummary) {
+function applyBroadcastCheckResults<T extends SentMessage>(
+  messages: T[],
+  summary: BroadcastCheckSummary,
+) {
   return messages.map((message) => {
     const result = summary.results.find(
-      (item) => item.txid === message.txid && item.network === message.network && item.from === message.from,
+      (item) =>
+        item.txid === message.txid &&
+        item.network === message.network &&
+        item.from === message.from,
     );
 
     if (!result?.status) {
@@ -5910,8 +7676,14 @@ function applyBroadcastCheckResults<T extends SentMessage>(messages: T[], summar
 
     return {
       ...message,
-      confirmedAt: result.status === "confirmed" ? message.confirmedAt ?? summary.checkedAt : message.confirmedAt,
-      droppedAt: result.status === "dropped" ? message.droppedAt ?? summary.checkedAt : undefined,
+      confirmedAt:
+        result.status === "confirmed"
+          ? (message.confirmedAt ?? summary.checkedAt)
+          : message.confirmedAt,
+      droppedAt:
+        result.status === "dropped"
+          ? (message.droppedAt ?? summary.checkedAt)
+          : undefined,
       lastCheckedAt: summary.checkedAt,
       status: result.status,
     };
@@ -5943,7 +7715,12 @@ function selectUtxos(
     selected.push(utxo);
     selectedValue += utxo.value;
 
-    const feeWithChange = Math.ceil(estimateTxVbytes(selected.length + baseInputCount, fixedOutputVbytes + changeOutputVbytes) * feeRate);
+    const feeWithChange = Math.ceil(
+      estimateTxVbytes(
+        selected.length + baseInputCount,
+        fixedOutputVbytes + changeOutputVbytes,
+      ) * feeRate,
+    );
     const changeWithChange = selectedValue - amountSats - feeWithChange;
     if (changeWithChange >= DUST_SATS) {
       return {
@@ -5954,7 +7731,10 @@ function selectUtxos(
       };
     }
 
-    const feeWithoutChange = Math.ceil(estimateTxVbytes(selected.length + baseInputCount, fixedOutputVbytes) * feeRate);
+    const feeWithoutChange = Math.ceil(
+      estimateTxVbytes(selected.length + baseInputCount, fixedOutputVbytes) *
+        feeRate,
+    );
     const remainder = selectedValue - amountSats - feeWithoutChange;
     if (remainder >= 0) {
       return {
@@ -5967,7 +7747,10 @@ function selectUtxos(
   }
 
   const lastInputCount = Math.max(selected.length, 1) + baseInputCount;
-  const estimatedFee = Math.ceil(estimateTxVbytes(lastInputCount, fixedOutputVbytes + changeOutputVbytes) * feeRate);
+  const estimatedFee = Math.ceil(
+    estimateTxVbytes(lastInputCount, fixedOutputVbytes + changeOutputVbytes) *
+      feeRate,
+  );
   throw new Error(
     `Insufficient funds. Need about ${(amountSats + estimatedFee).toLocaleString()} sats for amount plus fee.`,
   );
@@ -5976,10 +7759,19 @@ function selectUtxos(
 function isNativeWitnessScript(script: Uint8Array) {
   const version = script[0];
   const pushLength = script[1];
-  return script.length >= 4 && (version === 0x00 || version === 0x51) && pushLength === script.length - 2;
+  return (
+    script.length >= 4 &&
+    (version === 0x00 || version === 0x51) &&
+    pushLength === script.length - 2
+  );
 }
 
-function utxoInputData(utxo: MempoolUtxo & { previousOutput: bitcoin.Transaction["outs"][number]; previousTxHex: string }) {
+function utxoInputData(
+  utxo: MempoolUtxo & {
+    previousOutput: bitcoin.Transaction["outs"][number];
+    previousTxHex: string;
+  },
+) {
   if (isNativeWitnessScript(utxo.previousOutput.script)) {
     return {
       witnessUtxo: {
@@ -6018,12 +7810,20 @@ async function buildPaymentPsbt({
   toAddress?: string;
 }) {
   const selectedNetwork = bitcoinNetwork(network);
-  const paymentOutputs = payments ?? (toAddress && typeof amountSats === "number" ? [{ address: toAddress, amountSats }] : []);
+  const paymentOutputs =
+    payments ??
+    (toAddress && typeof amountSats === "number"
+      ? [{ address: toAddress, amountSats }]
+      : []);
   if (paymentOutputs.length === 0) {
     throw new Error("Add at least one recipient.");
   }
 
-  const normalizeOutput = (payment: PaymentOutputSpec, index: number, label: string) => {
+  const normalizeOutput = (
+    payment: PaymentOutputSpec,
+    index: number,
+    label: string,
+  ) => {
     const satoshis = Math.floor(payment.amountSats);
     if (satoshis <= 0) {
       throw new Error("Recipient amount must be greater than zero.");
@@ -6043,26 +7843,61 @@ async function buildPaymentPsbt({
     return {
       address: payment.address,
       amountSats: satoshis,
-      script: scriptForAddress(payment.address, network, `${label} ${index + 1}`),
+      script: scriptForAddress(
+        payment.address,
+        network,
+        `${label} ${index + 1}`,
+      ),
     };
   };
-  const normalizedPayments = paymentOutputs.map((payment, index) => normalizeOutput(payment, index, "Recipient"));
-  const normalizedPostProtocolPayments = (postProtocolPayments ?? []).map((payment, index) => normalizeOutput(payment, index, "Post-protocol recipient"));
-  const totalAmountSats = [...normalizedPayments, ...normalizedPostProtocolPayments].reduce((total, payment) => total + payment.amountSats, 0);
-  const changeScript = scriptForAddress(fromAddress, network, "Connected wallet");
+  const normalizedPayments = paymentOutputs.map((payment, index) =>
+    normalizeOutput(payment, index, "Recipient"),
+  );
+  const normalizedPostProtocolPayments = (postProtocolPayments ?? []).map(
+    (payment, index) =>
+      normalizeOutput(payment, index, "Post-protocol recipient"),
+  );
+  const totalAmountSats = [
+    ...normalizedPayments,
+    ...normalizedPostProtocolPayments,
+  ].reduce((total, payment) => total + payment.amountSats, 0);
+  const changeScript = scriptForAddress(
+    fromAddress,
+    network,
+    "Connected wallet",
+  );
   const opReturnScripts = protocolOutputScripts(protocolPayloads);
   const fixedOutputVbytes =
-    normalizedPayments.reduce((total, payment) => total + outputVbytesForScript(payment.script), 0) +
-    opReturnScripts.reduce((total, script) => total + outputVbytesForScript(script), 0) +
-    normalizedPostProtocolPayments.reduce((total, payment) => total + outputVbytesForScript(payment.script), 0);
+    normalizedPayments.reduce(
+      (total, payment) => total + outputVbytesForScript(payment.script),
+      0,
+    ) +
+    opReturnScripts.reduce(
+      (total, script) => total + outputVbytesForScript(script),
+      0,
+    ) +
+    normalizedPostProtocolPayments.reduce(
+      (total, payment) => total + outputVbytesForScript(payment.script),
+      0,
+    );
   const changeOutputVbytes = outputVbytesForScript(changeScript);
   const walletUtxos = await fetchUtxos(fromAddress, network);
-  const excluded = new Set((excludeOutpoints ?? []).map((outpoint) => `${outpoint.txid}:${outpoint.vout}`));
-  const spendableWalletUtxos = walletUtxos.filter((utxo) => !excluded.has(`${utxo.txid}:${utxo.vout}`));
-  const utxos = requireConfirmedUtxos ? spendableWalletUtxos.filter((utxo) => utxo.status?.confirmed) : spendableWalletUtxos;
+  const excluded = new Set(
+    (excludeOutpoints ?? []).map(
+      (outpoint) => `${outpoint.txid}:${outpoint.vout}`,
+    ),
+  );
+  const spendableWalletUtxos = walletUtxos.filter(
+    (utxo) => !excluded.has(`${utxo.txid}:${utxo.vout}`),
+  );
+  const utxos = requireConfirmedUtxos
+    ? spendableWalletUtxos.filter((utxo) => utxo.status?.confirmed)
+    : spendableWalletUtxos;
 
   if (walletUtxos.length === 0) {
-    throw new Error(`No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`);
+    throw new Error(
+      `No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`,
+    );
   }
 
   if (requireConfirmedUtxos && utxos.length === 0) {
@@ -6073,7 +7908,13 @@ async function buildPaymentPsbt({
 
   let selection: UtxoSelection;
   try {
-    selection = selectUtxos(utxos, totalAmountSats, feeRate, fixedOutputVbytes, changeOutputVbytes);
+    selection = selectUtxos(
+      utxos,
+      totalAmountSats,
+      feeRate,
+      fixedOutputVbytes,
+      changeOutputVbytes,
+    );
   } catch (error) {
     if (requireConfirmedUtxos && walletUtxos.length > utxos.length) {
       throw new Error(
@@ -6090,7 +7931,9 @@ async function buildPaymentPsbt({
       const previousOutput = previousTx.outs[utxo.vout];
 
       if (!previousOutput) {
-        throw new Error(`Previous output ${shortAddress(utxo.txid)}:${utxo.vout} could not be read.`);
+        throw new Error(
+          `Previous output ${shortAddress(utxo.txid)}:${utxo.vout} could not be read.`,
+        );
       }
 
       return {
@@ -6162,7 +8005,11 @@ async function buildPaymentPsbt({
     dustFeeSats: selection.dustFeeSats,
     feeSats: selection.feeSats,
     inputCount: selection.selected.length,
-    outputCount: normalizedPayments.length + opReturnScripts.length + normalizedPostProtocolPayments.length + (selection.changeSats >= DUST_SATS ? 1 : 0),
+    outputCount:
+      normalizedPayments.length +
+      opReturnScripts.length +
+      normalizedPostProtocolPayments.length +
+      (selection.changeSats >= DUST_SATS ? 1 : 0),
     psbtHex: psbt.toHex(),
   };
 }
@@ -6176,16 +8023,26 @@ async function signSellerAnchorAuthorization({
   sealFundingUtxos,
   wallet,
 }: {
-  anchorUtxo: MempoolUtxo & { previousOutput: bitcoin.Transaction["outs"][number]; previousTxHex: string };
+  anchorUtxo: MempoolUtxo & {
+    previousOutput: bitcoin.Transaction["outs"][number];
+    previousTxHex: string;
+  };
   network: BitcoinNetwork;
   priceSats: number;
   sellerAddress: string;
   sellerPublicKey: string;
-  sealFundingUtxos: Array<MempoolUtxo & { previousOutput: bitcoin.Transaction["outs"][number]; previousTxHex: string }>;
+  sealFundingUtxos: Array<
+    MempoolUtxo & {
+      previousOutput: bitcoin.Transaction["outs"][number];
+      previousTxHex: string;
+    }
+  >;
   wallet: UnisatWallet;
 }) {
   if (!wallet.signPsbt) {
-    throw new Error("UniSat signPsbt is not available. Update UniSat and try again.");
+    throw new Error(
+      "UniSat signPsbt is not available. Update UniSat and try again.",
+    );
   }
 
   const psbt = new bitcoin.Psbt({ network: bitcoinNetwork(network) });
@@ -6204,11 +8061,16 @@ async function signSellerAnchorAuthorization({
     });
   }
 
-  const totalInputSats = anchorUtxo.value + sealFundingUtxos.reduce((total, utxo) => total + utxo.value, 0);
+  const totalInputSats =
+    anchorUtxo.value +
+    sealFundingUtxos.reduce((total, utxo) => total + utxo.value, 0);
   const sellerOutputSats = Math.floor(priceSats) + anchorUtxo.value;
-  const changeSats = totalInputSats - sellerOutputSats - ID_LISTING_ANCHOR_SEAL_FEE_SATS;
+  const changeSats =
+    totalInputSats - sellerOutputSats - ID_LISTING_ANCHOR_SEAL_FEE_SATS;
   if (changeSats < 0) {
-    throw new Error("Seller anchor seal does not have enough temporary wallet input value.");
+    throw new Error(
+      "Seller anchor seal does not have enough temporary wallet input value.",
+    );
   }
 
   psbt.addOutput({
@@ -6251,12 +8113,19 @@ async function signSellerAnchorAuthorization({
       throw addressError;
     }
   }
-  const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, { network: bitcoinNetwork(network) });
+  const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, {
+    network: bitcoinNetwork(network),
+  });
   const inputSignature = signedInputSignature(signedPsbt, 0, sellerPublicKey);
   const signature = inputSignature?.signature;
 
-  if (!signature || signature[signature.length - 1] !== ID_LISTING_ANCHOR_SIGHASH_TYPE) {
-    throw new Error("Wallet did not return a seller anchor signature with the required sighash type.");
+  if (
+    !signature ||
+    signature[signature.length - 1] !== ID_LISTING_ANCHOR_SIGHASH_TYPE
+  ) {
+    throw new Error(
+      "Wallet did not return a seller anchor signature with the required sighash type.",
+    );
   }
 
   const signatureHex = bytesToHex(signature);
@@ -6277,7 +8146,9 @@ async function signSaleTicketAuthorization({
   wallet: UnisatWallet;
 }) {
   if (!wallet.signPsbt) {
-    throw new Error("UniSat signPsbt is not available. Update UniSat and try again.");
+    throw new Error(
+      "UniSat signPsbt is not available. Update UniSat and try again.",
+    );
   }
 
   if (listing.listingVersion !== "list5") {
@@ -6286,7 +8157,9 @@ async function signSaleTicketAuthorization({
 
   const anchor = await assertListingAnchorUnspent(listing, network);
   if (!("scriptPubKey" in anchor) || !anchor.publicKey) {
-    throw new Error("This listing does not have a seller-controlled sale ticket.");
+    throw new Error(
+      "This listing does not have a seller-controlled sale ticket.",
+    );
   }
 
   const psbt = new bitcoin.Psbt({ network: bitcoinNetwork(network) });
@@ -6336,12 +8209,19 @@ async function signSaleTicketAuthorization({
     }
   }
 
-  const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, { network: bitcoinNetwork(network) });
+  const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, {
+    network: bitcoinNetwork(network),
+  });
   const inputSignature = signedInputSignature(signedPsbt, 0, anchor.publicKey);
   const signature = inputSignature?.signature;
 
-  if (!signature || signature[signature.length - 1] !== ID_LISTING_ANCHOR_SIGHASH_TYPE) {
-    throw new Error("Wallet did not return a sale-ticket signature with the required sighash type.");
+  if (
+    !signature ||
+    signature[signature.length - 1] !== ID_LISTING_ANCHOR_SIGHASH_TYPE
+  ) {
+    throw new Error(
+      "Wallet did not return a sale-ticket signature with the required sighash type.",
+    );
   }
 
   const signatureHex = bytesToHex(signature);
@@ -6377,13 +8257,18 @@ function encodeCompactSize(value: number) {
 function witnessStackToScriptWitness(stack: Uint8Array[]) {
   return Buffer.concat([
     encodeCompactSize(stack.length),
-    ...stack.flatMap((item) => [encodeCompactSize(item.length), Buffer.from(item)]),
+    ...stack.flatMap((item) => [
+      encodeCompactSize(item.length),
+      Buffer.from(item),
+    ]),
   ]);
 }
 
 function listingAnchorDetails(listing: PowIdListing, network: BitcoinNetwork) {
   if (!saleAuthorizationHasAnchor(listing.saleAuthorization)) {
-    throw new Error("This listing does not use a spendable marketplace anchor.");
+    throw new Error(
+      "This listing does not use a spendable marketplace anchor.",
+    );
   }
 
   if (saleAuthorizationUsesSellerUtxoAnchor(listing.saleAuthorization)) {
@@ -6407,15 +8292,22 @@ function listingAnchorDetails(listing: PowIdListing, network: BitcoinNetwork) {
       publicKey: listing.saleAuthorization.sellerPublicKey,
       scriptPubKey: listing.saleAuthorization.anchorScriptPubKey,
       signature: listing.saleAuthorization.anchorSignature,
-      sighashType: listing.saleAuthorization.anchorSigHashType ?? ID_LISTING_ANCHOR_SIGHASH_TYPE,
+      sighashType:
+        listing.saleAuthorization.anchorSigHashType ??
+        ID_LISTING_ANCHOR_SIGHASH_TYPE,
       txid: listing.listingId,
       valueSats: listing.saleAuthorization.anchorValueSats,
       vout: listing.saleAuthorization.anchorVout,
     };
   }
 
-  if (listing.saleAuthorization.anchorScriptPubKey !== marketplaceLegacyAnchorScriptPubKey(network)) {
-    throw new Error("This listing anchor script does not match the legacy marketplace protocol.");
+  if (
+    listing.saleAuthorization.anchorScriptPubKey !==
+    marketplaceLegacyAnchorScriptPubKey(network)
+  ) {
+    throw new Error(
+      "This listing anchor script does not match the legacy marketplace protocol.",
+    );
   }
 
   return {
@@ -6427,18 +8319,30 @@ function listingAnchorDetails(listing: PowIdListing, network: BitcoinNetwork) {
   };
 }
 
-async function assertListingAnchorUnspent(listing: PowIdListing, network: BitcoinNetwork) {
+async function assertListingAnchorUnspent(
+  listing: PowIdListing,
+  network: BitcoinNetwork,
+) {
   const anchor = listingAnchorDetails(listing, network);
   const listingTxHex = await fetchTransactionHex(anchor.txid, network);
   const listingTx = bitcoin.Transaction.fromHex(listingTxHex);
   const output = listingTx.outs[anchor.vout];
-  const expectedScript = "scriptPubKey" in anchor ? anchor.scriptPubKey : bytesToHex(anchor.script);
+  const expectedScript =
+    "scriptPubKey" in anchor ? anchor.scriptPubKey : bytesToHex(anchor.script);
 
-  if (!output || bytesToHex(output.script) !== expectedScript || Number(output.value) !== anchor.valueSats) {
-    throw new Error("Listing anchor output does not match the on-chain listing transaction.");
+  if (
+    !output ||
+    bytesToHex(output.script) !== expectedScript ||
+    Number(output.value) !== anchor.valueSats
+  ) {
+    throw new Error(
+      "Listing anchor output does not match the on-chain listing transaction.",
+    );
   }
 
-  const outspendResponse = await fetch(`${mempoolBase(network)}/api/tx/${anchor.txid}/outspend/${anchor.vout}`);
+  const outspendResponse = await fetch(
+    `${mempoolBase(network)}/api/tx/${anchor.txid}/outspend/${anchor.vout}`,
+  );
   if (outspendResponse.ok) {
     const outspend = (await outspendResponse.json()) as Record<string, unknown>;
     if (outspend.spent) {
@@ -6489,28 +8393,53 @@ async function buildAnchoredMarketplacePsbt({
     return {
       address: payment.address,
       amountSats: satoshis,
-      script: scriptForAddress(payment.address, network, `Recipient ${index + 1}`),
+      script: scriptForAddress(
+        payment.address,
+        network,
+        `Recipient ${index + 1}`,
+      ),
     };
   });
-  const positiveOutputSats = normalizedPayments.reduce((total, payment) => total + payment.amountSats, 0);
+  const positiveOutputSats = normalizedPayments.reduce(
+    (total, payment) => total + payment.amountSats,
+    0,
+  );
   const walletFundedSats = Math.max(0, positiveOutputSats - anchor.valueSats);
-  const changeScript = scriptForAddress(fromAddress, network, "Connected wallet");
+  const changeScript = scriptForAddress(
+    fromAddress,
+    network,
+    "Connected wallet",
+  );
   const opReturnScripts = protocolOutputScripts(protocolPayloads);
   const fixedOutputVbytes =
-    normalizedPayments.reduce((total, payment) => total + outputVbytesForScript(payment.script), 0) +
-    opReturnScripts.reduce((total, script) => total + outputVbytesForScript(script), 0);
+    normalizedPayments.reduce(
+      (total, payment) => total + outputVbytesForScript(payment.script),
+      0,
+    ) +
+    opReturnScripts.reduce(
+      (total, script) => total + outputVbytesForScript(script),
+      0,
+    );
   const changeOutputVbytes = outputVbytesForScript(changeScript);
   const walletUtxos = await fetchUtxos(fromAddress, network);
   const anchorOutpointKey = `${anchor.txid}:${anchor.vout}`;
   const excluded = new Set([
     anchorOutpointKey,
-    ...(excludeOutpoints ?? []).map((outpoint) => `${outpoint.txid}:${outpoint.vout}`),
+    ...(excludeOutpoints ?? []).map(
+      (outpoint) => `${outpoint.txid}:${outpoint.vout}`,
+    ),
   ]);
-  const spendableWalletUtxos = walletUtxos.filter((utxo) => !excluded.has(`${utxo.txid}:${utxo.vout}`));
-  const utxos = requireConfirmedUtxos ? spendableWalletUtxos.filter((utxo) => utxo.status?.confirmed) : spendableWalletUtxos;
+  const spendableWalletUtxos = walletUtxos.filter(
+    (utxo) => !excluded.has(`${utxo.txid}:${utxo.vout}`),
+  );
+  const utxos = requireConfirmedUtxos
+    ? spendableWalletUtxos.filter((utxo) => utxo.status?.confirmed)
+    : spendableWalletUtxos;
 
   if (walletUtxos.length === 0) {
-    throw new Error(`No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`);
+    throw new Error(
+      `No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`,
+    );
   }
 
   if (requireConfirmedUtxos && utxos.length === 0) {
@@ -6521,7 +8450,14 @@ async function buildAnchoredMarketplacePsbt({
 
   let selection: UtxoSelection;
   try {
-    selection = selectUtxos(utxos, walletFundedSats, feeRate, fixedOutputVbytes, changeOutputVbytes, 1);
+    selection = selectUtxos(
+      utxos,
+      walletFundedSats,
+      feeRate,
+      fixedOutputVbytes,
+      changeOutputVbytes,
+      1,
+    );
   } catch (error) {
     if (requireConfirmedUtxos && walletUtxos.length > utxos.length) {
       throw new Error(
@@ -6532,7 +8468,9 @@ async function buildAnchoredMarketplacePsbt({
     throw error;
   }
 
-  const selectedWithPreviousTx = await Promise.all(selection.selected.map((utxo) => loadUtxoPreviousOutput(utxo, network)));
+  const selectedWithPreviousTx = await Promise.all(
+    selection.selected.map((utxo) => loadUtxoPreviousOutput(utxo, network)),
+  );
 
   const psbt = new bitcoin.Psbt({ network: selectedNetwork });
   if ("scriptPubKey" in anchor) {
@@ -6551,10 +8489,16 @@ async function buildAnchoredMarketplacePsbt({
     const anchorPublicKey = anchor.publicKey;
     const anchorSignature = anchor.signature;
     if (anchorSpendMode === "preSigned" && !anchorSignature) {
-      throw new Error("This sale ticket is not sealed yet. The seller must seal it before buyers can purchase.");
+      throw new Error(
+        "This sale ticket is not sealed yet. The seller must seal it before buyers can purchase.",
+      );
     }
 
-    if (anchorSpendMode === "preSigned" && !anchorIsTaproot && !anchorPublicKey) {
+    if (
+      anchorSpendMode === "preSigned" &&
+      !anchorIsTaproot &&
+      !anchorPublicKey
+    ) {
       throw new Error("This sale ticket is missing the seller public key.");
     }
 
@@ -6639,7 +8583,10 @@ async function buildAnchoredMarketplacePsbt({
     dustFeeSats: selection.dustFeeSats,
     feeSats: selection.feeSats,
     inputCount: selection.selected.length + 1,
-    outputCount: normalizedPayments.length + opReturnScripts.length + (selection.changeSats >= DUST_SATS ? 1 : 0),
+    outputCount:
+      normalizedPayments.length +
+      opReturnScripts.length +
+      (selection.changeSats >= DUST_SATS ? 1 : 0),
     psbtHex: psbt.toHex(),
     walletInputIndexes:
       "scriptPubKey" in anchor && anchorSpendMode === "wallet"
@@ -6648,7 +8595,10 @@ async function buildAnchoredMarketplacePsbt({
   };
 }
 
-async function broadcastRawTransaction(rawTx: string, ownerNetwork: BitcoinNetwork) {
+async function broadcastRawTransaction(
+  rawTx: string,
+  ownerNetwork: BitcoinNetwork,
+) {
   const response = await fetch(`${mempoolBase(ownerNetwork)}/api/tx`, {
     body: rawTx,
     method: "POST",
@@ -6656,7 +8606,9 @@ async function broadcastRawTransaction(rawTx: string, ownerNetwork: BitcoinNetwo
 
   if (!response.ok) {
     const responseText = await response.text().catch(() => "");
-    throw new Error(responseText || `Broadcast failed with HTTP ${response.status}.`);
+    throw new Error(
+      responseText || `Broadcast failed with HTTP ${response.status}.`,
+    );
   }
 
   return response.text();
@@ -6678,7 +8630,9 @@ async function signAndBroadcastPsbt({
   wallet: UnisatWallet;
 }) {
   if (!wallet.signPsbt) {
-    throw new Error("UniSat signPsbt is not available. Update UniSat or use a wallet that can sign PSBTs.");
+    throw new Error(
+      "UniSat signPsbt is not available. Update UniSat or use a wallet that can sign PSBTs.",
+    );
   }
 
   let signedPsbtHex = "";
@@ -6700,7 +8654,9 @@ async function signAndBroadcastPsbt({
     );
   } catch (error) {
     const signFailure = errorMessage(error, "");
-    if (!/(tosigninput|sign input|matched|current address)/i.test(signFailure)) {
+    if (
+      !/(tosigninput|sign input|matched|current address)/i.test(signFailure)
+    ) {
       throw error;
     }
 
@@ -6711,7 +8667,10 @@ async function signAndBroadcastPsbt({
 
     signedPsbtHex = await wallet.signPsbt(psbtHex, {
       autoFinalized: true,
-      toSignInputs: (signInputIndexes ?? Array.from({ length: inputCount }, (_, index) => index)).map((index) => ({
+      toSignInputs: (
+        signInputIndexes ??
+        Array.from({ length: inputCount }, (_, index) => index)
+      ).map((index) => ({
         index,
         publicKey,
       })),
@@ -6720,7 +8679,9 @@ async function signAndBroadcastPsbt({
 
   let rawTx = "";
   try {
-    const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, { network: bitcoinNetwork(network) });
+    const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, {
+      network: bitcoinNetwork(network),
+    });
     rawTx = signedPsbt.extractTransaction().toHex();
   } catch (error) {
     if (wallet.pushPsbt) {
@@ -6739,9 +8700,16 @@ export default function App() {
   const desktopRoute = isDesktopRoute();
   const browserRoute = isBrowserRoute();
   const marketplaceMode = isMarketplaceRoute();
+  const pay2SpeakMode = isPay2SpeakRoute();
+  const pay2SpeakCreatorAddress = pay2SpeakCreatorRouteAddress();
   const activityMode = isActivityRoute();
   const growthMode = isGrowthRoute();
-  const mainnetRegistryMode = idLaunchMode || marketplaceMode || activityMode || growthMode;
+  const mainnetRegistryMode =
+    idLaunchMode ||
+    marketplaceMode ||
+    pay2SpeakMode ||
+    activityMode ||
+    growthMode;
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
   const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
@@ -6753,14 +8721,20 @@ export default function App() {
   const [subject, setSubject] = useState("");
   const [memo, setMemo] = useState(DEFAULT_MEMO);
   const [attachment, setAttachment] = useState<MailAttachment | undefined>();
-  const [allSent, setAllSent] = useState<SentMessage[]>(() => loadSentMessages());
+  const [allSent, setAllSent] = useState<SentMessage[]>(() =>
+    loadSentMessages(),
+  );
   const [chainSent, setChainSent] = useState<SentMessage[]>([]);
   const [idRegistry, setIdRegistry] = useState<PowIdRecord[]>([]);
   const [idListings, setIdListings] = useState<PowIdListing[]>([]);
-  const [idPendingEvents, setIdPendingEvents] = useState<PowIdPendingEvent[]>([]);
+  const [idPendingEvents, setIdPendingEvents] = useState<PowIdPendingEvent[]>(
+    [],
+  );
   const [idSales, setIdSales] = useState<PowIdMarketplaceSale[]>([]);
   const [idActivity, setIdActivity] = useState<PowActivityItem[]>([]);
-  const [lastRegisteredId, setLastRegisteredId] = useState<PowIdRecord | undefined>();
+  const [lastRegisteredId, setLastRegisteredId] = useState<
+    PowIdRecord | undefined
+  >();
   const [idName, setIdName] = useState("");
   const [idReceiveAddress, setIdReceiveAddress] = useState("");
   const [idPgpKey, setIdPgpKey] = useState("");
@@ -6775,22 +8749,51 @@ export default function App() {
   const [idSelectedListingId, setIdSelectedListingId] = useState("");
   const [idPurchaseOwnerAddress, setIdPurchaseOwnerAddress] = useState("");
   const [idPurchaseReceiveAddress, setIdPurchaseReceiveAddress] = useState("");
-  const [mailPreferences, setMailPreferences] = useState<MailPreferences>(() => loadMailPreferences());
-  const [contacts, setContacts] = useState<ContactRecord[]>(() => loadContacts());
-  const [customFolders, setCustomFolders] = useState<CustomFolderRecord[]>(() => loadCustomFolders());
+  const [pay2SpeakCampaigns, setPay2SpeakCampaigns] = useState<
+    Pay2SpeakCampaign[]
+  >([]);
+  const [pay2SpeakFunding, setPay2SpeakFunding] = useState<Pay2SpeakFunding[]>(
+    [],
+  );
+  const [pay2SpeakQuestions, setPay2SpeakQuestions] = useState<
+    Pay2SpeakQuestion[]
+  >([]);
+  const [pay2SpeakSpaceNumber, setPay2SpeakSpaceNumber] = useState(0);
+  const [pay2SpeakHandle, setPay2SpeakHandle] = useState("");
+  const [pay2SpeakTargetSats, setPay2SpeakTargetSats] = useState(100_000);
+  const [pay2SpeakSelectedCampaignId, setPay2SpeakSelectedCampaignId] =
+    useState("");
+  const [pay2SpeakContributionSats, setPay2SpeakContributionSats] =
+    useState(5460);
+  const [pay2SpeakQuestion, setPay2SpeakQuestion] = useState("");
+  const [mailPreferences, setMailPreferences] = useState<MailPreferences>(() =>
+    loadMailPreferences(),
+  );
+  const [contacts, setContacts] = useState<ContactRecord[]>(() =>
+    loadContacts(),
+  );
+  const [customFolders, setCustomFolders] = useState<CustomFolderRecord[]>(() =>
+    loadCustomFolders(),
+  );
   const [newFolderName, setNewFolderName] = useState("");
   const [desktopQuery, setDesktopQuery] = useState("");
-  const [desktopProfile, setDesktopProfile] = useState<DesktopProfile | undefined>();
+  const [desktopProfile, setDesktopProfile] = useState<
+    DesktopProfile | undefined
+  >();
   const [desktopMail, setDesktopMail] = useState<MailMessage[]>([]);
   const [desktopSelectedKey, setDesktopSelectedKey] = useState("");
   const [activityQuery, setActivityQuery] = useState("");
-  const [activityProfile, setActivityProfile] = useState<DesktopProfile | undefined>();
+  const [activityProfile, setActivityProfile] = useState<
+    DesktopProfile | undefined
+  >();
   const [activityMail, setActivityMail] = useState<PowActivityItem[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [desktopLoading, setDesktopLoading] = useState(false);
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
-  const [activeFolder, setActiveFolder] = useState<Folder>(() => (desktopRoute ? "desktop" : mainnetRegistryMode ? "ids" : "inbox"));
+  const [activeFolder, setActiveFolder] = useState<Folder>(() =>
+    desktopRoute ? "desktop" : mainnetRegistryMode ? "ids" : "inbox",
+  );
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("value");
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
@@ -6817,11 +8820,21 @@ export default function App() {
     [protocolPayloads],
   );
   const archivedKeys = useMemo(
-    () => new Set(Object.entries(mailPreferences).filter(([, preference]) => preference.archived).map(([key]) => key)),
+    () =>
+      new Set(
+        Object.entries(mailPreferences)
+          .filter(([, preference]) => preference.archived)
+          .map(([key]) => key),
+      ),
     [mailPreferences],
   );
   const favoriteKeys = useMemo(
-    () => new Set(Object.entries(mailPreferences).filter(([, preference]) => preference.favorite).map(([key]) => key)),
+    () =>
+      new Set(
+        Object.entries(mailPreferences)
+          .filter(([, preference]) => preference.favorite)
+          .map(([key]) => key),
+      ),
     [mailPreferences],
   );
   const contactsForNetwork = useMemo(
@@ -6829,19 +8842,31 @@ export default function App() {
     [contacts, network],
   );
   const inboxMailAll = useMemo<MailMessage[]>(
-    () => inbox.filter((message) => message.confirmed).map((message) => ({ ...message, folder: "inbox" })),
+    () =>
+      inbox
+        .filter((message) => message.confirmed)
+        .map((message) => ({ ...message, folder: "inbox" })),
     [inbox],
   );
   const incomingMailAll = useMemo<MailMessage[]>(
-    () => inbox.filter((message) => !message.confirmed).map((message) => ({ ...message, folder: "incoming" })),
+    () =>
+      inbox
+        .filter((message) => !message.confirmed)
+        .map((message) => ({ ...message, folder: "incoming" })),
     [inbox],
   );
   const sentForAccount = useMemo(
     () =>
       address
         ? mergeSentMessages([
-            ...allSent.filter((message) => message.from === address && message.network === network),
-            ...chainSent.filter((message) => message.from === address && message.network === network),
+            ...allSent.filter(
+              (message) =>
+                message.from === address && message.network === network,
+            ),
+            ...chainSent.filter(
+              (message) =>
+                message.from === address && message.network === network,
+            ),
           ])
         : [],
     [address, allSent, chainSent, network],
@@ -6851,21 +8876,52 @@ export default function App() {
     [sentForAccount],
   );
   const visibleSentMailAll = useMemo(
-    () => sentMailAll.filter((message) => isVisibleSentStatus(sentDeliveryStatus(message))),
+    () =>
+      sentMailAll.filter((message) =>
+        isVisibleSentStatus(sentDeliveryStatus(message)),
+      ),
     [sentMailAll],
   );
   const outboxMailAll = useMemo(
-    () => sentMailAll.filter((message) => isOutboxStatus(sentDeliveryStatus(message))),
+    () =>
+      sentMailAll.filter((message) =>
+        isOutboxStatus(sentDeliveryStatus(message)),
+      ),
     [sentMailAll],
   );
-  const allMail = useMemo(() => [...inboxMailAll, ...visibleSentMailAll], [inboxMailAll, visibleSentMailAll]);
-  const threadMail = useMemo(() => [...incomingMailAll, ...allMail, ...outboxMailAll], [allMail, incomingMailAll, outboxMailAll]);
-  const inboxMail = useMemo(() => inboxMailAll.filter((message) => !archivedKeys.has(mailKey(message))), [archivedKeys, inboxMailAll]);
+  const allMail = useMemo(
+    () => [...inboxMailAll, ...visibleSentMailAll],
+    [inboxMailAll, visibleSentMailAll],
+  );
+  const threadMail = useMemo(
+    () => [...incomingMailAll, ...allMail, ...outboxMailAll],
+    [allMail, incomingMailAll, outboxMailAll],
+  );
+  const inboxMail = useMemo(
+    () => inboxMailAll.filter((message) => !archivedKeys.has(mailKey(message))),
+    [archivedKeys, inboxMailAll],
+  );
   const incomingMail = useMemo(() => incomingMailAll, [incomingMailAll]);
-  const sentMail = useMemo(() => visibleSentMailAll.filter((message) => !archivedKeys.has(mailKey(message))), [archivedKeys, visibleSentMailAll]);
-  const outboxMail = useMemo(() => outboxMailAll.filter((message) => !archivedKeys.has(mailKey(message))), [archivedKeys, outboxMailAll]);
-  const favoritesMail = useMemo(() => allMail.filter((message) => favoriteKeys.has(mailKey(message))), [allMail, favoriteKeys]);
-  const archiveMail = useMemo(() => allMail.filter((message) => archivedKeys.has(mailKey(message))), [allMail, archivedKeys]);
+  const sentMail = useMemo(
+    () =>
+      visibleSentMailAll.filter(
+        (message) => !archivedKeys.has(mailKey(message)),
+      ),
+    [archivedKeys, visibleSentMailAll],
+  );
+  const outboxMail = useMemo(
+    () =>
+      outboxMailAll.filter((message) => !archivedKeys.has(mailKey(message))),
+    [archivedKeys, outboxMailAll],
+  );
+  const favoritesMail = useMemo(
+    () => allMail.filter((message) => favoriteKeys.has(mailKey(message))),
+    [allMail, favoriteKeys],
+  );
+  const archiveMail = useMemo(
+    () => allMail.filter((message) => archivedKeys.has(mailKey(message))),
+    [allMail, archivedKeys],
+  );
   const activeCustomFolder = useMemo(
     () => customFolders.find((folder) => folder.id === activeCustomFolderId),
     [activeCustomFolderId, customFolders],
@@ -6873,7 +8929,11 @@ export default function App() {
   const customFolderMail = useMemo(
     () =>
       activeCustomFolderId
-        ? allMail.filter((message) => mailPreferences[mailKey(message)]?.folders?.includes(activeCustomFolderId))
+        ? allMail.filter((message) =>
+            mailPreferences[mailKey(message)]?.folders?.includes(
+              activeCustomFolderId,
+            ),
+          )
         : [],
     [activeCustomFolderId, allMail, mailPreferences],
   );
@@ -6882,18 +8942,37 @@ export default function App() {
       new Map(
         customFolders.map((folder) => [
           folder.id,
-          allMail.filter((message) => mailPreferences[mailKey(message)]?.folders?.includes(folder.id)).length,
+          allMail.filter((message) =>
+            mailPreferences[mailKey(message)]?.folders?.includes(folder.id),
+          ).length,
         ]),
       ),
     [allMail, customFolders, mailPreferences],
   );
   const allFileMessages = useMemo(
-    () => withCanonicalWelcomeFile(fileSurfaceMessages(allMail.filter((message) => message.folder !== "inbox" || message.confirmed)), network),
+    () =>
+      withCanonicalWelcomeFile(
+        fileSurfaceMessages(
+          allMail.filter(
+            (message) => message.folder !== "inbox" || message.confirmed,
+          ),
+        ),
+        network,
+      ),
     [allMail, network],
   );
-  const desktopFileMessages = useMemo(() => desktopMail.filter(hasAttachment), [desktopMail]);
+  const desktopFileMessages = useMemo(
+    () => desktopMail.filter(hasAttachment),
+    [desktopMail],
+  );
   const fileMessages = useMemo(
-    () => allFileMessages.filter((message) => message.attachment && (fileFilter === "all" || attachmentKind(message.attachment) === fileFilter)),
+    () =>
+      allFileMessages.filter(
+        (message) =>
+          message.attachment &&
+          (fileFilter === "all" ||
+            attachmentKind(message.attachment) === fileFilter),
+      ),
     [allFileMessages, fileFilter],
   );
   const activeMessages = useMemo(
@@ -6915,32 +8994,62 @@ export default function App() {
                       ? fileMessages
                       : activeFolder === "custom"
                         ? customFolderMail
-                      : [],
+                        : [],
         sortMode,
       ),
-    [activeFolder, archiveMail, customFolderMail, favoritesMail, fileMessages, inboxMail, incomingMail, outboxMail, sentMail, sortMode],
+    [
+      activeFolder,
+      archiveMail,
+      customFolderMail,
+      favoritesMail,
+      fileMessages,
+      inboxMail,
+      incomingMail,
+      outboxMail,
+      sentMail,
+      sortMode,
+    ],
   );
-  const selectedMessage = activeMessages.find((message) => mailKey(message) === selectedKey) ?? activeMessages[0];
+  const selectedMessage =
+    activeMessages.find((message) => mailKey(message) === selectedKey) ??
+    activeMessages[0];
   const threadMessages = selectedMessage
     ? sortMessages(
-        threadMail.filter((message) => rootTxid(message) === rootTxid(selectedMessage)),
+        threadMail.filter(
+          (message) => rootTxid(message) === rootTxid(selectedMessage),
+        ),
         "oldest",
       )
     : [];
   const registryAddress = registryAddressForNetwork(network);
   const recipientResolution = useMemo(
-    () => resolveRecipientInputs(recipient, network, idRegistry, registryAddress),
+    () =>
+      resolveRecipientInputs(recipient, network, idRegistry, registryAddress),
     [idRegistry, network, recipient, registryAddress],
   );
   const ccRecipientResolution = useMemo(
-    () => resolveRecipientInputs(ccRecipient, network, idRegistry, registryAddress),
+    () =>
+      resolveRecipientInputs(ccRecipient, network, idRegistry, registryAddress),
     [ccRecipient, idRegistry, network, registryAddress],
   );
-  const recipientNote = recipient.trim() ? recipientResolutionNote(recipientResolution) : "";
-  const ccRecipientNote = ccRecipient.trim() ? recipientResolutionNote(ccRecipientResolution) : "";
-  const totalResolvedRecipients = recipientResolution.recipients.length + ccRecipientResolution.recipients.length;
+  const recipientNote = recipient.trim()
+    ? recipientResolutionNote(recipientResolution)
+    : "";
+  const ccRecipientNote = ccRecipient.trim()
+    ? recipientResolutionNote(ccRecipientResolution)
+    : "";
+  const totalResolvedRecipients =
+    recipientResolution.recipients.length +
+    ccRecipientResolution.recipients.length;
   const canSend =
-    Boolean(address && recipient.trim() && amountSats > 0 && Number.isFinite(feeRate) && feeRate >= 0 && (subject.trim() || memo.trim() || attachment)) &&
+    Boolean(
+      address &&
+      recipient.trim() &&
+      amountSats > 0 &&
+      Number.isFinite(feeRate) &&
+      feeRate >= 0 &&
+      (subject.trim() || memo.trim() || attachment),
+    ) &&
     recipientResolution.recipients.length > 0 &&
     totalResolvedRecipients <= MAX_RECIPIENTS &&
     !recipientResolution.error &&
@@ -6949,66 +9058,146 @@ export default function App() {
     !busy;
   const normalizedIdName = normalizePowId(idName);
   const idRegistrationPayload = useMemo(
-    () => (address && idReceiveAddress && normalizedIdName ? buildIdRegistrationPayload(normalizedIdName, address, idReceiveAddress.trim(), idPgpKey) : ""),
+    () =>
+      address && idReceiveAddress && normalizedIdName
+        ? buildIdRegistrationPayload(
+            normalizedIdName,
+            address,
+            idReceiveAddress.trim(),
+            idPgpKey,
+          )
+        : "",
     [address, idPgpKey, idReceiveAddress, normalizedIdName],
   );
   const idRegistrationBytes = useMemo(
-    () => (idRegistrationPayload ? dataCarrierBytesForPayload(idRegistrationPayload) : 0),
+    () =>
+      idRegistrationPayload
+        ? dataCarrierBytesForPayload(idRegistrationPayload)
+        : 0,
     [idRegistrationPayload],
   );
-  const ownedIdCount = useMemo(() => ownedPowIds(idRegistry, address).length, [address, idRegistry]);
-  const confirmedIdCount = useMemo(() => idRegistry.filter((record) => record.confirmed).length, [idRegistry]);
+  const ownedIdCount = useMemo(
+    () => ownedPowIds(idRegistry, address).length,
+    [address, idRegistry],
+  );
+  const confirmedIdCount = useMemo(
+    () => idRegistry.filter((record) => record.confirmed).length,
+    [idRegistry],
+  );
   const pendingIdCount = idRegistry.length - confirmedIdCount;
-  const pendingIdEventCount = useMemo(() => idPendingEvents.filter((event) => event.network === network).length, [idPendingEvents, network]);
+  const pendingIdEventCount = useMemo(
+    () => idPendingEvents.filter((event) => event.network === network).length,
+    [idPendingEvents, network],
+  );
   const walletPendingIdEvents = useMemo(
-    () => idPendingEvents.filter((event) => event.network === network && pendingIdEventTouchesAddress(event, address)),
+    () =>
+      idPendingEvents.filter(
+        (event) =>
+          event.network === network &&
+          pendingIdEventTouchesAddress(event, address),
+      ),
     [address, idPendingEvents, network],
   );
   const existingIdRegistration = useMemo(
-    () => idRegistry.find((record) => record.network === network && record.id === normalizedIdName),
+    () =>
+      idRegistry.find(
+        (record) =>
+          record.network === network && record.id === normalizedIdName,
+      ),
     [idRegistry, network, normalizedIdName],
   );
   const canRegisterId =
-    Boolean(address && registryAddress && idRegistrationPayload && !powIdError(normalizedIdName) && isValidBitcoinAddress(idReceiveAddress.trim(), network)) &&
+    Boolean(
+      address &&
+      registryAddress &&
+      idRegistrationPayload &&
+      !powIdError(normalizedIdName) &&
+      isValidBitcoinAddress(idReceiveAddress.trim(), network),
+    ) &&
     idRegistrationBytes <= MAX_DATA_CARRIER_BYTES &&
     !existingIdRegistration &&
     !busy;
   const ownerControlledIds = useMemo(
-    () => idRegistry.filter((record) => record.network === network && record.confirmed && record.ownerAddress === address),
+    () =>
+      idRegistry.filter(
+        (record) =>
+          record.network === network &&
+          record.confirmed &&
+          record.ownerAddress === address,
+      ),
     [address, idRegistry, network],
   );
   const managedIdRecord = useMemo(
-    () => ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0],
+    () =>
+      ownerControlledIds.find((record) => record.id === managedIdName) ??
+      ownerControlledIds[0],
     [managedIdName, ownerControlledIds],
   );
   const receiverUpdateResolution = useMemo(
-    () => resolveRecipientInput(idUpdateReceiveAddress, network, idRegistry, registryAddress),
+    () =>
+      resolveRecipientInput(
+        idUpdateReceiveAddress,
+        network,
+        idRegistry,
+        registryAddress,
+      ),
     [idRegistry, idUpdateReceiveAddress, network, registryAddress],
   );
   const idReceiverUpdatePayload = useMemo(
-    () => (managedIdRecord && receiverUpdateResolution.paymentAddress ? buildIdReceiverUpdatePayload(managedIdRecord.id, receiverUpdateResolution.paymentAddress) : ""),
+    () =>
+      managedIdRecord && receiverUpdateResolution.paymentAddress
+        ? buildIdReceiverUpdatePayload(
+            managedIdRecord.id,
+            receiverUpdateResolution.paymentAddress,
+          )
+        : "",
     [managedIdRecord, receiverUpdateResolution.paymentAddress],
   );
   const transferOwnerResolution = useMemo(
-    () => resolvePowIdOwnerInput(idTransferOwnerAddress, network, idRegistry, registryAddress),
+    () =>
+      resolvePowIdOwnerInput(
+        idTransferOwnerAddress,
+        network,
+        idRegistry,
+        registryAddress,
+      ),
     [idRegistry, idTransferOwnerAddress, network, registryAddress],
   );
   const transferReceiveAddress = idTransferReceiveAddress.trim();
   const transferReceiveResolution = useMemo(
-    () => (transferReceiveAddress ? resolveRecipientInput(transferReceiveAddress, network, idRegistry, registryAddress) : undefined),
+    () =>
+      transferReceiveAddress
+        ? resolveRecipientInput(
+            transferReceiveAddress,
+            network,
+            idRegistry,
+            registryAddress,
+          )
+        : undefined,
     [idRegistry, network, registryAddress, transferReceiveAddress],
   );
-  const effectiveTransferReceiveAddress = transferReceiveResolution ? transferReceiveResolution.paymentAddress : transferOwnerResolution.receiveAddress;
+  const effectiveTransferReceiveAddress = transferReceiveResolution
+    ? transferReceiveResolution.paymentAddress
+    : transferOwnerResolution.receiveAddress;
   const transferPayloadReceiveAddress =
-    effectiveTransferReceiveAddress && effectiveTransferReceiveAddress !== transferOwnerResolution.ownerAddress
+    effectiveTransferReceiveAddress &&
+    effectiveTransferReceiveAddress !== transferOwnerResolution.ownerAddress
       ? effectiveTransferReceiveAddress
       : "";
   const idTransferPayload = useMemo(
     () =>
       managedIdRecord && transferOwnerResolution.ownerAddress
-        ? buildIdTransferPayload(managedIdRecord.id, transferOwnerResolution.ownerAddress, transferPayloadReceiveAddress)
+        ? buildIdTransferPayload(
+            managedIdRecord.id,
+            transferOwnerResolution.ownerAddress,
+            transferPayloadReceiveAddress,
+          )
         : "",
-    [managedIdRecord, transferOwnerResolution.ownerAddress, transferPayloadReceiveAddress],
+    [
+      managedIdRecord,
+      transferOwnerResolution.ownerAddress,
+      transferPayloadReceiveAddress,
+    ],
   );
   const parsedSaleAuthorization = useMemo(() => {
     const trimmed = idSaleAuthorization.trim();
@@ -7023,9 +9212,107 @@ export default function App() {
     }
   }, [idSaleAuthorization, network]);
   const selectedMarketplaceListing = useMemo(
-    () => idListings.find((listing) => listing.listingId === idSelectedListingId && listing.network === network),
+    () =>
+      idListings.find(
+        (listing) =>
+          listing.listingId === idSelectedListingId &&
+          listing.network === network,
+      ),
     [idListings, idSelectedListingId, network],
   );
+  const pay2SpeakRegistryAddress = pay2SpeakRegistryAddressForNetwork(network);
+  const normalizedPay2SpeakHandle = normalizeXHandle(pay2SpeakHandle);
+  const selectedPay2SpeakCampaign = useMemo(
+    () =>
+      pay2SpeakCampaigns.find(
+        (campaign) =>
+          campaign.txid === pay2SpeakSelectedCampaignId &&
+          campaign.network === network,
+      ) ??
+      (pay2SpeakCreatorAddress
+        ? pay2SpeakCampaigns.find(
+            (campaign) =>
+              campaign.creatorAddress === pay2SpeakCreatorAddress &&
+              campaign.network === network,
+          )
+        : undefined) ??
+      pay2SpeakCampaigns.find((campaign) => campaign.network === network),
+    [
+      network,
+      pay2SpeakCampaigns,
+      pay2SpeakCreatorAddress,
+      pay2SpeakSelectedCampaignId,
+    ],
+  );
+  const pay2SpeakCampaignPayload = useMemo(
+    () =>
+      normalizedPay2SpeakHandle &&
+      Number.isSafeInteger(Math.floor(pay2SpeakSpaceNumber)) &&
+      Number.isSafeInteger(Math.floor(pay2SpeakTargetSats))
+        ? buildPay2SpeakCampaignPayload(
+            pay2SpeakSpaceNumber,
+            normalizedPay2SpeakHandle,
+            pay2SpeakTargetSats,
+          )
+        : "",
+    [normalizedPay2SpeakHandle, pay2SpeakSpaceNumber, pay2SpeakTargetSats],
+  );
+  const pay2SpeakFundingPayload = useMemo(
+    () =>
+      selectedPay2SpeakCampaign
+        ? buildPay2SpeakFundingPayload(
+            selectedPay2SpeakCampaign.txid,
+            pay2SpeakQuestion,
+          )
+        : "",
+    [pay2SpeakQuestion, selectedPay2SpeakCampaign],
+  );
+  const pay2SpeakCampaignBytes = useMemo(
+    () =>
+      pay2SpeakCampaignPayload
+        ? dataCarrierBytesForPayload(pay2SpeakCampaignPayload)
+        : 0,
+    [pay2SpeakCampaignPayload],
+  );
+  const pay2SpeakFundingBytes = useMemo(
+    () =>
+      pay2SpeakFundingPayload
+        ? dataCarrierBytesForPayload(pay2SpeakFundingPayload)
+        : 0,
+    [pay2SpeakFundingPayload],
+  );
+  const pay2SpeakSplit = useMemo(() => {
+    try {
+      return pay2SpeakFundingSplit(pay2SpeakContributionSats);
+    } catch {
+      return undefined;
+    }
+  }, [pay2SpeakContributionSats]);
+  const canCreatePay2SpeakCampaign =
+    Boolean(
+      address &&
+      network === "livenet" &&
+      pay2SpeakRegistryAddress &&
+      pay2SpeakCampaignPayload &&
+      !pay2SpeakHandleError(normalizedPay2SpeakHandle) &&
+      Number.isSafeInteger(Math.floor(pay2SpeakSpaceNumber)) &&
+      Math.floor(pay2SpeakSpaceNumber) >= 0 &&
+      Number.isSafeInteger(Math.floor(pay2SpeakTargetSats)) &&
+      Math.floor(pay2SpeakTargetSats) > PAY2SPEAK_REGISTRY_PRICE_SATS,
+    ) &&
+    pay2SpeakCampaignBytes <= MAX_DATA_CARRIER_BYTES &&
+    !busy;
+  const canFundPay2SpeakCampaign =
+    Boolean(
+      address &&
+      network === "livenet" &&
+      pay2SpeakRegistryAddress &&
+      selectedPay2SpeakCampaign &&
+      pay2SpeakSplit &&
+      pay2SpeakFundingPayload,
+    ) &&
+    pay2SpeakFundingBytes <= MAX_DATA_CARRIER_BYTES &&
+    !busy;
   const idPurchasePayload = useMemo(() => {
     if (!selectedMarketplaceListing || !idPurchaseOwnerAddress.trim()) {
       return "";
@@ -7041,17 +9328,26 @@ export default function App() {
     } catch {
       return "";
     }
-  }, [idPurchaseOwnerAddress, idPurchaseReceiveAddress, selectedMarketplaceListing]);
+  }, [
+    idPurchaseOwnerAddress,
+    idPurchaseReceiveAddress,
+    selectedMarketplaceListing,
+  ]);
   const idReceiverUpdateBytes = useMemo(
-    () => (idReceiverUpdatePayload ? dataCarrierBytesForPayload(idReceiverUpdatePayload) : 0),
+    () =>
+      idReceiverUpdatePayload
+        ? dataCarrierBytesForPayload(idReceiverUpdatePayload)
+        : 0,
     [idReceiverUpdatePayload],
   );
   const idTransferBytes = useMemo(
-    () => (idTransferPayload ? dataCarrierBytesForPayload(idTransferPayload) : 0),
+    () =>
+      idTransferPayload ? dataCarrierBytesForPayload(idTransferPayload) : 0,
     [idTransferPayload],
   );
   const idPurchaseBytes = useMemo(
-    () => (idPurchasePayload ? dataCarrierBytesForPayload(idPurchasePayload) : 0),
+    () =>
+      idPurchasePayload ? dataCarrierBytesForPayload(idPurchasePayload) : 0,
     [idPurchasePayload],
   );
   const salePriceSats = Math.floor(idSalePriceSats);
@@ -7061,53 +9357,61 @@ export default function App() {
   const canCreateSaleAuthorization =
     Boolean(
       address &&
-        registryAddress &&
-        managedIdRecord &&
-        managedIdRecord.ownerAddress === address &&
-        Number.isSafeInteger(salePriceSats) &&
-        salePriceSats >= 0 &&
-        (!saleBuyerAddress || isValidBitcoinAddress(saleBuyerAddress, network)) &&
-        (!saleReceiveAddress || isValidBitcoinAddress(saleReceiveAddress, network)),
+      registryAddress &&
+      managedIdRecord &&
+      managedIdRecord.ownerAddress === address &&
+      Number.isSafeInteger(salePriceSats) &&
+      salePriceSats >= 0 &&
+      (!saleBuyerAddress || isValidBitcoinAddress(saleBuyerAddress, network)) &&
+      (!saleReceiveAddress ||
+        isValidBitcoinAddress(saleReceiveAddress, network)),
     ) && !busy;
   const canUpdateId =
     Boolean(
       address &&
-        registryAddress &&
-        managedIdRecord &&
-        idReceiverUpdatePayload &&
-        !receiverUpdateResolution.error &&
-        isValidBitcoinAddress(receiverUpdateResolution.paymentAddress, network) &&
-        receiverUpdateResolution.paymentAddress !== managedIdRecord.receiveAddress,
+      registryAddress &&
+      managedIdRecord &&
+      idReceiverUpdatePayload &&
+      !receiverUpdateResolution.error &&
+      isValidBitcoinAddress(receiverUpdateResolution.paymentAddress, network) &&
+      receiverUpdateResolution.paymentAddress !==
+        managedIdRecord.receiveAddress,
     ) &&
     idReceiverUpdateBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
   const canTransferId =
     Boolean(
       address &&
-        registryAddress &&
-        managedIdRecord &&
-        idTransferPayload &&
-        !transferOwnerResolution.error &&
-        !transferReceiveResolution?.error &&
-        isValidBitcoinAddress(transferOwnerResolution.ownerAddress, network) &&
-        isValidBitcoinAddress(effectiveTransferReceiveAddress, network) &&
-        (transferOwnerResolution.ownerAddress !== managedIdRecord.ownerAddress || effectiveTransferReceiveAddress !== managedIdRecord.receiveAddress),
+      registryAddress &&
+      managedIdRecord &&
+      idTransferPayload &&
+      !transferOwnerResolution.error &&
+      !transferReceiveResolution?.error &&
+      isValidBitcoinAddress(transferOwnerResolution.ownerAddress, network) &&
+      isValidBitcoinAddress(effectiveTransferReceiveAddress, network) &&
+      (transferOwnerResolution.ownerAddress !== managedIdRecord.ownerAddress ||
+        effectiveTransferReceiveAddress !== managedIdRecord.receiveAddress),
     ) &&
     idTransferBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
   const canPurchaseId =
     Boolean(
       address &&
-        registryAddress &&
-        parsedSaleAuthorization &&
-        selectedMarketplaceListing &&
-        listingCanBePurchased(selectedMarketplaceListing) &&
-        idPurchasePayload &&
-        isValidBitcoinAddress(idPurchaseOwnerAddress.trim(), network) &&
-        (!purchaseReceiveAddress || isValidBitcoinAddress(purchaseReceiveAddress, network)) &&
-        (!parsedSaleAuthorization.buyerAddress || parsedSaleAuthorization.buyerAddress === idPurchaseOwnerAddress.trim()) &&
-        (!parsedSaleAuthorization.receiveAddress || parsedSaleAuthorization.receiveAddress === (purchaseReceiveAddress || idPurchaseOwnerAddress.trim())) &&
-        saleAuthorizationCanBroadcast(parsedSaleAuthorization),
+      registryAddress &&
+      parsedSaleAuthorization &&
+      selectedMarketplaceListing &&
+      listingCanBePurchased(selectedMarketplaceListing) &&
+      idPurchasePayload &&
+      isValidBitcoinAddress(idPurchaseOwnerAddress.trim(), network) &&
+      (!purchaseReceiveAddress ||
+        isValidBitcoinAddress(purchaseReceiveAddress, network)) &&
+      (!parsedSaleAuthorization.buyerAddress ||
+        parsedSaleAuthorization.buyerAddress ===
+          idPurchaseOwnerAddress.trim()) &&
+      (!parsedSaleAuthorization.receiveAddress ||
+        parsedSaleAuthorization.receiveAddress ===
+          (purchaseReceiveAddress || idPurchaseOwnerAddress.trim())) &&
+      saleAuthorizationCanBroadcast(parsedSaleAuthorization),
     ) &&
     idPurchaseBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
@@ -7119,9 +9423,12 @@ export default function App() {
         ? desktopLoading || !desktopProfile
         : activeFolder === "browser"
           ? true
-        : activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log"
-          ? busy || refreshInProgress || !registryAddress
-          : !address || busy || refreshInProgress;
+          : activeFolder === "ids" ||
+              activeFolder === "marketplace" ||
+              activeFolder === "pay2speak" ||
+              activeFolder === "log"
+            ? busy || refreshInProgress || !registryAddress
+            : !address || busy || refreshInProgress;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -7150,7 +9457,12 @@ export default function App() {
         return;
       }
 
-      const targets = broadcastTargetsFor(address, network, allSentRef.current, chainSentRef.current);
+      const targets = broadcastTargetsFor(
+        address,
+        network,
+        allSentRef.current,
+        chainSentRef.current,
+      );
 
       if (targets.length === 0) {
         if (!silent) {
@@ -7217,7 +9529,9 @@ export default function App() {
       return;
     }
 
-    const selectedRecord = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
+    const selectedRecord =
+      ownerControlledIds.find((record) => record.id === managedIdName) ??
+      ownerControlledIds[0];
     if (selectedRecord.id !== managedIdName) {
       setManagedIdName(selectedRecord.id);
     }
@@ -7256,14 +9570,36 @@ export default function App() {
 
     saveDraft(draft);
     setSavedDraft(draft);
-  }, [address, amountSats, attachment, ccRecipient, composeOpen, feeRate, memo, network, recipient, replyParentTxid, subject]);
+  }, [
+    address,
+    amountSats,
+    attachment,
+    ccRecipient,
+    composeOpen,
+    feeRate,
+    memo,
+    network,
+    recipient,
+    replyParentTxid,
+    subject,
+  ]);
 
   useEffect(() => {
     if (activityMode || growthMode) {
       return;
     }
 
-    if (activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log" || activeFolder === "contacts") {
+    if (
+      activeFolder === "ids" ||
+      activeFolder === "marketplace" ||
+      activeFolder === "pay2speak" ||
+      activeFolder === "log" ||
+      activeFolder === "contacts"
+    ) {
+      if (activeFolder === "pay2speak") {
+        void refreshPay2Speak(true);
+        return;
+      }
       void refreshIds(true);
     }
   }, [activeFolder, activityMode, growthMode, network]);
@@ -7278,9 +9614,22 @@ export default function App() {
       return;
     }
 
+    if (pay2SpeakMode) {
+      return;
+    }
+
     setActiveFolder("ids");
     void refreshIds(true);
-  }, [mainnetRegistryMode, network]);
+  }, [mainnetRegistryMode, network, pay2SpeakMode]);
+
+  useEffect(() => {
+    if (!pay2SpeakMode || network !== "livenet") {
+      return;
+    }
+
+    setActiveFolder("pay2speak");
+    void refreshPay2Speak(true);
+  }, [pay2SpeakMode, network]);
 
   useEffect(() => {
     if (!growthMode || network !== "livenet") {
@@ -7315,7 +9664,11 @@ export default function App() {
   }, [landingMode, network]);
 
   useEffect(() => {
-    if ((!needsRegistryResolution(recipient, network) && !needsRegistryResolution(ccRecipient, network)) || !registryAddress) {
+    if (
+      (!needsRegistryResolution(recipient, network) &&
+        !needsRegistryResolution(ccRecipient, network)) ||
+      !registryAddress
+    ) {
       return undefined;
     }
 
@@ -7337,7 +9690,13 @@ export default function App() {
   }, [ccRecipient, network, recipient, registryAddress]);
 
   useEffect(() => {
-    if (landingMode || desktopRoute || browserRoute || activityMode || growthMode) {
+    if (
+      landingMode ||
+      desktopRoute ||
+      browserRoute ||
+      activityMode ||
+      growthMode
+    ) {
       return;
     }
 
@@ -7357,10 +9716,24 @@ export default function App() {
         }
       })
       .catch(() => undefined);
-  }, [activityMode, browserRoute, desktopRoute, growthMode, hasUnisat, landingMode, mainnetRegistryMode]);
+  }, [
+    activityMode,
+    browserRoute,
+    desktopRoute,
+    growthMode,
+    hasUnisat,
+    landingMode,
+    mainnetRegistryMode,
+  ]);
 
   useEffect(() => {
-    if (landingMode || desktopRoute || browserRoute || activityMode || growthMode) {
+    if (
+      landingMode ||
+      desktopRoute ||
+      browserRoute ||
+      activityMode ||
+      growthMode
+    ) {
       return;
     }
 
@@ -7371,14 +9744,18 @@ export default function App() {
     const syncWallet = async () => {
       const accounts = await window.unisat?.getAccounts?.().catch(() => []);
       const nextAddress = accounts?.[0] ?? "";
-      const nextNetwork = mainnetRegistryMode ? "livenet" : (await getWalletNetwork(window.unisat as UnisatWallet)) ?? network;
+      const nextNetwork = mainnetRegistryMode
+        ? "livenet"
+        : ((await getWalletNetwork(window.unisat as UnisatWallet)) ?? network);
 
       setAddress(nextAddress);
       setNetwork(nextNetwork);
       setInbox([]);
       setChainSent([]);
       setSelectedKey("");
-      setActiveFolder(mainnetRegistryMode ? "ids" : "inbox");
+      setActiveFolder(
+        pay2SpeakMode ? "pay2speak" : mainnetRegistryMode ? "ids" : "inbox",
+      );
       setComposeOpen(false);
 
       if (!nextAddress) {
@@ -7387,6 +9764,19 @@ export default function App() {
       }
 
       try {
+        if (pay2SpeakMode) {
+          await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
+          const state = await fetchPay2SpeakState("livenet");
+          setPay2SpeakCampaigns(state.campaigns);
+          setPay2SpeakFunding(state.funding);
+          setPay2SpeakQuestions(state.questions);
+          setStatus({
+            tone: "good",
+            text: `${shortAddress(nextAddress)} connected. Pay2Speak ready.`,
+          });
+          return;
+        }
+
         if (mainnetRegistryMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
           const state = await fetchIdRegistryState("livenet");
@@ -7395,17 +9785,29 @@ export default function App() {
           setIdPendingEvents(state.pendingEvents);
           setIdSales(state.sales);
           setIdActivity(state.activity);
-          setStatus({ tone: "good", text: `${shortAddress(nextAddress)} connected. ProofOfWork ID registry ready.` });
+          setStatus({
+            tone: "good",
+            text: `${shortAddress(nextAddress)} connected. ProofOfWork ID registry ready.`,
+          });
           return;
         }
 
-        const { inboxMessages, sentMessages } = await fetchAddressMail(nextAddress, nextNetwork);
+        const { inboxMessages, sentMessages } = await fetchAddressMail(
+          nextAddress,
+          nextNetwork,
+        );
         setInbox(inboxMessages);
         setChainSent(sentMessages);
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
-        setStatus({ tone: "good", text: `${shortAddress(nextAddress)} loaded. ${mailboxSummary(inboxMessages, sentMessages)}.` });
+        setStatus({
+          tone: "good",
+          text: `${shortAddress(nextAddress)} loaded. ${mailboxSummary(inboxMessages, sentMessages)}.`,
+        });
       } catch (error) {
-        setStatus({ tone: "bad", text: errorMessage(error, "Address scan failed.") });
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "Address scan failed."),
+        });
       }
     };
 
@@ -7428,7 +9830,17 @@ export default function App() {
       window.unisat?.removeListener?.("networkChanged", networkChanged);
       window.unisat?.removeListener?.("chainChanged", chainChanged);
     };
-  }, [activityMode, browserRoute, desktopRoute, growthMode, hasUnisat, landingMode, mainnetRegistryMode, network]);
+  }, [
+    activityMode,
+    browserRoute,
+    desktopRoute,
+    growthMode,
+    hasUnisat,
+    landingMode,
+    mainnetRegistryMode,
+    network,
+    pay2SpeakMode,
+  ]);
 
   function applyDraft(draft: DraftMessage) {
     setRecipient(draft.recipient);
@@ -7453,11 +9865,17 @@ export default function App() {
   }
 
   function canArchive(message: MailMessage) {
-    return message.folder === "inbox" || (message.folder === "sent" && sentDeliveryStatus(message) === "confirmed");
+    return (
+      message.folder === "inbox" ||
+      (message.folder === "sent" && sentDeliveryStatus(message) === "confirmed")
+    );
   }
 
   function canFavorite(message: MailMessage) {
-    return message.folder === "inbox" || (message.folder === "sent" && sentDeliveryStatus(message) === "confirmed");
+    return (
+      message.folder === "inbox" ||
+      (message.folder === "sent" && sentDeliveryStatus(message) === "confirmed")
+    );
   }
 
   function canUseCustomFolders(message: MailMessage) {
@@ -7468,7 +9886,11 @@ export default function App() {
     return mailPreferences[mailKey(message)]?.folders ?? [];
   }
 
-  function setMessageCustomFolder(message: MailMessage, folderId: string, enabled: boolean) {
+  function setMessageCustomFolder(
+    message: MailMessage,
+    folderId: string,
+    enabled: boolean,
+  ) {
     if (!canUseCustomFolders(message)) {
       setStatus({ tone: "bad", text: "Only confirmed mail can be filed." });
       return;
@@ -7505,7 +9927,12 @@ export default function App() {
       return next;
     });
 
-    setStatus({ tone: "good", text: enabled ? `Added to ${folder.name}.` : `Removed from ${folder.name}.` });
+    setStatus({
+      tone: "good",
+      text: enabled
+        ? `Added to ${folder.name}.`
+        : `Removed from ${folder.name}.`,
+    });
   }
 
   function createCustomFolder(event: FormEvent<HTMLFormElement>) {
@@ -7515,7 +9942,11 @@ export default function App() {
       return;
     }
 
-    if (customFolders.some((folder) => folder.name.toLowerCase() === name.toLowerCase())) {
+    if (
+      customFolders.some(
+        (folder) => folder.name.toLowerCase() === name.toLowerCase(),
+      )
+    ) {
       setStatus({ tone: "bad", text: `${name} already exists.` });
       return;
     }
@@ -7538,13 +9969,24 @@ export default function App() {
       return;
     }
 
-    setCustomFolders((current) => current.filter((item) => item.id !== folderId));
+    setCustomFolders((current) =>
+      current.filter((item) => item.id !== folderId),
+    );
     setMailPreferences((current) => {
       const next: MailPreferences = {};
       for (const [key, preference] of Object.entries(current)) {
-        const folders = (preference.folders ?? []).filter((item) => item !== folderId);
-        const normalized = { ...preference, folders: folders.length > 0 ? folders : undefined };
-        if (!normalized.archived && !normalized.favorite && !normalized.folders) {
+        const folders = (preference.folders ?? []).filter(
+          (item) => item !== folderId,
+        );
+        const normalized = {
+          ...preference,
+          folders: folders.length > 0 ? folders : undefined,
+        };
+        if (
+          !normalized.archived &&
+          !normalized.favorite &&
+          !normalized.folders
+        ) {
           continue;
         }
 
@@ -7586,7 +10028,12 @@ export default function App() {
       return next;
     });
 
-    setStatus({ tone: "good", text: favorite ? "Message added to Favorites." : "Message removed from Favorites." });
+    setStatus({
+      tone: "good",
+      text: favorite
+        ? "Message added to Favorites."
+        : "Message removed from Favorites.",
+    });
   }
 
   function setMessageArchived(message: MailMessage, archived: boolean) {
@@ -7614,7 +10061,10 @@ export default function App() {
 
     setSelectedKey("");
     setComposeOpen(false);
-    setStatus({ tone: "good", text: archived ? "Message archived." : "Message returned to mail." });
+    setStatus({
+      tone: "good",
+      text: archived ? "Message archived." : "Message returned to mail.",
+    });
   }
 
   function restoreSentAsDraft(message: MailMessage) {
@@ -7631,7 +10081,10 @@ export default function App() {
       memo: message.memo,
       network: message.network,
       parentTxid: message.parentTxid,
-      recipient: recipientListText(message.toRecipients ?? message.recipients, message.to),
+      recipient: recipientListText(
+        message.toRecipients ?? message.recipients,
+        message.to,
+      ),
       subject: message.subject,
       updatedAt: new Date().toISOString(),
     };
@@ -7639,7 +10092,10 @@ export default function App() {
     saveDraft(draft);
     setSavedDraft(draft);
     applyDraft(draft);
-    setStatus({ tone: "good", text: "Dropped message restored as a draft. Review it, then send to sign a fresh transaction." });
+    setStatus({
+      tone: "good",
+      text: "Dropped message restored as a draft. Review it, then send to sign a fresh transaction.",
+    });
   }
 
   function openFolder(folder: Folder) {
@@ -7647,12 +10103,17 @@ export default function App() {
       const draft = address ? loadDraft(address, network) : savedDraft;
       setSavedDraft(draft);
       setActiveFolder("drafts");
-      setSortMode((current) => (["largest", "filetype", "sender"].includes(current) ? "value" : current));
+      setSortMode((current) =>
+        ["largest", "filetype", "sender"].includes(current) ? "value" : current,
+      );
       setSelectedKey("");
 
       if (draft) {
         applyDraft(draft);
-        setStatus({ tone: "idle", text: `Draft restored. Last saved ${formatDate(draft.updatedAt)}.` });
+        setStatus({
+          tone: "idle",
+          text: `Draft restored. Last saved ${formatDate(draft.updatedAt)}.`,
+        });
       } else {
         setComposeOpen(false);
         setReplyParentTxid(undefined);
@@ -7668,7 +10129,12 @@ export default function App() {
     if (folder !== "custom") {
       setActiveCustomFolderId("");
     }
-    setSortMode((current) => (!["files", "desktop"].includes(folder) && ["largest", "filetype", "sender"].includes(current) ? "value" : current));
+    setSortMode((current) =>
+      !["files", "desktop"].includes(folder) &&
+      ["largest", "filetype", "sender"].includes(current)
+        ? "value"
+        : current,
+    );
     setComposeOpen(false);
     setReplyParentTxid(undefined);
     setAttachment(undefined);
@@ -7677,7 +10143,9 @@ export default function App() {
 
   function openSourceMessage(message: MailMessage) {
     setActiveFolder(isArchived(message) ? "archive" : message.folder);
-    setSortMode((current) => (["largest", "filetype", "sender"].includes(current) ? "value" : current));
+    setSortMode((current) =>
+      ["largest", "filetype", "sender"].includes(current) ? "value" : current,
+    );
     setComposeOpen(false);
     setReplyParentTxid(undefined);
     setAttachment(undefined);
@@ -7728,17 +10196,36 @@ export default function App() {
   async function addManualContact(name: string, target: string) {
     const trimmedTarget = target.trim();
     try {
-      saveContact(contactFromInput(name, trimmedTarget, network, idRegistry, registryAddress));
+      saveContact(
+        contactFromInput(
+          name,
+          trimmedTarget,
+          network,
+          idRegistry,
+          registryAddress,
+        ),
+      );
       return true;
     } catch (error) {
-      if (!trimmedTarget || isValidBitcoinAddress(trimmedTarget, network) || !normalizePowId(trimmedTarget) || !registryAddress) {
-        setStatus({ tone: "bad", text: errorMessage(error, "Contact could not be saved.") });
+      if (
+        !trimmedTarget ||
+        isValidBitcoinAddress(trimmedTarget, network) ||
+        !normalizePowId(trimmedTarget) ||
+        !registryAddress
+      ) {
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "Contact could not be saved."),
+        });
         return false;
       }
 
       const id = normalizePowId(trimmedTarget);
       setBusy(true);
-      setStatus({ tone: "idle", text: `Refreshing confirmed registry for ${id}@proofofwork.me...` });
+      setStatus({
+        tone: "idle",
+        text: `Refreshing confirmed registry for ${id}@proofofwork.me...`,
+      });
 
       try {
         const latestState = await fetchIdRegistryState(network);
@@ -7748,19 +10235,34 @@ export default function App() {
         setIdSales(latestState.sales);
         setIdActivity(latestState.activity);
         setContacts((current) => {
-          const nextContacts = refreshRegistryContactsFromRecords(current, latestState.records, network);
+          const nextContacts = refreshRegistryContactsFromRecords(
+            current,
+            latestState.records,
+            network,
+          );
           if (nextContacts !== current) {
             saveContacts(nextContacts);
           }
           return nextContacts;
         });
 
-        saveContact(contactFromInput(name, trimmedTarget, network, latestState.records, registryAddress));
+        saveContact(
+          contactFromInput(
+            name,
+            trimmedTarget,
+            network,
+            latestState.records,
+            registryAddress,
+          ),
+        );
         return true;
       } catch (refreshError) {
         setStatus({
           tone: "bad",
-          text: errorMessage(refreshError, errorMessage(error, "Contact could not be saved.")),
+          text: errorMessage(
+            refreshError,
+            errorMessage(error, "Contact could not be saved."),
+          ),
         });
         return false;
       } finally {
@@ -7771,7 +10273,10 @@ export default function App() {
 
   function addRegistryContact(record: PowIdRecord) {
     if (!record.confirmed) {
-      setStatus({ tone: "bad", text: "Only confirmed IDs can be saved as contacts." });
+      setStatus({
+        tone: "bad",
+        text: "Only confirmed IDs can be saved as contacts.",
+      });
       return;
     }
 
@@ -7779,7 +10284,9 @@ export default function App() {
   }
 
   function removeContact(contact: ContactRecord) {
-    const nextContacts = contacts.filter((current) => contactKey(current) !== contactKey(contact));
+    const nextContacts = contacts.filter(
+      (current) => contactKey(current) !== contactKey(contact),
+    );
     setContacts(nextContacts);
     saveContacts(nextContacts);
     setStatus({ tone: "good", text: `${contact.name} removed from Contacts.` });
@@ -7812,7 +10319,9 @@ export default function App() {
       exportedAt: new Date().toISOString(),
       version: BACKUP_VERSION,
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.download = backupFileName();
@@ -7861,14 +10370,20 @@ export default function App() {
         text: `Backup imported. ${keyCount} data group${keyCount === 1 ? "" : "s"} restored${summary ? `: ${summary}` : ""}.`,
       });
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Backup import failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Backup import failed."),
+      });
     }
   }
 
   async function loadDesktopTarget(target = desktopQuery) {
     const query = target.trim();
     if (!query) {
-      setStatus({ tone: "bad", text: "Enter a Bitcoin address or confirmed ProofOfWork ID." });
+      setStatus({
+        tone: "bad",
+        text: "Enter a Bitcoin address or confirmed ProofOfWork ID.",
+      });
       return;
     }
 
@@ -7876,24 +10391,47 @@ export default function App() {
     setStatus({ tone: "idle", text: "Opening public desktop..." });
 
     try {
-      let resolved = resolveRecipientInput(query, network, idRegistry, registryAddress);
+      let resolved = resolveRecipientInput(
+        query,
+        network,
+        idRegistry,
+        registryAddress,
+      );
       if (resolved.isId || resolved.error) {
         const records = await fetchIdRegistry(network);
         setIdRegistry(records);
-        resolved = resolveRecipientInput(query, network, records, registryAddress);
+        resolved = resolveRecipientInput(
+          query,
+          network,
+          records,
+          registryAddress,
+        );
       }
 
       if (resolved.error || !resolved.paymentAddress) {
-        setStatus({ tone: "bad", text: resolved.error || "Enter a valid Bitcoin address or confirmed ProofOfWork ID." });
+        setStatus({
+          tone: "bad",
+          text:
+            resolved.error ||
+            "Enter a valid Bitcoin address or confirmed ProofOfWork ID.",
+        });
         return;
       }
 
-      const { inboxMessages, sentMessages } = await fetchAddressMail(resolved.paymentAddress, network);
-      const publicMail = withCanonicalWelcomeFile(fileSurfaceMessages(publicDesktopMail(inboxMessages, sentMessages)), network);
+      const { inboxMessages, sentMessages } = await fetchAddressMail(
+        resolved.paymentAddress,
+        network,
+      );
+      const publicMail = withCanonicalWelcomeFile(
+        fileSurfaceMessages(publicDesktopMail(inboxMessages, sentMessages)),
+        network,
+      );
       const files = publicMail.filter(hasAttachment);
       const profile: DesktopProfile = {
         address: resolved.paymentAddress,
-        label: resolved.isId ? resolved.displayRecipient : shortAddress(resolved.paymentAddress),
+        label: resolved.isId
+          ? resolved.displayRecipient
+          : shortAddress(resolved.paymentAddress),
         loadedAt: new Date().toISOString(),
         network,
         query,
@@ -7912,7 +10450,10 @@ export default function App() {
         text: `${profile.label} desktop loaded. ${files.length.toLocaleString()} public file${files.length === 1 ? "" : "s"}.`,
       });
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Desktop search failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Desktop search failed."),
+      });
     } finally {
       setDesktopLoading(false);
     }
@@ -7947,26 +10488,49 @@ export default function App() {
     setStatus({ tone: "idle", text: "Opening ProofOfWork log..." });
 
     try {
-      let resolved = resolveRecipientInput(query, network, idRegistry, registryAddress);
+      let resolved = resolveRecipientInput(
+        query,
+        network,
+        idRegistry,
+        registryAddress,
+      );
       if (resolved.isId || resolved.error) {
         const state = await fetchIdRegistryState(network);
         setIdRegistry(state.records);
         setIdListings(state.listings);
         setIdPendingEvents(state.pendingEvents);
         setIdSales(state.sales);
-        resolved = resolveRecipientInput(query, network, state.records, registryAddress);
+        resolved = resolveRecipientInput(
+          query,
+          network,
+          state.records,
+          registryAddress,
+        );
       }
 
       if (resolved.error || !resolved.paymentAddress) {
-        setStatus({ tone: "bad", text: resolved.error || "Enter a valid Bitcoin address or confirmed ProofOfWork ID." });
+        setStatus({
+          tone: "bad",
+          text:
+            resolved.error ||
+            "Enter a valid Bitcoin address or confirmed ProofOfWork ID.",
+        });
         return;
       }
 
-      const { inboxMessages, sentMessages } = await fetchAddressMail(resolved.paymentAddress, network);
-      const addressActivity = activityItemsFromAddressMail(inboxMessages, sentMessages).sort(compareActivityItems);
+      const { inboxMessages, sentMessages } = await fetchAddressMail(
+        resolved.paymentAddress,
+        network,
+      );
+      const addressActivity = activityItemsFromAddressMail(
+        inboxMessages,
+        sentMessages,
+      ).sort(compareActivityItems);
       const profile: DesktopProfile = {
         address: resolved.paymentAddress,
-        label: resolved.isId ? resolved.displayRecipient : shortAddress(resolved.paymentAddress),
+        label: resolved.isId
+          ? resolved.displayRecipient
+          : shortAddress(resolved.paymentAddress),
         loadedAt: new Date().toISOString(),
         network,
         query,
@@ -7981,7 +10545,10 @@ export default function App() {
         text: `${profile.label} log loaded. ${addressActivity.length.toLocaleString()} mail/file action${addressActivity.length === 1 ? "" : "s"}.`,
       });
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Log search failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Log search failed."),
+      });
     } finally {
       setActivityLoading(false);
     }
@@ -7994,10 +10561,54 @@ export default function App() {
     setStatus({ tone: "idle", text: "Log cleared." });
   }
 
+  async function refreshPay2Speak(silent = false) {
+    if (!pay2SpeakRegistryAddress) {
+      setPay2SpeakCampaigns([]);
+      setPay2SpeakFunding([]);
+      setPay2SpeakQuestions([]);
+      if (!silent) {
+        setStatus({
+          tone: "idle",
+          text: `No Pay2Speak registry configured for ${networkLabel(network)}.`,
+        });
+      }
+      return;
+    }
+
+    setBusy(true);
+    if (!silent) {
+      setStatus({ tone: "idle", text: "Scanning Pay2Speak campaigns..." });
+    }
+
+    try {
+      const state = await fetchPay2SpeakState(network);
+      setPay2SpeakCampaigns(state.campaigns);
+      setPay2SpeakFunding(state.funding);
+      setPay2SpeakQuestions(state.questions);
+      if (!silent) {
+        const confirmed = state.campaigns.filter(
+          (campaign) => campaign.confirmed,
+        ).length;
+        const pending = state.campaigns.length - confirmed;
+        setStatus({
+          tone: "good",
+          text: `Pay2Speak loaded. ${confirmed.toLocaleString()} confirmed campaign${confirmed === 1 ? "" : "s"}, ${pending.toLocaleString()} pending.`,
+        });
+      }
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Pay2Speak scan failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function replyTo(message: MailMessage) {
     const recipientAddress = isInboundFolder(message.folder)
       ? message.replyTo
-      : message.recipients?.[0]?.display ?? message.to;
+      : (message.recipients?.[0]?.display ?? message.to);
     const subject = messageSubject(message);
     setRecipient(recipientAddress === "Unknown" ? "" : recipientAddress);
     setCcRecipient("");
@@ -8028,7 +10639,10 @@ export default function App() {
       addTarget(recipientItem.display, recipientItem.address);
     }
 
-    if (!isInboundFolder(message.folder) && (!message.recipients || message.recipients.length === 0)) {
+    if (
+      !isInboundFolder(message.folder) &&
+      (!message.recipients || message.recipients.length === 0)
+    ) {
       addTarget(message.to, message.to);
     }
 
@@ -8065,10 +10679,16 @@ export default function App() {
     try {
       const nextAttachment = await attachmentFromFile(file);
       setAttachment(nextAttachment);
-      setStatus({ tone: "good", text: `${nextAttachment.name} attached. ${formatBytes(nextAttachment.size)} before encoding.` });
+      setStatus({
+        tone: "good",
+        text: `${nextAttachment.name} attached. ${formatBytes(nextAttachment.size)} before encoding.`,
+      });
     } catch (error) {
       setAttachment(undefined);
-      setStatus({ tone: "bad", text: errorMessage(error, "Attachment could not be read.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Attachment could not be read."),
+      });
     }
   }
 
@@ -8106,10 +10726,24 @@ export default function App() {
       setInbox([]);
       setChainSent([]);
       setSelectedKey("");
-      setActiveFolder(mainnetRegistryMode ? "ids" : "inbox");
+      setActiveFolder(
+        pay2SpeakMode ? "pay2speak" : mainnetRegistryMode ? "ids" : "inbox",
+      );
       setComposeOpen(false);
 
       try {
+        if (pay2SpeakMode) {
+          const state = await fetchPay2SpeakState("livenet");
+          setPay2SpeakCampaigns(state.campaigns);
+          setPay2SpeakFunding(state.funding);
+          setPay2SpeakQuestions(state.questions);
+          setStatus({
+            tone: "good",
+            text: `UniSat connected. Pay2Speak ready.`,
+          });
+          return;
+        }
+
         if (mainnetRegistryMode) {
           const state = await fetchIdRegistryState("livenet");
           setIdRegistry(state.records);
@@ -8117,20 +10751,38 @@ export default function App() {
           setIdPendingEvents(state.pendingEvents);
           setIdSales(state.sales);
           setIdActivity(state.activity);
-          setStatus({ tone: "good", text: `UniSat connected. ProofOfWork ID registry ready.` });
+          setStatus({
+            tone: "good",
+            text: `UniSat connected. ProofOfWork ID registry ready.`,
+          });
           return;
         }
 
-        const { inboxMessages, sentMessages } = await fetchAddressMail(firstAddress, walletNetwork ?? network);
+        const { inboxMessages, sentMessages } = await fetchAddressMail(
+          firstAddress,
+          walletNetwork ?? network,
+        );
         setInbox(inboxMessages);
         setChainSent(sentMessages);
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
-        setStatus({ tone: "good", text: `UniSat connected. ${mailboxSummary(inboxMessages, sentMessages)}.` });
+        setStatus({
+          tone: "good",
+          text: `UniSat connected. ${mailboxSummary(inboxMessages, sentMessages)}.`,
+        });
       } catch (error) {
-        setStatus({ tone: "bad", text: errorMessage(error, "UniSat connected, but address scan failed.") });
+        setStatus({
+          tone: "bad",
+          text: errorMessage(
+            error,
+            "UniSat connected, but address scan failed.",
+          ),
+        });
       }
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Could not connect UniSat.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Could not connect UniSat."),
+      });
     } finally {
       setBusy(false);
     }
@@ -8146,7 +10798,10 @@ export default function App() {
       setStatus({ tone: "good", text: "Wallet disconnected." });
     } catch (error) {
       clearWalletSession();
-      setStatus({ tone: "bad", text: `Local account cleared. ${errorMessage(error, "Wallet disconnect failed.")}` });
+      setStatus({
+        tone: "bad",
+        text: `Local account cleared. ${errorMessage(error, "Wallet disconnect failed.")}`,
+      });
     } finally {
       setBusy(false);
     }
@@ -8159,17 +10814,26 @@ export default function App() {
     setSelectedKey("");
 
     if (!window.unisat?.switchChain && !window.unisat?.switchNetwork) {
-      setStatus({ tone: "idle", text: `${networkLabel(nextNetwork)} selected.` });
+      setStatus({
+        tone: "idle",
+        text: `${networkLabel(nextNetwork)} selected.`,
+      });
       return;
     }
 
     setBusy(true);
-    setStatus({ tone: "idle", text: `Switching to ${networkLabel(nextNetwork)}...` });
+    setStatus({
+      tone: "idle",
+      text: `Switching to ${networkLabel(nextNetwork)}...`,
+    });
 
     try {
       await switchWalletNetwork(window.unisat, nextNetwork);
-      const activeWalletNetwork = (await getWalletNetwork(window.unisat)) ?? nextNetwork;
-      const accounts = window.unisat.getAccounts ? await window.unisat.getAccounts() : [];
+      const activeWalletNetwork =
+        (await getWalletNetwork(window.unisat)) ?? nextNetwork;
+      const accounts = window.unisat.getAccounts
+        ? await window.unisat.getAccounts()
+        : [];
       const nextAddress = accounts[0] ?? address;
       setNetwork(activeWalletNetwork);
       setAddress(nextAddress);
@@ -8178,17 +10842,29 @@ export default function App() {
       setSelectedKey("");
 
       if (!nextAddress) {
-        setStatus({ tone: "good", text: `${networkLabel(activeWalletNetwork)} ready.` });
+        setStatus({
+          tone: "good",
+          text: `${networkLabel(activeWalletNetwork)} ready.`,
+        });
         return;
       }
 
-      const { inboxMessages, sentMessages } = await fetchAddressMail(nextAddress, activeWalletNetwork);
+      const { inboxMessages, sentMessages } = await fetchAddressMail(
+        nextAddress,
+        activeWalletNetwork,
+      );
       setInbox(inboxMessages);
       setChainSent(sentMessages);
       setSelectedKey(selectedInboundKey("inbox", inboxMessages));
-      setStatus({ tone: "good", text: `${networkLabel(activeWalletNetwork)} ready. ${mailboxSummary(inboxMessages, sentMessages)}.` });
+      setStatus({
+        tone: "good",
+        text: `${networkLabel(activeWalletNetwork)} ready. ${mailboxSummary(inboxMessages, sentMessages)}.`,
+      });
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Network switch failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Network switch failed."),
+      });
     } finally {
       setBusy(false);
     }
@@ -8202,19 +10878,29 @@ export default function App() {
       setIdSales([]);
       setIdActivity([]);
       if (!silent) {
-        setStatus({ tone: "idle", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+        setStatus({
+          tone: "idle",
+          text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.`,
+        });
       }
       return;
     }
 
     setBusy(true);
     if (!silent) {
-      setStatus({ tone: "idle", text: activityMode || growthMode || activeFolder === "log" ? "Scanning ProofOfWork computer log..." : "Scanning ProofOfWork ID registry..." });
+      setStatus({
+        tone: "idle",
+        text:
+          activityMode || growthMode || activeFolder === "log"
+            ? "Scanning ProofOfWork computer log..."
+            : "Scanning ProofOfWork ID registry...",
+      });
     }
 
     try {
       const state = await fetchIdRegistryState(network);
-      const shouldLoadComputerLog = activityMode || growthMode || activeFolder === "log";
+      const shouldLoadComputerLog =
+        activityMode || growthMode || activeFolder === "log";
       let activity = state.activity;
       let activityLoadFailed = false;
       if (shouldLoadComputerLog) {
@@ -8231,7 +10917,11 @@ export default function App() {
       setIdSales(state.sales);
       setIdActivity(activity);
       setContacts((current) => {
-        const nextContacts = refreshRegistryContactsFromRecords(current, state.records, network);
+        const nextContacts = refreshRegistryContactsFromRecords(
+          current,
+          state.records,
+          network,
+        );
         if (nextContacts !== current) {
           saveContacts(nextContacts);
         }
@@ -8239,7 +10929,9 @@ export default function App() {
       });
 
       if (!silent) {
-        const confirmed = state.records.filter((record) => record.confirmed).length;
+        const confirmed = state.records.filter(
+          (record) => record.confirmed,
+        ).length;
         const pending = state.records.length - confirmed;
         const pendingChanges = state.pendingEvents.length;
         setStatus({
@@ -8252,7 +10944,10 @@ export default function App() {
         });
       }
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "ID registry scan failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "ID registry scan failed."),
+      });
     } finally {
       setBusy(false);
     }
@@ -8267,12 +10962,18 @@ export default function App() {
     }
 
     if (!window.unisat.signPsbt) {
-      setStatus({ tone: "bad", text: "UniSat signPsbt is not available. Update UniSat and try again." });
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
       return;
     }
 
     if (!registryAddress) {
-      setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.`,
+      });
       return;
     }
 
@@ -8283,17 +10984,26 @@ export default function App() {
     }
 
     if (!isValidBitcoinAddress(idReceiveAddress.trim(), network)) {
-      setStatus({ tone: "bad", text: "Receive address is not valid for the selected network." });
+      setStatus({
+        tone: "bad",
+        text: "Receive address is not valid for the selected network.",
+      });
       return;
     }
 
     if (idRegistrationBytes > MAX_DATA_CARRIER_BYTES) {
-      setStatus({ tone: "bad", text: "ID registration OP_RETURN is over 100 KB." });
+      setStatus({
+        tone: "bad",
+        text: "ID registration OP_RETURN is over 100 KB.",
+      });
       return;
     }
 
     setBusy(true);
-    setStatus({ tone: "idle", text: `Checking ${normalizedIdName}@proofofwork.me against the full registry...` });
+    setStatus({
+      tone: "idle",
+      text: `Checking ${normalizedIdName}@proofofwork.me against the full registry...`,
+    });
 
     try {
       const latestState = await fetchIdRegistryState(network);
@@ -8302,19 +11012,35 @@ export default function App() {
       setIdPendingEvents(latestState.pendingEvents);
       setIdSales(latestState.sales);
 
-      const existingRecord = latestState.records.find((record) => record.network === network && record.id === normalizedIdName);
+      const existingRecord = latestState.records.find(
+        (record) =>
+          record.network === network && record.id === normalizedIdName,
+      );
       if (existingRecord?.confirmed) {
-        setStatus({ tone: "bad", text: `${normalizedIdName}@proofofwork.me is already registered.` });
+        setStatus({
+          tone: "bad",
+          text: `${normalizedIdName}@proofofwork.me is already registered.`,
+        });
         return;
       }
 
       if (existingRecord) {
-        setStatus({ tone: "bad", text: `${normalizedIdName}@proofofwork.me is already pending. Wait for confirmation before retrying.` });
+        setStatus({
+          tone: "bad",
+          text: `${normalizedIdName}@proofofwork.me is already pending. Wait for confirmation before retrying.`,
+        });
         return;
       }
 
-      setStatus({ tone: "idle", text: `Registering ${normalizedIdName}@proofofwork.me...` });
-      const reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, { network });
+      setStatus({
+        tone: "idle",
+        text: `Registering ${normalizedIdName}@proofofwork.me...`,
+      });
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+        latestState.listings,
+        address,
+        { network },
+      );
 
       const currentNetwork = await getWalletNetwork(window.unisat);
       if (currentNetwork !== network) {
@@ -8331,7 +11057,13 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
-      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
         setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
         return;
       }
@@ -8355,14 +11087,28 @@ export default function App() {
       };
 
       setLastRegisteredId(registeredRecord);
-      setIdRegistry((current) => current.some((record) => record.txid === txid) ? current : [registeredRecord, ...current]);
+      setIdRegistry((current) =>
+        current.some((record) => record.txid === txid)
+          ? current
+          : [registeredRecord, ...current],
+      );
       setIdName("");
       setIdPgpKey("");
-      setStatus({ tone: "good", text: `${normalizedIdName}@proofofwork.me registration broadcast: ${shortAddress(txid)}.` });
+      setStatus({
+        tone: "good",
+        text: `${normalizedIdName}@proofofwork.me registration broadcast: ${shortAddress(txid)}.`,
+      });
       await refreshIds(true);
-      setIdRegistry((current) => current.some((record) => record.txid === txid) ? current : [registeredRecord, ...current]);
+      setIdRegistry((current) =>
+        current.some((record) => record.txid === txid)
+          ? current
+          : [registeredRecord, ...current],
+      );
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "ID registration failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "ID registration failed."),
+      });
     } finally {
       setBusy(false);
     }
@@ -8385,27 +11131,42 @@ export default function App() {
     }
 
     if (!window.unisat.signPsbt) {
-      setStatus({ tone: "bad", text: "UniSat signPsbt is not available. Update UniSat and try again." });
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
       return;
     }
 
     if (!registryAddress) {
-      setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.`,
+      });
       return;
     }
 
     if (expectedOwner !== address) {
-      setStatus({ tone: "bad", text: "Only the current owner address can update or transfer this ID." });
+      setStatus({
+        tone: "bad",
+        text: "Only the current owner address can update or transfer this ID.",
+      });
       return;
     }
 
     if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
-      setStatus({ tone: "bad", text: "ID registry event OP_RETURN is over 100 KB." });
+      setStatus({
+        tone: "bad",
+        text: "ID registry event OP_RETURN is over 100 KB.",
+      });
       return;
     }
 
     setBusy(true);
-    setStatus({ tone: "idle", text: `Checking current owner for ${id}@proofofwork.me...` });
+    setStatus({
+      tone: "idle",
+      text: `Checking current owner for ${id}@proofofwork.me...`,
+    });
 
     try {
       const latestState = await fetchIdRegistryState(network);
@@ -8413,15 +11174,24 @@ export default function App() {
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
       setIdSales(latestState.sales);
-      const latestRecord = latestState.records.find((record) => record.network === network && record.id === id && record.confirmed);
+      const latestRecord = latestState.records.find(
+        (record) =>
+          record.network === network && record.id === id && record.confirmed,
+      );
 
       if (!latestRecord) {
-        setStatus({ tone: "bad", text: `${id}@proofofwork.me is not confirmed yet.` });
+        setStatus({
+          tone: "bad",
+          text: `${id}@proofofwork.me is not confirmed yet.`,
+        });
         return;
       }
 
       if (latestRecord.ownerAddress !== address) {
-        setStatus({ tone: "bad", text: `${id}@proofofwork.me is owned by ${shortAddress(latestRecord.ownerAddress)}.` });
+        setStatus({
+          tone: "bad",
+          text: `${id}@proofofwork.me is owned by ${shortAddress(latestRecord.ownerAddress)}.`,
+        });
         return;
       }
 
@@ -8431,7 +11201,11 @@ export default function App() {
       }
 
       setStatus({ tone: "idle", text: `${successText}...` });
-      const reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, { network });
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+        latestState.listings,
+        address,
+        { network },
+      );
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: ID_MUTATION_PRICE_SATS,
         excludeOutpoints: reservedOutpoints,
@@ -8442,7 +11216,13 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
-      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
         setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
         return;
       }
@@ -8454,10 +11234,16 @@ export default function App() {
         wallet: window.unisat,
       });
 
-      setStatus({ tone: "good", text: `${successText} broadcast: ${shortAddress(txid)}.` });
+      setStatus({
+        tone: "good",
+        text: `${successText} broadcast: ${shortAddress(txid)}.`,
+      });
       await refreshIds(true);
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "ID registry update failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "ID registry update failed."),
+      });
     } finally {
       setBusy(false);
     }
@@ -8473,7 +11259,9 @@ export default function App() {
     }
 
     if (managedIdRecord.ownerAddress !== address) {
-      throw new Error("Only the current owner can publish an on-chain listing.");
+      throw new Error(
+        "Only the current owner can publish an on-chain listing.",
+      );
     }
 
     if (!Number.isSafeInteger(salePriceSats) || salePriceSats < 0) {
@@ -8481,11 +11269,18 @@ export default function App() {
     }
 
     if (saleBuyerAddress && !isValidBitcoinAddress(saleBuyerAddress, network)) {
-      throw new Error("Specific buyer address is not valid for the selected network.");
+      throw new Error(
+        "Specific buyer address is not valid for the selected network.",
+      );
     }
 
-    if (saleReceiveAddress && !isValidBitcoinAddress(saleReceiveAddress, network)) {
-      throw new Error("Locked receive address is not valid for the selected network.");
+    if (
+      saleReceiveAddress &&
+      !isValidBitcoinAddress(saleReceiveAddress, network)
+    ) {
+      throw new Error(
+        "Locked receive address is not valid for the selected network.",
+      );
     }
 
     const latestState = await fetchIdRegistryState(network);
@@ -8493,14 +11288,23 @@ export default function App() {
     setIdListings(latestState.listings);
     setIdPendingEvents(latestState.pendingEvents);
     setIdSales(latestState.sales);
-    const latestRecord = latestState.records.find((record) => record.network === network && record.id === managedIdRecord.id && record.confirmed);
+    const latestRecord = latestState.records.find(
+      (record) =>
+        record.network === network &&
+        record.id === managedIdRecord.id &&
+        record.confirmed,
+    );
 
     if (!latestRecord) {
-      throw new Error(`${managedIdRecord.id}@proofofwork.me is not confirmed yet.`);
+      throw new Error(
+        `${managedIdRecord.id}@proofofwork.me is not confirmed yet.`,
+      );
     }
 
     if (latestRecord.ownerAddress !== address) {
-      throw new Error(`${managedIdRecord.id}@proofofwork.me is owned by ${shortAddress(latestRecord.ownerAddress)}.`);
+      throw new Error(
+        `${managedIdRecord.id}@proofofwork.me is owned by ${shortAddress(latestRecord.ownerAddress)}.`,
+      );
     }
 
     const currentNetwork = await getWalletNetwork(window.unisat);
@@ -8509,14 +11313,23 @@ export default function App() {
     }
 
     setStatus({ tone: "idle", text: "Preparing sale-ticket listing..." });
-    const sellerPublicKey = (await window.unisat.getPublicKey?.())?.trim().toLowerCase() ?? "";
+    const sellerPublicKey =
+      (await window.unisat.getPublicKey?.())?.trim().toLowerCase() ?? "";
     if (!validPublicKeyHex(sellerPublicKey)) {
-      throw new Error("Could not read a seller public key from UniSat for the sale ticket.");
+      throw new Error(
+        "Could not read a seller public key from UniSat for the sale ticket.",
+      );
     }
 
     const draft = saleAuthorizationDraft({
       anchorSigHashType: ID_LISTING_ANCHOR_SIGHASH_TYPE,
-      anchorScriptPubKey: bytesToHex(scriptForAddress(latestRecord.ownerAddress, network, "Sale-ticket output")),
+      anchorScriptPubKey: bytesToHex(
+        scriptForAddress(
+          latestRecord.ownerAddress,
+          network,
+          "Sale-ticket output",
+        ),
+      ),
       anchorType: ID_LISTING_TICKET_ANCHOR_TYPE,
       anchorValueSats: ID_LISTING_ANCHOR_VALUE_SATS,
       anchorVout: ID_LISTING_ANCHOR_VOUT,
@@ -8532,7 +11345,11 @@ export default function App() {
 
     return {
       authorization: { ...draft, signature: "" },
-      reservedOutpoints: activeListingAnchorOutpointsForAddress(latestState.listings, address, { network }),
+      reservedOutpoints: activeListingAnchorOutpointsForAddress(
+        latestState.listings,
+        address,
+        { network },
+      ),
     };
   }
 
@@ -8543,23 +11360,39 @@ export default function App() {
     }
 
     if (!registryAddress) {
-      setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.`,
+      });
       return;
     }
 
     setBusy(true);
-    setStatus({ tone: "idle", text: `Checking current owner for ${managedIdRecord?.id ?? "ID"}...` });
+    setStatus({
+      tone: "idle",
+      text: `Checking current owner for ${managedIdRecord?.id ?? "ID"}...`,
+    });
 
     try {
-      const { authorization, reservedOutpoints } = await prepareIdSaleAuthorization();
-      setStatus({ tone: "idle", text: `Listing ticket ready. Approve the on-chain listing transaction in UniSat...` });
+      const { authorization, reservedOutpoints } =
+        await prepareIdSaleAuthorization();
+      setStatus({
+        tone: "idle",
+        text: `Listing ticket ready. Approve the on-chain listing transaction in UniSat...`,
+      });
       const payload = buildIdListingPayload(authorization);
       if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
-        setStatus({ tone: "bad", text: "ID listing OP_RETURN is over 100 KB." });
+        setStatus({
+          tone: "bad",
+          text: "ID listing OP_RETURN is over 100 KB.",
+        });
         return;
       }
 
-      setStatus({ tone: "idle", text: `Publishing listing for ${authorization.id}@proofofwork.me...` });
+      setStatus({
+        tone: "idle",
+        text: `Publishing listing for ${authorization.id}@proofofwork.me...`,
+      });
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: ID_MUTATION_PRICE_SATS,
         excludeOutpoints: reservedOutpoints,
@@ -8576,7 +11409,13 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
-      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
         setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
         return;
       }
@@ -8589,10 +11428,16 @@ export default function App() {
       });
 
       setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
-      setStatus({ tone: "good", text: `${authorization.id}@proofofwork.me sale ticket broadcast: ${shortAddress(txid)}. After it confirms, seal it so buyers can settle atomically.` });
+      setStatus({
+        tone: "good",
+        text: `${authorization.id}@proofofwork.me sale ticket broadcast: ${shortAddress(txid)}. After it confirms, seal it so buyers can settle atomically.`,
+      });
       await refreshIds(true);
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "ID listing failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "ID listing failed."),
+      });
     } finally {
       setBusy(false);
     }
@@ -8605,22 +11450,34 @@ export default function App() {
     }
 
     if (!window.unisat.signPsbt) {
-      setStatus({ tone: "bad", text: "UniSat signPsbt is not available. Update UniSat and try again." });
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
       return;
     }
 
     if (!registryAddress) {
-      setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.`,
+      });
       return;
     }
 
     if (listing.sellerAddress !== address) {
-      setStatus({ tone: "bad", text: "Only the current listing seller can seal this sale ticket." });
+      setStatus({
+        tone: "bad",
+        text: "Only the current listing seller can seal this sale ticket.",
+      });
       return;
     }
 
     if (listing.listingVersion !== "list5") {
-      setStatus({ tone: "bad", text: "Only sale-ticket listings need sealing." });
+      setStatus({
+        tone: "bad",
+        text: "Only sale-ticket listings need sealing.",
+      });
       return;
     }
 
@@ -8630,7 +11487,10 @@ export default function App() {
     }
 
     setBusy(true);
-    setStatus({ tone: "idle", text: `Checking sale ticket for ${listing.id}@proofofwork.me...` });
+    setStatus({
+      tone: "idle",
+      text: `Checking sale ticket for ${listing.id}@proofofwork.me...`,
+    });
 
     try {
       const latestState = await fetchIdRegistryState(network);
@@ -8638,16 +11498,30 @@ export default function App() {
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
       setIdSales(latestState.sales);
-      const latestListing = latestState.listings.find((item) => item.listingId === listing.listingId && item.network === network);
-      const latestRecord = latestState.records.find((record) => record.network === network && record.id === listing.id && record.confirmed);
+      const latestListing = latestState.listings.find(
+        (item) =>
+          item.listingId === listing.listingId && item.network === network,
+      );
+      const latestRecord = latestState.records.find(
+        (record) =>
+          record.network === network &&
+          record.id === listing.id &&
+          record.confirmed,
+      );
 
       if (!latestListing || latestListing.listingVersion !== "list5") {
-        setStatus({ tone: "bad", text: "This sale-ticket listing is no longer active." });
+        setStatus({
+          tone: "bad",
+          text: "This sale-ticket listing is no longer active.",
+        });
         return;
       }
 
       if (!latestRecord || latestRecord.ownerAddress !== address) {
-        setStatus({ tone: "bad", text: `${listing.id}@proofofwork.me is no longer owned by this wallet.` });
+        setStatus({
+          tone: "bad",
+          text: `${listing.id}@proofofwork.me is no longer owned by this wallet.`,
+        });
         return;
       }
 
@@ -8656,7 +11530,10 @@ export default function App() {
         await switchWalletNetwork(window.unisat, network);
       }
 
-      setStatus({ tone: "idle", text: "Approve the sale-ticket seal in UniSat. This signature is published on-chain." });
+      setStatus({
+        tone: "idle",
+        text: "Approve the sale-ticket seal in UniSat. This signature is published on-chain.",
+      });
       const anchorSignature = await signSaleTicketAuthorization({
         listing: latestListing,
         network,
@@ -8667,18 +11544,31 @@ export default function App() {
         anchorSignature,
         anchorTxid: latestListing.listingId,
       };
-      const payload = buildIdSaleSealPayload(latestListing.listingId, sealedAuthorization);
+      const payload = buildIdSaleSealPayload(
+        latestListing.listingId,
+        sealedAuthorization,
+      );
       if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
-        setStatus({ tone: "bad", text: "ID sale-ticket seal OP_RETURN is over 100 KB." });
+        setStatus({
+          tone: "bad",
+          text: "ID sale-ticket seal OP_RETURN is over 100 KB.",
+        });
         return;
       }
 
-      setStatus({ tone: "idle", text: `Publishing sale-ticket seal for ${listing.id}@proofofwork.me...` });
-      const anchor = listingAnchorOutpoint(latestListing);
-      const reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, {
-        exceptListingId: latestListing.listingId,
-        network,
+      setStatus({
+        tone: "idle",
+        text: `Publishing sale-ticket seal for ${listing.id}@proofofwork.me...`,
       });
+      const anchor = listingAnchorOutpoint(latestListing);
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+        latestState.listings,
+        address,
+        {
+          exceptListingId: latestListing.listingId,
+          network,
+        },
+      );
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: ID_MUTATION_PRICE_SATS,
         excludeOutpoints: [...reservedOutpoints, ...(anchor ? [anchor] : [])],
@@ -8689,7 +11579,13 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
-      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
         setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
         return;
       }
@@ -8702,10 +11598,16 @@ export default function App() {
       });
 
       setIdSaleAuthorization(JSON.stringify(sealedAuthorization, null, 2));
-      setStatus({ tone: "good", text: `${listing.id}@proofofwork.me sale ticket sealed: ${shortAddress(txid)}.` });
+      setStatus({
+        tone: "good",
+        text: `${listing.id}@proofofwork.me sale ticket sealed: ${shortAddress(txid)}.`,
+      });
       await refreshIds(true);
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "ID sale-ticket seal failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "ID sale-ticket seal failed."),
+      });
     } finally {
       setBusy(false);
     }
@@ -8718,29 +11620,50 @@ export default function App() {
     }
 
     if (!window.unisat.signPsbt) {
-      setStatus({ tone: "bad", text: "UniSat signPsbt is not available. Update UniSat and try again." });
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
       return;
     }
 
     if (!registryAddress) {
-      setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.`,
+      });
       return;
     }
 
     if (listing.sellerAddress !== address) {
-      setStatus({ tone: "bad", text: "Only the current listing seller can delist this ID." });
+      setStatus({
+        tone: "bad",
+        text: "Only the current listing seller can delist this ID.",
+      });
       return;
     }
 
-    if (listing.listingVersion === "list3" || listing.listingVersion === "list5") {
-      const payload = buildIdDelistingPayload(listing.listingId, listing.listingVersion === "list5" ? "delist5" : "delist3");
+    if (
+      listing.listingVersion === "list3" ||
+      listing.listingVersion === "list5"
+    ) {
+      const payload = buildIdDelistingPayload(
+        listing.listingId,
+        listing.listingVersion === "list5" ? "delist5" : "delist3",
+      );
       if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
-        setStatus({ tone: "bad", text: "ID delisting OP_RETURN is over 100 KB." });
+        setStatus({
+          tone: "bad",
+          text: "ID delisting OP_RETURN is over 100 KB.",
+        });
         return;
       }
 
       setBusy(true);
-      setStatus({ tone: "idle", text: `Closing sale ticket for ${listing.id}@proofofwork.me...` });
+      setStatus({
+        tone: "idle",
+        text: `Closing sale ticket for ${listing.id}@proofofwork.me...`,
+      });
 
       try {
         const latestState = await fetchIdRegistryState(network);
@@ -8748,16 +11671,30 @@ export default function App() {
         setIdListings(latestState.listings);
         setIdPendingEvents(latestState.pendingEvents);
         setIdSales(latestState.sales);
-        const latestListing = latestState.listings.find((item) => item.listingId === listing.listingId && item.network === network);
-        const latestRecord = latestState.records.find((record) => record.network === network && record.id === listing.id && record.confirmed);
+        const latestListing = latestState.listings.find(
+          (item) =>
+            item.listingId === listing.listingId && item.network === network,
+        );
+        const latestRecord = latestState.records.find(
+          (record) =>
+            record.network === network &&
+            record.id === listing.id &&
+            record.confirmed,
+        );
 
-        if (!latestListing || latestListing.listingVersion !== listing.listingVersion) {
+        if (
+          !latestListing ||
+          latestListing.listingVersion !== listing.listingVersion
+        ) {
           setStatus({ tone: "bad", text: "This listing is no longer active." });
           return;
         }
 
         if (!latestRecord || latestRecord.ownerAddress !== address) {
-          setStatus({ tone: "bad", text: `${listing.id}@proofofwork.me is no longer owned by this wallet.` });
+          setStatus({
+            tone: "bad",
+            text: `${listing.id}@proofofwork.me is no longer owned by this wallet.`,
+          });
           return;
         }
 
@@ -8766,12 +11703,17 @@ export default function App() {
           await switchWalletNetwork(window.unisat, network);
         }
 
-        const reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, {
-          exceptListingId: latestListing.listingId,
-          network,
-        });
+        const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+          latestState.listings,
+          address,
+          {
+            exceptListingId: latestListing.listingId,
+            network,
+          },
+        );
         const paymentPsbt = await buildAnchoredMarketplacePsbt({
-          anchorSpendMode: listing.listingVersion === "list5" ? "wallet" : "preSigned",
+          anchorSpendMode:
+            listing.listingVersion === "list5" ? "wallet" : "preSigned",
           excludeOutpoints: reservedOutpoints,
           feeRate,
           fromAddress: address,
@@ -8780,7 +11722,8 @@ export default function App() {
           payments: [
             {
               address: latestListing.sellerAddress,
-              amountSats: latestListing.anchorValueSats ?? ID_LISTING_ANCHOR_VALUE_SATS,
+              amountSats:
+                latestListing.anchorValueSats ?? ID_LISTING_ANCHOR_VALUE_SATS,
             },
             {
               address: registryAddress,
@@ -8790,7 +11733,13 @@ export default function App() {
           protocolPayloads: [payload],
           requireConfirmedUtxos: true,
         });
-        if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+        if (
+          !confirmDustFeeAbsorption({
+            dustFeeSats: paymentPsbt.dustFeeSats,
+            feeRate,
+            feeSats: paymentPsbt.feeSats,
+          })
+        ) {
           setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
           return;
         }
@@ -8804,10 +11753,16 @@ export default function App() {
           wallet: window.unisat,
         });
 
-        setStatus({ tone: "good", text: `Delisting for ${listing.id}@proofofwork.me broadcast: ${shortAddress(txid)}.` });
+        setStatus({
+          tone: "good",
+          text: `Delisting for ${listing.id}@proofofwork.me broadcast: ${shortAddress(txid)}.`,
+        });
         await refreshIds(true);
       } catch (error) {
-        setStatus({ tone: "bad", text: errorMessage(error, "ID delisting failed.") });
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "ID delisting failed."),
+        });
       } finally {
         setBusy(false);
       }
@@ -8817,7 +11772,10 @@ export default function App() {
     await broadcastIdMutation({
       expectedOwner: listing.sellerAddress,
       id: listing.id,
-      payload: buildIdDelistingPayload(listing.listingId, listing.listingVersion === "list4" ? "delist4" : "delist2"),
+      payload: buildIdDelistingPayload(
+        listing.listingId,
+        listing.listingVersion === "list4" ? "delist4" : "delist2",
+      ),
       successText: `Delisting for ${listing.id}@proofofwork.me`,
     });
   }
@@ -8831,20 +11789,32 @@ export default function App() {
     }
 
     if (!window.unisat.signPsbt) {
-      setStatus({ tone: "bad", text: "UniSat signPsbt is not available. Update UniSat and try again." });
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
       return;
     }
 
     if (!registryAddress) {
-      setStatus({ tone: "bad", text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.` });
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork ID registry configured for ${networkLabel(network)} yet.`,
+      });
       return;
     }
 
     let authorization: PowIdSaleAuthorization;
     try {
-      authorization = parseSaleAuthorizationText(idSaleAuthorization.trim(), network);
+      authorization = parseSaleAuthorizationText(
+        idSaleAuthorization.trim(),
+        network,
+      );
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Listing authorization is invalid.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Listing authorization is invalid."),
+      });
       return;
     }
 
@@ -8853,33 +11823,57 @@ export default function App() {
     const effectiveReceiveAddress = receiveAddress || ownerAddress;
 
     if (!saleAuthorizationCanBroadcast(authorization)) {
-      setStatus({ tone: "bad", text: "Select an active on-chain listing first." });
+      setStatus({
+        tone: "bad",
+        text: "Select an active on-chain listing first.",
+      });
       return;
     }
 
     const selectedListing = selectedMarketplaceListing;
     if (!selectedListing || !listingCanBePurchased(selectedListing)) {
-      setStatus({ tone: "bad", text: "Select an active on-chain listing first." });
+      setStatus({
+        tone: "bad",
+        text: "Select an active on-chain listing first.",
+      });
       return;
     }
 
     if (!isValidBitcoinAddress(ownerAddress, network)) {
-      setStatus({ tone: "bad", text: "New owner address is not valid for the selected network." });
+      setStatus({
+        tone: "bad",
+        text: "New owner address is not valid for the selected network.",
+      });
       return;
     }
 
     if (receiveAddress && !isValidBitcoinAddress(receiveAddress, network)) {
-      setStatus({ tone: "bad", text: "New receive address is not valid for the selected network." });
+      setStatus({
+        tone: "bad",
+        text: "New receive address is not valid for the selected network.",
+      });
       return;
     }
 
-    if (authorization.buyerAddress && authorization.buyerAddress !== ownerAddress) {
-      setStatus({ tone: "bad", text: `This sale is locked to ${shortAddress(authorization.buyerAddress)}.` });
+    if (
+      authorization.buyerAddress &&
+      authorization.buyerAddress !== ownerAddress
+    ) {
+      setStatus({
+        tone: "bad",
+        text: `This sale is locked to ${shortAddress(authorization.buyerAddress)}.`,
+      });
       return;
     }
 
-    if (authorization.receiveAddress && authorization.receiveAddress !== effectiveReceiveAddress) {
-      setStatus({ tone: "bad", text: `This sale is locked to receive at ${shortAddress(authorization.receiveAddress)}.` });
+    if (
+      authorization.receiveAddress &&
+      authorization.receiveAddress !== effectiveReceiveAddress
+    ) {
+      setStatus({
+        tone: "bad",
+        text: `This sale is locked to receive at ${shortAddress(authorization.receiveAddress)}.`,
+      });
       return;
     }
 
@@ -8890,12 +11884,18 @@ export default function App() {
       marketplaceTransferVersionForListing(selectedListing),
     );
     if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
-      setStatus({ tone: "bad", text: "ID marketplace transfer OP_RETURN is over 100 KB." });
+      setStatus({
+        tone: "bad",
+        text: "ID marketplace transfer OP_RETURN is over 100 KB.",
+      });
       return;
     }
 
     setBusy(true);
-    setStatus({ tone: "idle", text: `Checking ${authorization.id}@proofofwork.me listing terms...` });
+    setStatus({
+      tone: "idle",
+      text: `Checking ${authorization.id}@proofofwork.me listing terms...`,
+    });
 
     try {
       const latestState = await fetchIdRegistryState(network);
@@ -8903,11 +11903,23 @@ export default function App() {
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
       setIdSales(latestState.sales);
-      const latestListing = latestState.listings.find((listing) => listing.network === network && listing.listingId === selectedListing.listingId);
-      const latestRecord = latestState.records.find((record) => record.network === network && record.id === authorization.id && record.confirmed);
+      const latestListing = latestState.listings.find(
+        (listing) =>
+          listing.network === network &&
+          listing.listingId === selectedListing.listingId,
+      );
+      const latestRecord = latestState.records.find(
+        (record) =>
+          record.network === network &&
+          record.id === authorization.id &&
+          record.confirmed,
+      );
 
       if (!latestRecord) {
-        setStatus({ tone: "bad", text: `${authorization.id}@proofofwork.me is not confirmed yet.` });
+        setStatus({
+          tone: "bad",
+          text: `${authorization.id}@proofofwork.me is not confirmed yet.`,
+        });
         return;
       }
 
@@ -8917,7 +11929,10 @@ export default function App() {
       }
 
       if (latestRecord.ownerAddress !== latestListing.sellerAddress) {
-        setStatus({ tone: "bad", text: `${authorization.id}@proofofwork.me is no longer owned by this seller.` });
+        setStatus({
+          tone: "bad",
+          text: `${authorization.id}@proofofwork.me is no longer owned by this seller.`,
+        });
         return;
       }
 
@@ -8937,11 +11952,18 @@ export default function App() {
         },
       ];
 
-      setStatus({ tone: "idle", text: `Buying ${authorization.id}@proofofwork.me...` });
-      const reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, {
-        exceptListingId: latestListing.listingId,
-        network,
+      setStatus({
+        tone: "idle",
+        text: `Buying ${authorization.id}@proofofwork.me...`,
       });
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+        latestState.listings,
+        address,
+        {
+          exceptListingId: latestListing.listingId,
+          network,
+        },
+      );
       const paymentPsbt = await buildAnchoredMarketplacePsbt({
         excludeOutpoints: reservedOutpoints,
         feeRate,
@@ -8952,7 +11974,13 @@ export default function App() {
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
       });
-      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
         setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
         return;
       }
@@ -8966,13 +11994,19 @@ export default function App() {
         wallet: window.unisat,
       });
 
-      setStatus({ tone: "good", text: `${authorization.id}@proofofwork.me purchase broadcast: ${shortAddress(txid)}.` });
+      setStatus({
+        tone: "good",
+        text: `${authorization.id}@proofofwork.me purchase broadcast: ${shortAddress(txid)}.`,
+      });
       setIdSaleAuthorization("");
       setIdSelectedListingId("");
       setIdPurchaseReceiveAddress("");
       await refreshIds(true);
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "ID purchase failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "ID purchase failed."),
+      });
     } finally {
       setBusy(false);
     }
@@ -8982,18 +12016,29 @@ export default function App() {
     event.preventDefault();
 
     if (!managedIdRecord) {
-      setStatus({ tone: "bad", text: "Choose one of your confirmed IDs first." });
+      setStatus({
+        tone: "bad",
+        text: "Choose one of your confirmed IDs first.",
+      });
       return;
     }
 
     const receiveInput = idUpdateReceiveAddress.trim();
     if (!receiveInput) {
-      setStatus({ tone: "bad", text: "Enter a new receive address or confirmed ProofOfWork ID." });
+      setStatus({
+        tone: "bad",
+        text: "Enter a new receive address or confirmed ProofOfWork ID.",
+      });
       return;
     }
 
     let latestRegistry = idRegistry;
-    let resolvedReceive = resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress);
+    let resolvedReceive = resolveRecipientInput(
+      receiveInput,
+      network,
+      latestRegistry,
+      registryAddress,
+    );
     if (!isValidBitcoinAddress(receiveInput, network)) {
       const latestState = await fetchIdRegistryState(network);
       latestRegistry = latestState.records;
@@ -9001,17 +12046,33 @@ export default function App() {
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
       setIdSales(latestState.sales);
-      resolvedReceive = resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress);
+      resolvedReceive = resolveRecipientInput(
+        receiveInput,
+        network,
+        latestRegistry,
+        registryAddress,
+      );
     }
 
     const receiveAddress = resolvedReceive.paymentAddress;
-    if (resolvedReceive.error || !isValidBitcoinAddress(receiveAddress, network)) {
-      setStatus({ tone: "bad", text: resolvedReceive.error || "New receive address is not valid for the selected network." });
+    if (
+      resolvedReceive.error ||
+      !isValidBitcoinAddress(receiveAddress, network)
+    ) {
+      setStatus({
+        tone: "bad",
+        text:
+          resolvedReceive.error ||
+          "New receive address is not valid for the selected network.",
+      });
       return;
     }
 
     if (receiveAddress === managedIdRecord.receiveAddress) {
-      setStatus({ tone: "bad", text: `${managedIdRecord.id}@proofofwork.me already receives at that address.` });
+      setStatus({
+        tone: "bad",
+        text: `${managedIdRecord.id}@proofofwork.me already receives at that address.`,
+      });
       return;
     }
 
@@ -9027,7 +12088,10 @@ export default function App() {
     event.preventDefault();
 
     if (!managedIdRecord) {
-      setStatus({ tone: "bad", text: "Choose one of your confirmed IDs first." });
+      setStatus({
+        tone: "bad",
+        text: "Choose one of your confirmed IDs first.",
+      });
       return;
     }
 
@@ -9035,24 +12099,60 @@ export default function App() {
 
     let latestRegistry = idRegistry;
     let resolvedOwner = transferOwnerResolution;
-    let resolvedReceive = receiveInput ? resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress) : undefined;
-    if (!isValidBitcoinAddress(idTransferOwnerAddress.trim(), network) || (receiveInput && !isValidBitcoinAddress(receiveInput, network))) {
+    let resolvedReceive = receiveInput
+      ? resolveRecipientInput(
+          receiveInput,
+          network,
+          latestRegistry,
+          registryAddress,
+        )
+      : undefined;
+    if (
+      !isValidBitcoinAddress(idTransferOwnerAddress.trim(), network) ||
+      (receiveInput && !isValidBitcoinAddress(receiveInput, network))
+    ) {
       const latestState = await fetchIdRegistryState(network);
       latestRegistry = latestState.records;
       setIdRegistry(latestState.records);
       setIdListings(latestState.listings);
       setIdPendingEvents(latestState.pendingEvents);
       setIdSales(latestState.sales);
-      resolvedOwner = resolvePowIdOwnerInput(idTransferOwnerAddress, network, latestRegistry, registryAddress);
-      resolvedReceive = receiveInput ? resolveRecipientInput(receiveInput, network, latestRegistry, registryAddress) : undefined;
+      resolvedOwner = resolvePowIdOwnerInput(
+        idTransferOwnerAddress,
+        network,
+        latestRegistry,
+        registryAddress,
+      );
+      resolvedReceive = receiveInput
+        ? resolveRecipientInput(
+            receiveInput,
+            network,
+            latestRegistry,
+            registryAddress,
+          )
+        : undefined;
     }
 
     const latestOwnerAddress = resolvedOwner.ownerAddress;
-    const effectiveReceiveAddress = resolvedReceive ? resolvedReceive.paymentAddress : resolvedOwner.receiveAddress;
-    const payloadReceiveAddress = effectiveReceiveAddress && effectiveReceiveAddress !== latestOwnerAddress ? effectiveReceiveAddress : "";
+    const effectiveReceiveAddress = resolvedReceive
+      ? resolvedReceive.paymentAddress
+      : resolvedOwner.receiveAddress;
+    const payloadReceiveAddress =
+      effectiveReceiveAddress && effectiveReceiveAddress !== latestOwnerAddress
+        ? effectiveReceiveAddress
+        : "";
 
-    if (resolvedOwner.error || !latestOwnerAddress || !isValidBitcoinAddress(latestOwnerAddress, network)) {
-      setStatus({ tone: "bad", text: resolvedOwner.error || "New owner is not valid for the selected network." });
+    if (
+      resolvedOwner.error ||
+      !latestOwnerAddress ||
+      !isValidBitcoinAddress(latestOwnerAddress, network)
+    ) {
+      setStatus({
+        tone: "bad",
+        text:
+          resolvedOwner.error ||
+          "New owner is not valid for the selected network.",
+      });
       return;
     }
 
@@ -9062,19 +12162,32 @@ export default function App() {
     }
 
     if (!isValidBitcoinAddress(effectiveReceiveAddress, network)) {
-      setStatus({ tone: "bad", text: "New receive address is not valid for the selected network." });
+      setStatus({
+        tone: "bad",
+        text: "New receive address is not valid for the selected network.",
+      });
       return;
     }
 
-    if (latestOwnerAddress === managedIdRecord.ownerAddress && effectiveReceiveAddress === managedIdRecord.receiveAddress) {
-      setStatus({ tone: "bad", text: "Transfer destination matches the current ID state." });
+    if (
+      latestOwnerAddress === managedIdRecord.ownerAddress &&
+      effectiveReceiveAddress === managedIdRecord.receiveAddress
+    ) {
+      setStatus({
+        tone: "bad",
+        text: "Transfer destination matches the current ID state.",
+      });
       return;
     }
 
     await broadcastIdMutation({
       expectedOwner: managedIdRecord.ownerAddress,
       id: managedIdRecord.id,
-      payload: buildIdTransferPayload(managedIdRecord.id, latestOwnerAddress, payloadReceiveAddress),
+      payload: buildIdTransferPayload(
+        managedIdRecord.id,
+        latestOwnerAddress,
+        payloadReceiveAddress,
+      ),
       successText: `Transfer for ${managedIdRecord.id}@proofofwork.me`,
     });
 
@@ -9091,12 +12204,18 @@ export default function App() {
     }
 
     if (!window.unisat.signPsbt) {
-      setStatus({ tone: "bad", text: "UniSat signPsbt is not available. Update UniSat and try again." });
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
       return;
     }
 
     if (dataCarrierBytes > MAX_DATA_CARRIER_BYTES) {
-      setStatus({ tone: "bad", text: "Aggregate OP_RETURN data-carrier scripts are over 100 KB." });
+      setStatus({
+        tone: "bad",
+        text: "Aggregate OP_RETURN data-carrier scripts are over 100 KB.",
+      });
       return;
     }
 
@@ -9104,26 +12223,54 @@ export default function App() {
     let resolvedCcRecipients = ccRecipientResolution;
     const recipientInput = recipient.trim();
     const ccRecipientInput = ccRecipient.trim();
-    const shouldResolveId = needsRegistryResolution(recipientInput, network) || needsRegistryResolution(ccRecipientInput, network);
+    const shouldResolveId =
+      needsRegistryResolution(recipientInput, network) ||
+      needsRegistryResolution(ccRecipientInput, network);
 
     setBusy(true);
-    setStatus({ tone: "idle", text: shouldResolveId ? "Checking ProofOfWork ID registry..." : "Building PSBT..." });
+    setStatus({
+      tone: "idle",
+      text: shouldResolveId
+        ? "Checking ProofOfWork ID registry..."
+        : "Building PSBT...",
+    });
 
     try {
       if (shouldResolveId) {
         if (!registryAddress) {
-          setStatus({ tone: "bad", text: `ProofOfWork ID registry is not configured for ${networkLabel(network)}.` });
+          setStatus({
+            tone: "bad",
+            text: `ProofOfWork ID registry is not configured for ${networkLabel(network)}.`,
+          });
           return;
         }
 
         const records = await fetchIdRegistry(network);
         setIdRegistry(records);
-        resolvedRecipients = resolveRecipientInputs(recipientInput, network, records, registryAddress);
-        resolvedCcRecipients = resolveRecipientInputs(ccRecipientInput, network, records, registryAddress);
+        resolvedRecipients = resolveRecipientInputs(
+          recipientInput,
+          network,
+          records,
+          registryAddress,
+        );
+        resolvedCcRecipients = resolveRecipientInputs(
+          ccRecipientInput,
+          network,
+          records,
+          registryAddress,
+        );
       }
 
-      if (resolvedRecipients.error || resolvedRecipients.recipients.length === 0) {
-        setStatus({ tone: "bad", text: resolvedRecipients.error || "Enter a valid Bitcoin address or confirmed ProofOfWork ID." });
+      if (
+        resolvedRecipients.error ||
+        resolvedRecipients.recipients.length === 0
+      ) {
+        setStatus({
+          tone: "bad",
+          text:
+            resolvedRecipients.error ||
+            "Enter a valid Bitcoin address or confirmed ProofOfWork ID.",
+        });
         return;
       }
 
@@ -9132,8 +12279,15 @@ export default function App() {
         return;
       }
 
-      if (resolvedRecipients.recipients.length + resolvedCcRecipients.recipients.length > MAX_RECIPIENTS) {
-        setStatus({ tone: "bad", text: `Send to ${MAX_RECIPIENTS} recipients or fewer for now.` });
+      if (
+        resolvedRecipients.recipients.length +
+          resolvedCcRecipients.recipients.length >
+        MAX_RECIPIENTS
+      ) {
+        setStatus({
+          tone: "bad",
+          text: `Send to ${MAX_RECIPIENTS} recipients or fewer for now.`,
+        });
         return;
       }
 
@@ -9150,32 +12304,45 @@ export default function App() {
         setIdListings(latestState.listings);
         setIdPendingEvents(latestState.pendingEvents);
         setIdSales(latestState.sales);
-        reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, { network });
+        reservedOutpoints = activeListingAnchorOutpointsForAddress(
+          latestState.listings,
+          address,
+          { network },
+        );
       }
 
       const satoshis = Math.floor(amountSats);
-      const toRecipients: MailRecipient[] = resolvedRecipients.recipients.map((resolved) => ({
-        address: resolved.paymentAddress,
-        amountSats: satoshis,
-        display: resolved.isId ? resolved.displayRecipient : resolved.paymentAddress,
-        id: resolved.id,
-      }));
-      const seenAddresses = new Set(toRecipients.map((mailRecipient) => mailRecipient.address));
-      const ccRecipients: MailRecipient[] = resolvedCcRecipients.recipients.flatMap((resolved): MailRecipient[] => {
-        if (seenAddresses.has(resolved.paymentAddress)) {
-          return [];
-        }
+      const toRecipients: MailRecipient[] = resolvedRecipients.recipients.map(
+        (resolved) => ({
+          address: resolved.paymentAddress,
+          amountSats: satoshis,
+          display: resolved.isId
+            ? resolved.displayRecipient
+            : resolved.paymentAddress,
+          id: resolved.id,
+        }),
+      );
+      const seenAddresses = new Set(
+        toRecipients.map((mailRecipient) => mailRecipient.address),
+      );
+      const ccRecipients: MailRecipient[] =
+        resolvedCcRecipients.recipients.flatMap((resolved): MailRecipient[] => {
+          if (seenAddresses.has(resolved.paymentAddress)) {
+            return [];
+          }
 
-        seenAddresses.add(resolved.paymentAddress);
-        return [
-          {
-            address: resolved.paymentAddress,
-            amountSats: satoshis,
-            display: resolved.isId ? resolved.displayRecipient : resolved.paymentAddress,
-            id: resolved.id,
-          },
-        ];
-      });
+          seenAddresses.add(resolved.paymentAddress);
+          return [
+            {
+              address: resolved.paymentAddress,
+              amountSats: satoshis,
+              display: resolved.isId
+                ? resolved.displayRecipient
+                : resolved.paymentAddress,
+              id: resolved.id,
+            },
+          ];
+        });
       const mailRecipients = [...toRecipients, ...ccRecipients];
       const paymentPsbt = await buildPaymentPsbt({
         excludeOutpoints: reservedOutpoints,
@@ -9188,7 +12355,13 @@ export default function App() {
         })),
         protocolPayloads,
       });
-      if (!confirmDustFeeAbsorption({ dustFeeSats: paymentPsbt.dustFeeSats, feeRate, feeSats: paymentPsbt.feeSats })) {
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
         setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
         return;
       }
@@ -9240,7 +12413,10 @@ export default function App() {
         text: `Transaction broadcast to ${mailRecipients.length} recipient${mailRecipients.length === 1 ? "" : "s"}. ${paymentPsbt.inputCount} input${paymentPsbt.inputCount === 1 ? "" : "s"}, ${paymentPsbt.outputCount} output${paymentPsbt.outputCount === 1 ? "" : "s"}.`,
       });
     } catch (error) {
-      setStatus({ tone: "bad", text: errorMessage(error, "Transaction failed.") });
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Transaction failed."),
+      });
     } finally {
       setBusy(false);
     }
@@ -9255,13 +12431,28 @@ export default function App() {
     setBusy(true);
     setRefreshing(true);
     setCheckingBroadcasts(true);
-    setStatus({ tone: "idle", text: "Refreshing mail and transaction statuses..." });
+    setStatus({
+      tone: "idle",
+      text: "Refreshing mail and transaction statuses...",
+    });
 
     try {
-      const { inboxMessages, sentMessages } = await fetchAddressMail(address, network);
-      const targets = broadcastTargetsFor(address, network, allSentRef.current, sentMessages);
-      const summary = targets.length ? await checkBroadcastTargets(targets) : undefined;
-      const checkedSentMessages = summary ? applyBroadcastCheckResults(sentMessages, summary) : sentMessages;
+      const { inboxMessages, sentMessages } = await fetchAddressMail(
+        address,
+        network,
+      );
+      const targets = broadcastTargetsFor(
+        address,
+        network,
+        allSentRef.current,
+        sentMessages,
+      );
+      const summary = targets.length
+        ? await checkBroadcastTargets(targets)
+        : undefined;
+      const checkedSentMessages = summary
+        ? applyBroadcastCheckResults(sentMessages, summary)
+        : sentMessages;
 
       setInbox(inboxMessages);
       setChainSent(checkedSentMessages);
@@ -9275,7 +12466,8 @@ export default function App() {
       }
       setSelectedKey(selectedInboundKey(nextFolder, inboxMessages));
       setStatus({
-        tone: summary && summary.failed === summary.results.length ? "bad" : "good",
+        tone:
+          summary && summary.failed === summary.results.length ? "bad" : "good",
         text: `Refreshed. ${mailboxSummary(inboxMessages, checkedSentMessages)}${
           summary ? `. ${broadcastCheckSummaryText(summary)}` : ""
         }.`,
@@ -9289,10 +12481,252 @@ export default function App() {
     }
   }
 
+  async function createPay2SpeakCampaign(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (network !== "livenet" || !pay2SpeakRegistryAddress) {
+      setStatus({ tone: "bad", text: "Pay2Speak v1 is mainnet only." });
+      return;
+    }
+
+    const handleError = pay2SpeakHandleError(normalizedPay2SpeakHandle);
+    if (handleError) {
+      setStatus({ tone: "bad", text: handleError });
+      return;
+    }
+
+    const spaceNumber = Math.floor(pay2SpeakSpaceNumber);
+    const targetGrossSats = Math.floor(pay2SpeakTargetSats);
+    if (!Number.isSafeInteger(spaceNumber) || spaceNumber < 0) {
+      setStatus({ tone: "bad", text: "Space number must be 0 or higher." });
+      return;
+    }
+
+    if (
+      !Number.isSafeInteger(targetGrossSats) ||
+      targetGrossSats <= PAY2SPEAK_REGISTRY_PRICE_SATS
+    ) {
+      setStatus({
+        tone: "bad",
+        text: "Target must be greater than 1,000 sats.",
+      });
+      return;
+    }
+
+    if (pay2SpeakCampaignBytes > MAX_DATA_CARRIER_BYTES) {
+      setStatus({
+        tone: "bad",
+        text: "Pay2Speak campaign OP_RETURN is over 100 KB.",
+      });
+      return;
+    }
+
+    setBusy(true);
+    setStatus({ tone: "idle", text: "Creating Pay2Speak campaign..." });
+
+    try {
+      const currentNetwork = await getWalletNetwork(window.unisat);
+      if (currentNetwork !== "livenet") {
+        await switchWalletNetwork(window.unisat, "livenet");
+      }
+
+      const paymentPsbt = await buildPaymentPsbt({
+        amountSats: PAY2SPEAK_REGISTRY_PRICE_SATS,
+        feeRate,
+        fromAddress: address,
+        network: "livenet",
+        protocolPayloads: [pay2SpeakCampaignPayload],
+        requireConfirmedUtxos: true,
+        toAddress: pay2SpeakRegistryAddress,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network: "livenet",
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+      const campaign: Pay2SpeakCampaign = {
+        confirmed: false,
+        createdAt: new Date().toISOString(),
+        creatorAddress: address,
+        fundedGrossSats: 0,
+        fundingCount: 0,
+        handle: normalizedPay2SpeakHandle,
+        network: "livenet",
+        registrySats: PAY2SPEAK_REGISTRY_PRICE_SATS,
+        spaceNumber,
+        status: "Funding",
+        targetGrossSats,
+        title: pay2SpeakTitle(normalizedPay2SpeakHandle, spaceNumber),
+        txid,
+      };
+
+      setPay2SpeakCampaigns((current) =>
+        current.some((item) => item.txid === txid)
+          ? current
+          : [campaign, ...current],
+      );
+      setPay2SpeakSelectedCampaignId(txid);
+      setPay2SpeakHandle("");
+      setStatus({
+        tone: "good",
+        text: `Pay2Speak campaign broadcast: ${shortAddress(txid)}.`,
+      });
+      await refreshPay2Speak(true);
+      setPay2SpeakCampaigns((current) =>
+        current.some((item) => item.txid === txid)
+          ? current
+          : [campaign, ...current],
+      );
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Pay2Speak campaign failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function fundPay2SpeakCampaign(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (!selectedPay2SpeakCampaign || !pay2SpeakSplit) {
+      setStatus({
+        tone: "bad",
+        text: "Choose a campaign and enter more than 1,000 sats.",
+      });
+      return;
+    }
+
+    if (pay2SpeakFundingBytes > MAX_DATA_CARRIER_BYTES) {
+      setStatus({
+        tone: "bad",
+        text: "Pay2Speak funding OP_RETURN is over 100 KB.",
+      });
+      return;
+    }
+
+    setBusy(true);
+    setStatus({
+      tone: "idle",
+      text: `Funding ${selectedPay2SpeakCampaign.title}...`,
+    });
+
+    try {
+      const currentNetwork = await getWalletNetwork(window.unisat);
+      if (currentNetwork !== "livenet") {
+        await switchWalletNetwork(window.unisat, "livenet");
+      }
+
+      const paymentPsbt = await buildPaymentPsbt({
+        feeRate,
+        fromAddress: address,
+        network: "livenet",
+        payments: [
+          {
+            address: selectedPay2SpeakCampaign.creatorAddress,
+            amountSats: pay2SpeakSplit.creatorSats,
+          },
+          {
+            address: pay2SpeakRegistryAddress,
+            amountSats: pay2SpeakSplit.registrySats,
+          },
+        ],
+        protocolPayloads: [pay2SpeakFundingPayload],
+        requireConfirmedUtxos: true,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network: "livenet",
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+      const funding: Pay2SpeakFunding = {
+        campaignId: selectedPay2SpeakCampaign.txid,
+        confirmed: false,
+        createdAt: new Date().toISOString(),
+        creatorAddress: selectedPay2SpeakCampaign.creatorAddress,
+        creatorSats: pay2SpeakSplit.creatorSats,
+        donorAddress: address,
+        grossSats: pay2SpeakSplit.grossSats,
+        network: "livenet",
+        question: pay2SpeakQuestion.trim() || undefined,
+        registrySats: pay2SpeakSplit.registrySats,
+        txid,
+      };
+
+      setPay2SpeakFunding((current) => [funding, ...current]);
+      setPay2SpeakQuestion("");
+      setStatus({
+        tone: "good",
+        text: `${pay2SpeakSplit.grossSats.toLocaleString()} sats broadcast to Pay2Speak: ${shortAddress(txid)}.`,
+      });
+      await refreshPay2Speak(true);
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Pay2Speak funding failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (landingMode) {
     return (
       <LandingApp
-        registryRecords={idRegistry.filter((record) => record.network === "livenet")}
+        registryRecords={idRegistry.filter(
+          (record) => record.network === "livenet",
+        )}
         setTheme={setTheme}
         theme={theme}
         onRefresh={() => void refreshIds()}
@@ -9313,9 +12747,13 @@ export default function App() {
         idName={idName}
         idPgpKey={idPgpKey}
         idReceiveAddress={idReceiveAddress}
-        lastRegisteredId={lastRegisteredId?.network === "livenet" ? lastRegisteredId : undefined}
+        lastRegisteredId={
+          lastRegisteredId?.network === "livenet" ? lastRegisteredId : undefined
+        }
         registryAddress={registryAddressForNetwork("livenet")}
-        registryRecords={idRegistry.filter((record) => record.network === "livenet")}
+        registryRecords={idRegistry.filter(
+          (record) => record.network === "livenet",
+        )}
         registrationBytes={idRegistrationBytes}
         setFeeRate={setFeeRate}
         setIdName={setIdName}
@@ -9351,10 +12789,16 @@ export default function App() {
         idSaleReceiveAddress={idSaleReceiveAddress}
         managedIdName={managedIdRecord?.id ?? ""}
         publishListing={publishIdListing}
-        pendingEvents={idPendingEvents.filter((event) => event.network === "livenet")}
+        pendingEvents={idPendingEvents.filter(
+          (event) => event.network === "livenet",
+        )}
         registryAddress={registryAddressForNetwork("livenet")}
-        registryListings={idListings.filter((listing) => listing.network === "livenet")}
-        registryRecords={idRegistry.filter((record) => record.network === "livenet")}
+        registryListings={idListings.filter(
+          (listing) => listing.network === "livenet",
+        )}
+        registryRecords={idRegistry.filter(
+          (record) => record.network === "livenet",
+        )}
         registrySales={idSales.filter((sale) => sale.network === "livenet")}
         sealListing={sealIdListing}
         setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
@@ -9373,12 +12817,61 @@ export default function App() {
         submitPurchase={purchaseId}
         theme={theme}
         useListing={(listing) => {
-          setIdSaleAuthorization(JSON.stringify(listing.saleAuthorization, null, 2));
+          setIdSaleAuthorization(
+            JSON.stringify(listing.saleAuthorization, null, 2),
+          );
           setIdSelectedListingId(listing.listingId);
           setIdPurchaseOwnerAddress(address);
           setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
         }}
         onRefresh={() => void refreshIds()}
+      />
+    );
+  }
+
+  if (pay2SpeakMode) {
+    return (
+      <Pay2SpeakApp
+        address={address}
+        busy={busy}
+        campaignBytes={pay2SpeakCampaignBytes}
+        campaigns={pay2SpeakCampaigns.filter(
+          (campaign) => campaign.network === "livenet",
+        )}
+        canCreateCampaign={canCreatePay2SpeakCampaign}
+        canFundCampaign={canFundPay2SpeakCampaign}
+        connectWallet={connectWallet}
+        contributionSats={pay2SpeakContributionSats}
+        createCampaign={createPay2SpeakCampaign}
+        creatorRouteAddress={pay2SpeakCreatorAddress}
+        disconnectWallet={disconnectWallet}
+        feeRate={feeRate}
+        fundCampaign={fundPay2SpeakCampaign}
+        fundingBytes={pay2SpeakFundingBytes}
+        fundingRecords={pay2SpeakFunding.filter(
+          (funding) => funding.network === "livenet",
+        )}
+        handle={pay2SpeakHandle}
+        hasUnisat={hasUnisat}
+        network="livenet"
+        question={pay2SpeakQuestion}
+        questions={pay2SpeakQuestions}
+        registryAddress={pay2SpeakRegistryAddressForNetwork("livenet")}
+        selectedCampaignId={selectedPay2SpeakCampaign?.txid ?? ""}
+        setContributionSats={setPay2SpeakContributionSats}
+        setFeeRate={setFeeRate}
+        setHandle={setPay2SpeakHandle}
+        setQuestion={setPay2SpeakQuestion}
+        setSelectedCampaignId={setPay2SpeakSelectedCampaignId}
+        setSpaceNumber={setPay2SpeakSpaceNumber}
+        setTargetSats={setPay2SpeakTargetSats}
+        setTheme={setTheme}
+        spaceNumber={pay2SpeakSpaceNumber}
+        split={pay2SpeakSplit}
+        status={status}
+        targetSats={pay2SpeakTargetSats}
+        theme={theme}
+        onRefresh={() => void refreshPay2Speak()}
       />
     );
   }
@@ -9448,8 +12941,12 @@ export default function App() {
       <GrowthApp
         busy={busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
-        registryListings={idListings.filter((listing) => listing.network === "livenet")}
-        registryRecords={idRegistry.filter((record) => record.network === "livenet")}
+        registryListings={idListings.filter(
+          (listing) => listing.network === "livenet",
+        )}
+        registryRecords={idRegistry.filter(
+          (record) => record.network === "livenet",
+        )}
         registrySales={idSales.filter((sale) => sale.network === "livenet")}
         setTheme={setTheme}
         status={status}
@@ -9479,7 +12976,9 @@ export default function App() {
             aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
             className="icon-button"
             disabled={busy}
-            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
             title={theme === "dark" ? "Light mode" : "Dark mode"}
             type="button"
           >
@@ -9489,7 +12988,17 @@ export default function App() {
             className="secondary"
             disabled={refreshDisabled}
             onClick={() => {
-              if (activeFolder === "ids" || activeFolder === "marketplace" || activeFolder === "log" || activeFolder === "contacts") {
+              if (activeFolder === "pay2speak") {
+                void refreshPay2Speak();
+                return;
+              }
+
+              if (
+                activeFolder === "ids" ||
+                activeFolder === "marketplace" ||
+                activeFolder === "log" ||
+                activeFolder === "contacts"
+              ) {
                 void refreshIds();
                 if (activeFolder === "log" && activityProfile) {
                   void loadActivityTarget(activityProfile.query);
@@ -9497,13 +13006,18 @@ export default function App() {
                 return;
               }
 
-              void (activeFolder === "desktop" ? loadDesktopTarget() : refreshMail(activeFolder));
+              void (activeFolder === "desktop"
+                ? loadDesktopTarget()
+                : refreshMail(activeFolder));
             }}
             title="Refresh mail and transaction statuses"
             type="button"
           >
             <span className="button-content">
-              <RefreshCw className={refreshInProgress ? "refresh-spin" : ""} size={16} />
+              <RefreshCw
+                className={refreshInProgress ? "refresh-spin" : ""}
+                size={16}
+              />
               <span>{refreshInProgress ? "Refreshing" : "Refresh"}</span>
             </span>
           </button>
@@ -9534,14 +13048,26 @@ export default function App() {
             </button>
           </div>
           {hasUnisat ? (
-            <button className="secondary" disabled={busy} onClick={connectWallet} type="button">
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={connectWallet}
+              type="button"
+            >
               <span className="button-content">
                 <Wallet size={16} />
-                <span>{address ? shortAddress(address) : "Connect UniSat"}</span>
+                <span>
+                  {address ? shortAddress(address) : "Connect UniSat"}
+                </span>
               </span>
             </button>
           ) : (
-            <a className="secondary link-button" href={UNISAT_DOWNLOAD_URL} rel="noreferrer" target="_blank">
+            <a
+              className="secondary link-button"
+              href={UNISAT_DOWNLOAD_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
               <span className="button-content">
                 <Wallet size={16} />
                 <span>Install UniSat</span>
@@ -9550,7 +13076,12 @@ export default function App() {
             </a>
           )}
           {address ? (
-            <button className="secondary" disabled={busy} onClick={disconnectWallet} type="button">
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={disconnectWallet}
+              type="button"
+            >
               <span className="button-content">
                 <LogOut size={16} />
                 <span>Disconnect</span>
@@ -9575,49 +13106,77 @@ export default function App() {
           </button>
 
           <nav className="folders" aria-label="Folders">
-            <button aria-current={activeFolder === "inbox"} onClick={() => openFolder("inbox")} type="button">
+            <button
+              aria-current={activeFolder === "inbox"}
+              onClick={() => openFolder("inbox")}
+              type="button"
+            >
               <span className="folder-label">
                 <Inbox size={17} />
                 <span>Inbox</span>
               </span>
               <strong>{inboxMail.length}</strong>
             </button>
-            <button aria-current={activeFolder === "incoming"} onClick={() => openFolder("incoming")} type="button">
+            <button
+              aria-current={activeFolder === "incoming"}
+              onClick={() => openFolder("incoming")}
+              type="button"
+            >
               <span className="folder-label">
                 <Mail size={17} />
                 <span>Incoming</span>
               </span>
               <strong>{incomingMail.length}</strong>
             </button>
-            <button aria-current={activeFolder === "sent"} onClick={() => openFolder("sent")} type="button">
+            <button
+              aria-current={activeFolder === "sent"}
+              onClick={() => openFolder("sent")}
+              type="button"
+            >
               <span className="folder-label">
                 <Send size={17} />
                 <span>Sent</span>
               </span>
               <strong>{sentMail.length}</strong>
             </button>
-            <button aria-current={activeFolder === "outbox"} onClick={() => openFolder("outbox")} type="button">
+            <button
+              aria-current={activeFolder === "outbox"}
+              onClick={() => openFolder("outbox")}
+              type="button"
+            >
               <span className="folder-label">
                 <Clock size={17} />
                 <span>Outbox</span>
               </span>
               <strong>{outboxMail.length}</strong>
             </button>
-            <button aria-current={activeFolder === "drafts"} onClick={() => openFolder("drafts")} type="button">
+            <button
+              aria-current={activeFolder === "drafts"}
+              onClick={() => openFolder("drafts")}
+              type="button"
+            >
               <span className="folder-label">
                 <FilePenLine size={17} />
                 <span>Drafts</span>
               </span>
               <strong>{savedDraft ? 1 : 0}</strong>
             </button>
-            <button aria-current={activeFolder === "favorites"} onClick={() => openFolder("favorites")} type="button">
+            <button
+              aria-current={activeFolder === "favorites"}
+              onClick={() => openFolder("favorites")}
+              type="button"
+            >
               <span className="folder-label">
                 <Star size={17} />
                 <span>Favorites</span>
               </span>
               <strong>{favoritesMail.length}</strong>
             </button>
-            <button aria-current={activeFolder === "archive"} onClick={() => openFolder("archive")} type="button">
+            <button
+              aria-current={activeFolder === "archive"}
+              onClick={() => openFolder("archive")}
+              type="button"
+            >
               <span className="folder-label">
                 <Archive size={17} />
                 <span>Archive</span>
@@ -9627,7 +13186,10 @@ export default function App() {
             {customFolders.map((folder) => (
               <div className="custom-folder-row" key={folder.id}>
                 <button
-                  aria-current={activeFolder === "custom" && activeCustomFolderId === folder.id}
+                  aria-current={
+                    activeFolder === "custom" &&
+                    activeCustomFolderId === folder.id
+                  }
                   onClick={() => {
                     setActiveFolder("custom");
                     setActiveCustomFolderId(folder.id);
@@ -9642,7 +13204,12 @@ export default function App() {
                   </span>
                   <strong>{customFolderCounts.get(folder.id) ?? 0}</strong>
                 </button>
-                <button aria-label={`Remove ${folder.name}`} className="custom-folder-remove" onClick={() => removeCustomFolder(folder.id)} type="button">
+                <button
+                  aria-label={`Remove ${folder.name}`}
+                  className="custom-folder-remove"
+                  onClick={() => removeCustomFolder(folder.id)}
+                  type="button"
+                >
                   <X size={13} />
                 </button>
               </div>
@@ -9654,52 +13221,95 @@ export default function App() {
                 placeholder="New folder"
                 value={newFolderName}
               />
-              <button aria-label="Create folder" className="icon-button" type="submit">
+              <button
+                aria-label="Create folder"
+                className="icon-button"
+                type="submit"
+              >
                 <FolderPlus size={15} />
               </button>
             </form>
-            <button aria-current={activeFolder === "files"} onClick={() => openFolder("files")} type="button">
+            <button
+              aria-current={activeFolder === "files"}
+              onClick={() => openFolder("files")}
+              type="button"
+            >
               <span className="folder-label">
                 <Paperclip size={17} />
                 <span>Files</span>
               </span>
               <strong>{allFileMessages.length}</strong>
             </button>
-            <button aria-current={activeFolder === "desktop"} onClick={() => openFolder("desktop")} type="button">
+            <button
+              aria-current={activeFolder === "desktop"}
+              onClick={() => openFolder("desktop")}
+              type="button"
+            >
               <span className="folder-label">
                 <Monitor size={17} />
                 <span>Desktop</span>
               </span>
               <strong>{desktopFileMessages.length}</strong>
             </button>
-            <button aria-current={activeFolder === "browser"} onClick={() => openFolder("browser")} type="button">
+            <button
+              aria-current={activeFolder === "browser"}
+              onClick={() => openFolder("browser")}
+              type="button"
+            >
               <span className="folder-label">
                 <FileText size={17} />
                 <span>Browser</span>
               </span>
             </button>
-            <button aria-current={activeFolder === "ids"} onClick={() => openFolder("ids")} type="button">
+            <button
+              aria-current={activeFolder === "ids"}
+              onClick={() => openFolder("ids")}
+              type="button"
+            >
               <span className="folder-label">
                 <AtSign size={17} />
                 <span>IDs</span>
               </span>
               <strong>{ownedIdCount + walletPendingIdEvents.length}</strong>
             </button>
-            <button aria-current={activeFolder === "marketplace"} onClick={() => openFolder("marketplace")} type="button">
+            <button
+              aria-current={activeFolder === "marketplace"}
+              onClick={() => openFolder("marketplace")}
+              type="button"
+            >
               <span className="folder-label">
                 <Users size={17} />
                 <span>Marketplace</span>
               </span>
               <strong>{ownerControlledIds.length}</strong>
             </button>
-            <button aria-current={activeFolder === "log"} onClick={() => openFolder("log")} type="button">
+            <button
+              aria-current={activeFolder === "pay2speak"}
+              onClick={() => openFolder("pay2speak")}
+              type="button"
+            >
+              <span className="folder-label">
+                <Mic2 size={17} />
+                <span>Pay2Speak</span>
+              </span>
+              <strong>{pay2SpeakCampaigns.length}</strong>
+            </button>
+            <button
+              aria-current={activeFolder === "log"}
+              onClick={() => openFolder("log")}
+              type="button"
+            >
               <span className="folder-label">
                 <Clock size={17} />
                 <span>Log</span>
               </span>
               <strong>{idActivity.length}</strong>
             </button>
-            <button aria-current={activeFolder === "contacts"} onClick={() => openFolder("contacts")} type="button">
+            <button
+              aria-current={activeFolder === "contacts"}
+              onClick={() => openFolder("contacts")}
+              type="button"
+            >
               <span className="folder-label">
                 <Users size={17} />
                 <span>Contacts</span>
@@ -9707,12 +13317,18 @@ export default function App() {
               <strong>{contactsForNetwork.length}</strong>
             </button>
             {registryAddress ? (
-              <div className="registry-network-stat" aria-label="ProofOfWork ID registry network total">
+              <div
+                className="registry-network-stat"
+                aria-label="ProofOfWork ID registry network total"
+              >
                 <span>Registry Network</span>
                 <strong>{idRegistry.length.toLocaleString()}</strong>
                 <small>
-                  {confirmedIdCount.toLocaleString()} confirmed · {pendingIdCount.toLocaleString()} pending IDs
-                  {pendingIdEventCount ? ` · ${pendingIdEventCount.toLocaleString()} changes` : ""}
+                  {confirmedIdCount.toLocaleString()} confirmed ·{" "}
+                  {pendingIdCount.toLocaleString()} pending IDs
+                  {pendingIdEventCount
+                    ? ` · ${pendingIdEventCount.toLocaleString()} changes`
+                    : ""}
                 </small>
               </div>
             ) : null}
@@ -9722,13 +13338,21 @@ export default function App() {
             <span>Account</span>
             <code>{address || "Not connected"}</code>
             <div className="backup-actions" aria-label="Local data backup">
-              <button className="secondary small" onClick={exportBackup} type="button">
+              <button
+                className="secondary small"
+                onClick={exportBackup}
+                type="button"
+              >
                 <span className="button-content">
                   <Download size={15} />
                   <span>Export</span>
                 </span>
               </button>
-              <button className="secondary small" onClick={() => backupInputRef.current?.click()} type="button">
+              <button
+                className="secondary small"
+                onClick={() => backupInputRef.current?.click()}
+                type="button"
+              >
                 <span className="button-content">
                   <Upload size={15} />
                   <span>Import</span>
@@ -9767,7 +13391,11 @@ export default function App() {
             registryAddress={registryAddress}
             registryRecords={idRegistry}
             registrationBytes={idRegistrationBytes}
-            lastRegisteredId={lastRegisteredId?.network === network ? lastRegisteredId : undefined}
+            lastRegisteredId={
+              lastRegisteredId?.network === network
+                ? lastRegisteredId
+                : undefined
+            }
             canTransfer={canTransferId}
             canUpdate={canUpdateId}
             setFeeRate={setFeeRate}
@@ -9826,12 +13454,48 @@ export default function App() {
             }}
             submitPurchase={purchaseId}
             useListing={(listing) => {
-              setIdSaleAuthorization(JSON.stringify(listing.saleAuthorization, null, 2));
+              setIdSaleAuthorization(
+                JSON.stringify(listing.saleAuthorization, null, 2),
+              );
               setIdSelectedListingId(listing.listingId);
               setIdPurchaseOwnerAddress(address);
               setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
             }}
             onRefresh={() => void refreshIds()}
+          />
+        ) : activeFolder === "pay2speak" ? (
+          <Pay2SpeakWorkspace
+            address={address}
+            busy={busy}
+            campaignBytes={pay2SpeakCampaignBytes}
+            campaigns={pay2SpeakCampaigns}
+            canCreateCampaign={canCreatePay2SpeakCampaign}
+            canFundCampaign={canFundPay2SpeakCampaign}
+            compact
+            contributionSats={pay2SpeakContributionSats}
+            createCampaign={createPay2SpeakCampaign}
+            creatorRouteAddress=""
+            feeRate={feeRate}
+            fundCampaign={fundPay2SpeakCampaign}
+            fundingBytes={pay2SpeakFundingBytes}
+            fundingRecords={pay2SpeakFunding}
+            handle={pay2SpeakHandle}
+            network={network}
+            question={pay2SpeakQuestion}
+            questions={pay2SpeakQuestions}
+            registryAddress={pay2SpeakRegistryAddress}
+            selectedCampaignId={selectedPay2SpeakCampaign?.txid ?? ""}
+            setContributionSats={setPay2SpeakContributionSats}
+            setFeeRate={setFeeRate}
+            setHandle={setPay2SpeakHandle}
+            setQuestion={setPay2SpeakQuestion}
+            setSelectedCampaignId={setPay2SpeakSelectedCampaignId}
+            setSpaceNumber={setPay2SpeakSpaceNumber}
+            setTargetSats={setPay2SpeakTargetSats}
+            spaceNumber={pay2SpeakSpaceNumber}
+            split={pay2SpeakSplit}
+            targetSats={pay2SpeakTargetSats}
+            onRefresh={() => void refreshPay2Speak()}
           />
         ) : activeFolder === "contacts" ? (
           <ContactsWorkspace
@@ -9894,7 +13558,11 @@ export default function App() {
             fileFilter={fileFilter}
             messages={activeMessages}
             refreshing={refreshInProgress}
-            selectedMessage={selectedMessage && hasAttachment(selectedMessage) ? selectedMessage : undefined}
+            selectedMessage={
+              selectedMessage && hasAttachment(selectedMessage)
+                ? selectedMessage
+                : undefined
+            }
             setFileFilter={setFileFilter}
             setSortMode={setSortMode}
             sortMode={sortMode}
@@ -9911,13 +13579,26 @@ export default function App() {
             <section className="message-column">
               <div className="list-toolbar">
                 <div>
-                  <h2>{activeFolder === "custom" ? activeCustomFolder?.name ?? "Folder" : folderLabel(activeFolder)}</h2>
-                  <span>{activeFolder === "custom" ? "Local folder" : folderSubtitle(activeFolder)}</span>
+                  <h2>
+                    {activeFolder === "custom"
+                      ? (activeCustomFolder?.name ?? "Folder")
+                      : folderLabel(activeFolder)}
+                  </h2>
+                  <span>
+                    {activeFolder === "custom"
+                      ? "Local folder"
+                      : folderSubtitle(activeFolder)}
+                  </span>
                 </div>
                 {activeFolder === "drafts" ? null : (
                   <label className="sort-control">
                     Sort
-                    <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+                    <select
+                      value={sortMode}
+                      onChange={(event) =>
+                        setSortMode(event.target.value as SortMode)
+                      }
+                    >
                       <option value="value">Highest sats</option>
                       <option value="newest">Newest</option>
                       <option value="oldest">Oldest</option>
@@ -9926,10 +13607,20 @@ export default function App() {
                   </label>
                 )}
                 {activeFolder !== "drafts" ? (
-                  <button className="secondary small" disabled={refreshDisabled} onClick={() => void refreshMail(activeFolder)} type="button">
+                  <button
+                    className="secondary small"
+                    disabled={refreshDisabled}
+                    onClick={() => void refreshMail(activeFolder)}
+                    type="button"
+                  >
                     <span className="button-content">
-                      <RefreshCw className={refreshInProgress ? "refresh-spin" : ""} size={15} />
-                      <span>{refreshInProgress ? "Refreshing" : "Refresh"}</span>
+                      <RefreshCw
+                        className={refreshInProgress ? "refresh-spin" : ""}
+                        size={15}
+                      />
+                      <span>
+                        {refreshInProgress ? "Refreshing" : "Refresh"}
+                      </span>
                     </span>
                   </button>
                 ) : null}
@@ -9942,7 +13633,10 @@ export default function App() {
                   onDiscard={discardDraft}
                   onOpen={(draft) => {
                     applyDraft(draft);
-                    setStatus({ tone: "idle", text: `Draft restored. Last saved ${formatDate(draft.updatedAt)}.` });
+                    setStatus({
+                      tone: "idle",
+                      text: `Draft restored. Last saved ${formatDate(draft.updatedAt)}.`,
+                    });
                   }}
                 />
               ) : (
@@ -9964,7 +13658,12 @@ export default function App() {
 
             <section className="reader-pane">
               {!address ? (
-                <OnboardingPane busy={busy} hasUnisat={hasUnisat} network={network} onConnect={connectWallet} />
+                <OnboardingPane
+                  busy={busy}
+                  hasUnisat={hasUnisat}
+                  network={network}
+                  onConnect={connectWallet}
+                />
               ) : activeFolder === "drafts" && composeOpen ? (
                 <ComposePane
                   amountSats={amountSats}
@@ -10004,7 +13703,11 @@ export default function App() {
                     <FilePenLine size={26} />
                   </div>
                   <h3>No draft selected</h3>
-                  <button className="compose-button" onClick={composeNew} type="button">
+                  <button
+                    className="compose-button"
+                    onClick={composeNew}
+                    type="button"
+                  >
                     <span className="button-content">
                       <PenLine size={17} />
                       <span>Compose</span>
@@ -10048,12 +13751,18 @@ export default function App() {
                   archivable={canArchive(selectedMessage)}
                   archived={isArchived(selectedMessage)}
                   checkingBroadcasts={checkingBroadcasts}
-                  deliveryStatus={selectedMessage.folder === "sent" ? sentDeliveryStatus(selectedMessage) : undefined}
+                  deliveryStatus={
+                    selectedMessage.folder === "sent"
+                      ? sentDeliveryStatus(selectedMessage)
+                      : undefined
+                  }
                   favoriteable={canFavorite(selectedMessage)}
                   favorited={isFavorite(selectedMessage)}
                   folderIds={messageFolderIds(selectedMessage)}
                   folderable={canUseCustomFolders(selectedMessage)}
-                  activeCustomFolderId={activeFolder === "custom" ? activeCustomFolderId : ""}
+                  activeCustomFolderId={
+                    activeFolder === "custom" ? activeCustomFolderId : ""
+                  }
                   customFolders={customFolders}
                   message={selectedMessage}
                   onArchiveToggle={setMessageArchived}
@@ -10071,7 +13780,11 @@ export default function App() {
                     <Mail size={26} />
                   </div>
                   <h3>Select a message</h3>
-                  <button className="compose-button" onClick={composeNew} type="button">
+                  <button
+                    className="compose-button"
+                    onClick={composeNew}
+                    type="button"
+                  >
                     <span className="button-content">
                       <PenLine size={17} />
                       <span>Compose</span>
@@ -10089,7 +13802,10 @@ export default function App() {
 
 function DomainNav({ compact = false }: { compact?: boolean }) {
   return (
-    <nav className={compact ? "domain-nav compact" : "domain-nav"} aria-label="ProofOfWork.Me domains">
+    <nav
+      className={compact ? "domain-nav compact" : "domain-nav"}
+      aria-label="ProofOfWork.Me domains"
+    >
       {APP_LINKS.map((link) => (
         <a href={appHref(link.href, link.localHref)} key={link.href}>
           {link.label}
@@ -10110,7 +13826,9 @@ function htmlText(value: string) {
 function browserTemplateHtml(title: string, kicker: string, body: string) {
   const pageTitle = title.trim() || "Proof Page";
   const pageKicker = kicker.trim() || "Published on the Bitcoin Computer";
-  const pageBody = body.trim() || "This page is HTML carried by ProofOfWork.Me OP_RETURN data and verified by txid.";
+  const pageBody =
+    body.trim() ||
+    "This page is HTML carried by ProofOfWork.Me OP_RETURN data and verified by txid.";
 
   return `<!doctype html>
 <html lang="en">
@@ -10164,13 +13882,19 @@ function txidFromBrowserLocation() {
   const pathParts = window.location.pathname.split("/").filter(Boolean);
   const txIndex = pathParts.findIndex((part) => part.toLowerCase() === "tx");
   const fromPath = txIndex >= 0 ? pathParts[txIndex + 1] : pathParts[0];
-  return fromPath && /^[0-9a-fA-F]{64}$/u.test(fromPath) ? fromPath.toLowerCase() : "";
+  return fromPath && /^[0-9a-fA-F]{64}$/u.test(fromPath)
+    ? fromPath.toLowerCase()
+    : "";
 }
 
 function networkFromBrowserLocation(): BitcoinNetwork {
   const params = new URLSearchParams(window.location.search);
   const network = params.get("network");
-  return network === "testnet4" || network === "testnet" || network === "livenet" ? network : "livenet";
+  return network === "testnet4" ||
+    network === "testnet" ||
+    network === "livenet"
+    ? network
+    : "livenet";
 }
 
 function BrowserApp({
@@ -10180,19 +13904,34 @@ function BrowserApp({
   setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   theme: ThemeMode;
 }) {
-  const [network, setNetwork] = useState<BitcoinNetwork>(() => networkFromBrowserLocation());
+  const [network, setNetwork] = useState<BitcoinNetwork>(() =>
+    networkFromBrowserLocation(),
+  );
   const [query, setQuery] = useState(() => txidFromBrowserLocation());
   const [page, setPage] = useState<BrowserPage | undefined>();
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({ tone: "idle", text: "Ready" });
+  const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({
+    tone: "idle",
+    text: "Ready",
+  });
   const [templateTitle, setTemplateTitle] = useState("My Bitcoin Page");
-  const [templateKicker, setTemplateKicker] = useState("ProofOfWork.Me Browser");
-  const [templateBody, setTemplateBody] = useState("This page lives as HTML carried by the Bitcoin Computer.");
+  const [templateKicker, setTemplateKicker] = useState(
+    "ProofOfWork.Me Browser",
+  );
+  const [templateBody, setTemplateBody] = useState(
+    "This page lives as HTML carried by the Bitcoin Computer.",
+  );
   const [templateCopied, setTemplateCopied] = useState(false);
   const initialLoadRef = useRef(false);
-  const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
+  const template = useMemo(
+    () => browserTemplateHtml(templateTitle, templateKicker, templateBody),
+    [templateBody, templateKicker, templateTitle],
+  );
   const templateBytes = useMemo(() => byteLength(template), [template]);
-  const templateSha256 = useMemo(() => sha256Hex(new TextEncoder().encode(template)), [template]);
+  const templateSha256 = useMemo(
+    () => sha256Hex(new TextEncoder().encode(template)),
+    [template],
+  );
   const templateHref = `data:text/html;charset=utf-8,${encodeURIComponent(template)}`;
 
   const loadPage = useCallback(
@@ -10204,18 +13943,26 @@ function BrowserApp({
       }
 
       setLoading(true);
-      setStatus({ tone: "idle", text: "Loading verified page from Bitcoin..." });
+      setStatus({
+        tone: "idle",
+        text: "Loading verified page from Bitcoin...",
+      });
       try {
         const loadedPage = await fetchBrowserPage(txid, network);
         setPage(loadedPage);
         setQuery(txid);
         setStatus({
           tone: loadedPage.confirmed ? "good" : "idle",
-          text: loadedPage.confirmed ? "Verified confirmed HTML page." : "Verified pending HTML page. Confirmation is still final truth.",
+          text: loadedPage.confirmed
+            ? "Verified confirmed HTML page."
+            : "Verified pending HTML page. Confirmation is still final truth.",
         });
       } catch (error) {
         setPage(undefined);
-        setStatus({ tone: "bad", text: errorMessage(error, "Could not load Browser page.") });
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "Could not load Browser page."),
+        });
       } finally {
         setLoading(false);
       }
@@ -10244,7 +13991,11 @@ function BrowserApp({
   return (
     <main className="desktop-public-app browser-public-app">
       <header className="desktop-public-header">
-        <a className="landing-brand" href={HOME_APP_URL} aria-label="ProofOfWork.Me home">
+        <a
+          className="landing-brand"
+          href={HOME_APP_URL}
+          aria-label="ProofOfWork.Me home"
+        >
           <div className="brand-mark" aria-hidden="true">
             PoW
           </div>
@@ -10258,7 +14009,9 @@ function BrowserApp({
           <button
             aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
             className="icon-button"
-            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
             title={theme === "dark" ? "Light mode" : "Dark mode"}
             type="button"
           >
@@ -10277,7 +14030,10 @@ function BrowserApp({
           <div>
             <span className="browser-kicker">Bitcoin-native browser</span>
             <h2>Paste a txid. Render the page.</h2>
-            <p>HTML pages are ProofOfWork message bodies or file attachments, reconstructed from OP_RETURN chunks and rendered inside a sandbox.</p>
+            <p>
+              HTML pages are ProofOfWork message bodies or file attachments,
+              reconstructed from OP_RETURN chunks and rendered inside a sandbox.
+            </p>
           </div>
           <form
             className="browser-search-card"
@@ -10316,14 +14072,24 @@ function BrowserApp({
                   <span>Sandboxed preview</span>
                   <h3>{page.attachment.name}</h3>
                 </div>
-                <a className="secondary small link-button" href={mempoolTxUrl(page.txid, page.network)} rel="noreferrer" target="_blank">
+                <a
+                  className="secondary small link-button"
+                  href={mempoolTxUrl(page.txid, page.network)}
+                  rel="noreferrer"
+                  target="_blank"
+                >
                   <span className="button-content">
                     <span>View TX</span>
                     <ArrowUpRight size={14} />
                   </span>
                 </a>
               </div>
-              <iframe referrerPolicy="no-referrer" sandbox="" srcDoc={page.html} title={`${page.attachment.name} rendered from ${page.txid}`} />
+              <iframe
+                referrerPolicy="no-referrer"
+                sandbox=""
+                srcDoc={page.html}
+                title={`${page.attachment.name} rendered from ${page.txid}`}
+              />
             </article>
 
             <aside className="browser-proof-card">
@@ -10342,7 +14108,11 @@ function BrowserApp({
                 </div>
                 <div>
                   <dt>Source</dt>
-                  <dd>{page.source === "attachment" ? "HTML attachment" : "Message body"}</dd>
+                  <dd>
+                    {page.source === "attachment"
+                      ? "HTML attachment"
+                      : "Message body"}
+                  </dd>
                 </div>
                 <div>
                   <dt>Size</dt>
@@ -10377,7 +14147,11 @@ function BrowserApp({
                   <span>Source</span>
                   <h3>Verified HTML</h3>
                 </div>
-                <button className="secondary small" onClick={() => void copyTextToClipboard(page.html)} type="button">
+                <button
+                  className="secondary small"
+                  onClick={() => void copyTextToClipboard(page.html)}
+                  type="button"
+                >
                   <span className="button-content">
                     <Copy size={14} />
                     <span>Copy</span>
@@ -10393,7 +14167,10 @@ function BrowserApp({
               <Monitor size={26} />
             </div>
             <h3>No page loaded</h3>
-            <p>Browser accepts confirmed or pending txids with HTML in the message body or a verified HTML attachment.</p>
+            <p>
+              Browser accepts confirmed or pending txids with HTML in the
+              message body or a verified HTML attachment.
+            </p>
           </section>
         )}
 
@@ -10404,13 +14181,21 @@ function BrowserApp({
               <h3>Computer-native HTML</h3>
             </div>
             <div className="browser-template-actions">
-              <button className="secondary small" onClick={() => void copyTemplate()} type="button">
+              <button
+                className="secondary small"
+                onClick={() => void copyTemplate()}
+                type="button"
+              >
                 <span className="button-content">
                   <Copy size={14} />
                   <span>{templateCopied ? "Copied" : "Copy HTML"}</span>
                 </span>
               </button>
-              <a className="secondary small link-button" download="proof-page.html" href={templateHref}>
+              <a
+                className="secondary small link-button"
+                download="proof-page.html"
+                href={templateHref}
+              >
                 <span className="button-content">
                   <Download size={14} />
                   <span>Download</span>
@@ -10423,15 +14208,25 @@ function BrowserApp({
             <div className="browser-template-fields">
               <label>
                 Title
-                <input onChange={(event) => setTemplateTitle(event.target.value)} value={templateTitle} />
+                <input
+                  onChange={(event) => setTemplateTitle(event.target.value)}
+                  value={templateTitle}
+                />
               </label>
               <label>
                 Kicker
-                <input onChange={(event) => setTemplateKicker(event.target.value)} value={templateKicker} />
+                <input
+                  onChange={(event) => setTemplateKicker(event.target.value)}
+                  value={templateKicker}
+                />
               </label>
               <label>
                 Body
-                <textarea onChange={(event) => setTemplateBody(event.target.value)} rows={5} value={templateBody} />
+                <textarea
+                  onChange={(event) => setTemplateBody(event.target.value)}
+                  rows={5}
+                  value={templateBody}
+                />
               </label>
               <dl className="browser-template-meta">
                 <div>
@@ -10444,7 +14239,12 @@ function BrowserApp({
                 </div>
               </dl>
             </div>
-            <textarea className="browser-template-source" readOnly rows={18} value={template} />
+            <textarea
+              className="browser-template-source"
+              readOnly
+              rows={18}
+              value={template}
+            />
           </div>
         </section>
       </section>
@@ -10454,7 +14254,11 @@ function BrowserApp({
   );
 }
 
-function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) {
+function BrowserWorkspace({
+  activeNetwork,
+}: {
+  activeNetwork: BitcoinNetwork;
+}) {
   const [network, setNetwork] = useState<BitcoinNetwork>(activeNetwork);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState<BrowserPage | undefined>();
@@ -10464,12 +14268,22 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
     text: "Ready. Paste a txid to render verified HTML from the Bitcoin Computer.",
   });
   const [templateTitle, setTemplateTitle] = useState("My Bitcoin Page");
-  const [templateKicker, setTemplateKicker] = useState("ProofOfWork.Me Browser");
-  const [templateBody, setTemplateBody] = useState("This page lives as HTML carried by the Bitcoin Computer.");
+  const [templateKicker, setTemplateKicker] = useState(
+    "ProofOfWork.Me Browser",
+  );
+  const [templateBody, setTemplateBody] = useState(
+    "This page lives as HTML carried by the Bitcoin Computer.",
+  );
   const [templateCopied, setTemplateCopied] = useState(false);
-  const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
+  const template = useMemo(
+    () => browserTemplateHtml(templateTitle, templateKicker, templateBody),
+    [templateBody, templateKicker, templateTitle],
+  );
   const templateBytes = useMemo(() => byteLength(template), [template]);
-  const templateSha256 = useMemo(() => sha256Hex(new TextEncoder().encode(template)), [template]);
+  const templateSha256 = useMemo(
+    () => sha256Hex(new TextEncoder().encode(template)),
+    [template],
+  );
   const templateHref = `data:text/html;charset=utf-8,${encodeURIComponent(template)}`;
 
   useEffect(() => {
@@ -10485,18 +14299,26 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
       }
 
       setLoading(true);
-      setStatus({ tone: "idle", text: "Loading verified page from Bitcoin..." });
+      setStatus({
+        tone: "idle",
+        text: "Loading verified page from Bitcoin...",
+      });
       try {
         const loadedPage = await fetchBrowserPage(txid, network);
         setPage(loadedPage);
         setQuery(txid);
         setStatus({
           tone: loadedPage.confirmed ? "good" : "idle",
-          text: loadedPage.confirmed ? "Verified confirmed HTML page." : "Verified pending HTML page. Confirmation is still final truth.",
+          text: loadedPage.confirmed
+            ? "Verified confirmed HTML page."
+            : "Verified pending HTML page. Confirmation is still final truth.",
         });
       } catch (error) {
         setPage(undefined);
-        setStatus({ tone: "bad", text: errorMessage(error, "Could not load Browser page.") });
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "Could not load Browser page."),
+        });
       } finally {
         setLoading(false);
       }
@@ -10521,7 +14343,10 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
         <div>
           <span className="browser-kicker">Bitcoin-native browser</span>
           <h2>Browser</h2>
-          <p>Paste a txid to render HTML from a ProofOfWork message body or the same verified attachment protocol used by Files and Desktop.</p>
+          <p>
+            Paste a txid to render HTML from a ProofOfWork message body or the
+            same verified attachment protocol used by Files and Desktop.
+          </p>
         </div>
         <form
           className="browser-search-card"
@@ -10560,14 +14385,24 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
                 <span>Sandboxed preview</span>
                 <h3>{page.attachment.name}</h3>
               </div>
-              <a className="secondary small link-button" href={mempoolTxUrl(page.txid, page.network)} rel="noreferrer" target="_blank">
+              <a
+                className="secondary small link-button"
+                href={mempoolTxUrl(page.txid, page.network)}
+                rel="noreferrer"
+                target="_blank"
+              >
                 <span className="button-content">
                   <span>View TX</span>
                   <ArrowUpRight size={14} />
                 </span>
               </a>
             </div>
-            <iframe referrerPolicy="no-referrer" sandbox="" srcDoc={page.html} title={`${page.attachment.name} rendered from ${page.txid}`} />
+            <iframe
+              referrerPolicy="no-referrer"
+              sandbox=""
+              srcDoc={page.html}
+              title={`${page.attachment.name} rendered from ${page.txid}`}
+            />
           </article>
 
           <aside className="browser-proof-card">
@@ -10586,7 +14421,11 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
               </div>
               <div>
                 <dt>Source</dt>
-                <dd>{page.source === "attachment" ? "HTML attachment" : "Message body"}</dd>
+                <dd>
+                  {page.source === "attachment"
+                    ? "HTML attachment"
+                    : "Message body"}
+                </dd>
               </div>
               <div>
                 <dt>Size</dt>
@@ -10621,7 +14460,11 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
                 <span>Source</span>
                 <h3>Verified HTML</h3>
               </div>
-              <button className="secondary small" onClick={() => void copyTextToClipboard(page.html)} type="button">
+              <button
+                className="secondary small"
+                onClick={() => void copyTextToClipboard(page.html)}
+                type="button"
+              >
                 <span className="button-content">
                   <Copy size={14} />
                   <span>Copy</span>
@@ -10637,7 +14480,10 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
             <Monitor size={26} />
           </div>
           <h3>No page loaded</h3>
-          <p>Browser accepts confirmed or pending txids with HTML in the message body or a verified HTML attachment.</p>
+          <p>
+            Browser accepts confirmed or pending txids with HTML in the message
+            body or a verified HTML attachment.
+          </p>
         </section>
       )}
 
@@ -10648,13 +14494,21 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
             <h3>Computer-native HTML</h3>
           </div>
           <div className="browser-template-actions">
-            <button className="secondary small" onClick={() => void copyTemplate()} type="button">
+            <button
+              className="secondary small"
+              onClick={() => void copyTemplate()}
+              type="button"
+            >
               <span className="button-content">
                 <Copy size={14} />
                 <span>{templateCopied ? "Copied" : "Copy HTML"}</span>
               </span>
             </button>
-            <a className="secondary small link-button" download="proof-page.html" href={templateHref}>
+            <a
+              className="secondary small link-button"
+              download="proof-page.html"
+              href={templateHref}
+            >
               <span className="button-content">
                 <Download size={14} />
                 <span>Download</span>
@@ -10667,15 +14521,25 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
           <div className="browser-template-fields">
             <label>
               Title
-              <input onChange={(event) => setTemplateTitle(event.target.value)} value={templateTitle} />
+              <input
+                onChange={(event) => setTemplateTitle(event.target.value)}
+                value={templateTitle}
+              />
             </label>
             <label>
               Kicker
-              <input onChange={(event) => setTemplateKicker(event.target.value)} value={templateKicker} />
+              <input
+                onChange={(event) => setTemplateKicker(event.target.value)}
+                value={templateKicker}
+              />
             </label>
             <label>
               Body
-              <textarea onChange={(event) => setTemplateBody(event.target.value)} rows={5} value={templateBody} />
+              <textarea
+                onChange={(event) => setTemplateBody(event.target.value)}
+                rows={5}
+                value={templateBody}
+              />
             </label>
             <dl className="browser-template-meta">
               <div>
@@ -10688,7 +14552,12 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
               </div>
             </dl>
           </div>
-          <textarea className="browser-template-source" readOnly rows={18} value={template} />
+          <textarea
+            className="browser-template-source"
+            readOnly
+            rows={18}
+            value={template}
+          />
         </div>
       </section>
     </section>
@@ -10735,9 +14604,15 @@ function DesktopApp({
   onSelect: (message: MailMessage) => void;
 }) {
   return (
-    <main className={`desktop-public-app ${status.tone !== "idle" ? "has-route-status" : ""}`}>
+    <main
+      className={`desktop-public-app ${status.tone !== "idle" ? "has-route-status" : ""}`}
+    >
       <header className="desktop-public-header">
-        <a className="landing-brand" href={HOME_APP_URL} aria-label="ProofOfWork.Me home">
+        <a
+          className="landing-brand"
+          href={HOME_APP_URL}
+          aria-label="ProofOfWork.Me home"
+        >
           <div className="brand-mark" aria-hidden="true">
             PoW
           </div>
@@ -10752,7 +14627,9 @@ function DesktopApp({
           <button
             aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
             className="icon-button"
-            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
             title={theme === "dark" ? "Light mode" : "Dark mode"}
             type="button"
           >
@@ -10823,7 +14700,11 @@ function ActivityApp({
   return (
     <main className="desktop-public-app activity-public-app">
       <header className="desktop-public-header">
-        <a className="landing-brand" href={HOME_APP_URL} aria-label="ProofOfWork.Me home">
+        <a
+          className="landing-brand"
+          href={HOME_APP_URL}
+          aria-label="ProofOfWork.Me home"
+        >
           <div className="brand-mark" aria-hidden="true">
             PoW
           </div>
@@ -10838,7 +14719,9 @@ function ActivityApp({
           <button
             aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
             className="icon-button"
-            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
             title={theme === "dark" ? "Light mode" : "Dark mode"}
             type="button"
           >
@@ -10876,10 +14759,20 @@ function activityKey(item: PowActivityItem) {
   return `${item.kind}-${item.network}-${item.txid}-${item.listingId ?? ""}-${item.id ?? ""}`;
 }
 
-function activityItemsForView(idActivity: PowActivityItem[], searchedActivity: PowActivityItem[], query: string, profile?: DesktopProfile) {
+function activityItemsForView(
+  idActivity: PowActivityItem[],
+  searchedActivity: PowActivityItem[],
+  query: string,
+  profile?: DesktopProfile,
+) {
   const registryItems = profile
     ? idActivity.filter((item) =>
-        [profile.address, profile.resolvedId ? `${profile.resolvedId}@proofofwork.me` : "", profile.resolvedId ?? "", profile.query]
+        [
+          profile.address,
+          profile.resolvedId ? `${profile.resolvedId}@proofofwork.me` : "",
+          profile.resolvedId ?? "",
+          profile.query,
+        ]
           .filter(Boolean)
           .some((needle) => activityMatchesSearch(item, needle)),
       )
@@ -10897,11 +14790,18 @@ function totalActivityDataBytes(items: PowActivityItem[]) {
   const bytesByTxid = new Map<string, number>();
 
   for (const item of items) {
-    if (!item.txid || !Number.isFinite(item.dataBytes ?? 0) || !item.dataBytes) {
+    if (
+      !item.txid ||
+      !Number.isFinite(item.dataBytes ?? 0) ||
+      !item.dataBytes
+    ) {
       continue;
     }
 
-    bytesByTxid.set(item.txid, Math.max(bytesByTxid.get(item.txid) ?? 0, item.dataBytes));
+    bytesByTxid.set(
+      item.txid,
+      Math.max(bytesByTxid.get(item.txid) ?? 0, item.dataBytes),
+    );
   }
 
   return [...bytesByTxid.values()].reduce((total, bytes) => total + bytes, 0);
@@ -10930,11 +14830,20 @@ function ActivityWorkspace({
   onRefresh: () => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const items = activityItemsForView(idActivity, searchedActivity, query, profile);
+  const items = activityItemsForView(
+    idActivity,
+    searchedActivity,
+    query,
+    profile,
+  );
   const confirmedCount = items.filter((item) => item.confirmed).length;
   const pendingCount = items.length - confirmedCount;
   const dataBytes = totalActivityDataBytes(items);
-  const title = profile ? `${profile.label} log` : query.trim() ? "Filtered log" : "Global computer log";
+  const title = profile
+    ? `${profile.label} log`
+    : query.trim()
+      ? "Filtered log"
+      : "Global computer log";
 
   return (
     <section className="activity-workspace">
@@ -10942,7 +14851,10 @@ function ActivityWorkspace({
         <div>
           <span className="landing-kicker">Bitcoin-native audit trail</span>
           <h2>Every ProofOfWork action with a txid.</h2>
-          <p>Messages, replies, files, ID registry events, listings, seals, delistings, and purchases in one chain-readable log.</p>
+          <p>
+            Messages, replies, files, ID registry events, listings, seals,
+            delistings, and purchases in one chain-readable log.
+          </p>
         </div>
         <form className="desktop-search activity-search" onSubmit={onSearch}>
           <Search size={16} aria-hidden="true" />
@@ -10953,19 +14865,33 @@ function ActivityWorkspace({
             spellCheck={false}
             value={query}
           />
-          <button className="secondary small" disabled={busy || !query.trim()} type="submit">
+          <button
+            className="secondary small"
+            disabled={busy || !query.trim()}
+            type="submit"
+          >
             <span className="button-content">
               <Search size={15} />
               <span>Search</span>
             </span>
           </button>
-          <button className="secondary small" disabled={busy} onClick={onRefresh} type="button">
+          <button
+            className="secondary small"
+            disabled={busy}
+            onClick={onRefresh}
+            type="button"
+          >
             <span className="button-content">
               <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
               <span>{busy ? "Refreshing" : "Refresh"}</span>
             </span>
           </button>
-          <button className="secondary small" disabled={busy || (!query && !profile)} onClick={onClear} type="button">
+          <button
+            className="secondary small"
+            disabled={busy || (!query && !profile)}
+            onClick={onClear}
+            type="button"
+          >
             <span className="button-content">
               <X size={15} />
               <span>Clear</span>
@@ -11004,7 +14930,10 @@ function ActivityWorkspace({
           </div>
           <div>
             <h3>{title}</h3>
-            <p>Confirmed records are canonical. Pending records are visible until they confirm or disappear.</p>
+            <p>
+              Confirmed records are canonical. Pending records are visible until
+              they confirm or disappear.
+            </p>
           </div>
         </div>
         <ActivityFeed items={items} />
@@ -11021,7 +14950,10 @@ function ActivityFeed({ items }: { items: PowActivityItem[] }) {
           <Clock size={26} />
         </div>
         <h3>No activity</h3>
-        <p>Search an address, confirmed ProofOfWork ID, or txid to narrow the protocol log.</p>
+        <p>
+          Search an address, confirmed ProofOfWork ID, or txid to narrow the
+          protocol log.
+        </p>
       </div>
     );
   }
@@ -11035,7 +14967,9 @@ function ActivityFeed({ items }: { items: PowActivityItem[] }) {
               <h4>{item.id ? `${item.id}@proofofwork.me` : item.title}</h4>
               <strong>{item.id ? item.title : item.description}</strong>
               {item.id ? <p>{item.description}</p> : null}
-              {item.detail ? <span className="activity-detail">{item.detail}</span> : null}
+              {item.detail ? (
+                <span className="activity-detail">{item.detail}</span>
+              ) : null}
             </div>
             <time dateTime={item.createdAt}>{formatDate(item.createdAt)}</time>
           </div>
@@ -11074,14 +15008,24 @@ function ActivityFeed({ items }: { items: PowActivityItem[] }) {
           </dl>
 
           <div className="id-record-actions">
-            <a className="secondary small" href={mempoolTxUrl(item.txid, item.network)} rel="noreferrer" target="_blank">
+            <a
+              className="secondary small"
+              href={mempoolTxUrl(item.txid, item.network)}
+              rel="noreferrer"
+              target="_blank"
+            >
               <span className="button-content">
                 <ArrowUpRight size={15} />
                 <span>View TX</span>
               </span>
             </a>
             {item.listingId && item.listingId !== item.txid ? (
-              <a className="secondary small" href={mempoolTxUrl(item.listingId, item.network)} rel="noreferrer" target="_blank">
+              <a
+                className="secondary small"
+                href={mempoolTxUrl(item.listingId, item.network)}
+                rel="noreferrer"
+                target="_blank"
+              >
                 <span className="button-content">
                   <ArrowUpRight size={15} />
                   <span>View Listing</span>
@@ -11095,8 +15039,1081 @@ function ActivityFeed({ items }: { items: PowActivityItem[] }) {
   );
 }
 
+type Pay2SpeakWorkspaceProps = {
+  address: string;
+  busy: boolean;
+  campaignBytes: number;
+  campaigns: Pay2SpeakCampaign[];
+  canCreateCampaign: boolean;
+  canFundCampaign: boolean;
+  compact?: boolean;
+  contributionSats: number;
+  createCampaign: (event: FormEvent<HTMLFormElement>) => void;
+  creatorRouteAddress?: string;
+  feeRate: number;
+  fundCampaign: (event: FormEvent<HTMLFormElement>) => void;
+  fundingBytes: number;
+  fundingRecords: Pay2SpeakFunding[];
+  handle: string;
+  network: BitcoinNetwork;
+  question: string;
+  questions: Pay2SpeakQuestion[];
+  registryAddress: string;
+  selectedCampaignId: string;
+  setContributionSats: (value: number) => void;
+  setFeeRate: (value: number) => void;
+  setHandle: (value: string) => void;
+  setQuestion: (value: string) => void;
+  setSelectedCampaignId: (value: string) => void;
+  setSpaceNumber: (value: number) => void;
+  setTargetSats: (value: number) => void;
+  spaceNumber: number;
+  split?: { creatorSats: number; grossSats: number; registrySats: number };
+  targetSats: number;
+  onRefresh: () => void;
+};
+
+function Pay2SpeakApp({
+  address,
+  busy,
+  connectWallet,
+  disconnectWallet,
+  hasUnisat,
+  setTheme,
+  status,
+  theme,
+  ...workspaceProps
+}: Pay2SpeakWorkspaceProps & {
+  connectWallet: () => void;
+  disconnectWallet: () => void;
+  hasUnisat: boolean;
+  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
+  status: { tone: StatusTone; text: string };
+  theme: ThemeMode;
+}) {
+  const creatorRouteAddress = workspaceProps.creatorRouteAddress?.trim() ?? "";
+  const showCreatorPage =
+    creatorRouteAddress &&
+    isValidBitcoinAddress(creatorRouteAddress, "livenet");
+
+  return (
+    <main className="id-launch-app pay2speak-public-app">
+      <header className="id-launch-topbar">
+        <a
+          className="brand"
+          href={HOME_APP_URL}
+          aria-label="ProofOfWork.Me home"
+        >
+          <div className="brand-mark" aria-hidden="true">
+            PoW
+          </div>
+          <div>
+            <h1>Pay2Speak</h1>
+            <span>X Space crowdfunding</span>
+          </div>
+        </a>
+
+        <DomainNav compact />
+
+        <div className="topbar-controls">
+          <button
+            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
+            className="icon-button"
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            type="button"
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          {address ? (
+            <button
+              className="secondary small"
+              disabled={busy}
+              onClick={disconnectWallet}
+              type="button"
+            >
+              <span className="button-content">
+                <LogOut size={15} />
+                <span>{shortAddress(address)}</span>
+              </span>
+            </button>
+          ) : hasUnisat ? (
+            <button
+              className="primary small"
+              disabled={busy}
+              onClick={connectWallet}
+              type="button"
+            >
+              <span className="button-content">
+                <Wallet size={15} />
+                <span>Connect</span>
+              </span>
+            </button>
+          ) : (
+            <a
+              className="primary small link-button"
+              href={UNISAT_DOWNLOAD_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="button-content">
+                <Wallet size={15} />
+                <span>UniSat</span>
+              </span>
+            </a>
+          )}
+        </div>
+      </header>
+
+      {status.tone !== "idle" ? (
+        <div className={`status ${status.tone}`}>
+          <span className="status-dot" aria-hidden="true" />
+          <span>{status.text}</span>
+        </div>
+      ) : null}
+
+      {showCreatorPage ? (
+        <Pay2SpeakCreatorPage
+          address={address}
+          busy={busy}
+          creatorAddress={creatorRouteAddress}
+          {...workspaceProps}
+        />
+      ) : (
+        <Pay2SpeakWorkspace address={address} busy={busy} {...workspaceProps} />
+      )}
+      <SocialFooter />
+    </main>
+  );
+}
+
+function Pay2SpeakCreatorPage({
+  address,
+  busy,
+  campaigns,
+  canFundCampaign,
+  contributionSats,
+  creatorAddress,
+  feeRate,
+  fundCampaign,
+  fundingBytes,
+  fundingRecords,
+  question,
+  questions,
+  selectedCampaignId,
+  setContributionSats,
+  setFeeRate,
+  setQuestion,
+  setSelectedCampaignId,
+  split,
+}: Pay2SpeakWorkspaceProps & {
+  creatorAddress: string;
+}) {
+  const creatorCampaigns = campaigns.filter(
+    (campaign) => campaign.creatorAddress === creatorAddress,
+  );
+  const selectedCampaign =
+    creatorCampaigns.find((campaign) => campaign.txid === selectedCampaignId) ??
+    creatorCampaigns.find((campaign) => campaign.status === "Funding") ??
+    creatorCampaigns[0];
+  const creatorFunding = fundingRecords.filter((funding) =>
+    creatorCampaigns.some((campaign) => campaign.txid === funding.campaignId),
+  );
+  const campaignQuestions = selectedCampaign
+    ? questions.filter((item) => item.campaignId === selectedCampaign.txid)
+    : [];
+  const totalGross = creatorCampaigns.reduce(
+    (total, campaign) => total + campaign.fundedGrossSats,
+    0,
+  );
+  const totalTarget = creatorCampaigns.reduce(
+    (total, campaign) => total + campaign.targetGrossSats,
+    0,
+  );
+  const hostHandle =
+    selectedCampaign?.handle ?? creatorCampaigns[0]?.handle ?? "creator";
+  const hostTitle = selectedCampaign?.title ?? `@${hostHandle}`;
+  const pageProgress = selectedCampaign
+    ? pay2SpeakCampaignProgress(selectedCampaign)
+    : 0;
+  const creatorInitial = hostHandle.slice(0, 1).toUpperCase() || "P";
+  const hostPanelStyle: CSSProperties = {
+    background: "var(--text)",
+    border: "1px solid var(--border-strong)",
+    borderRadius: 12,
+    color: "var(--bg)",
+    display: "grid",
+    gap: 18,
+    padding: 16,
+  };
+  const avatarStyle: CSSProperties = {
+    alignItems: "center",
+    aspectRatio: "1 / 1",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: "50%",
+    color: "var(--text)",
+    display: "flex",
+    fontSize: "clamp(2.2rem, 10vw, 5rem)",
+    fontWeight: 900,
+    justifyContent: "center",
+    maxWidth: 150,
+    width: "38vw",
+  };
+  const ctaStyle: CSSProperties = {
+    background: "var(--amber)",
+    borderColor: "var(--amber)",
+    color: "var(--text)",
+    justifyContent: "center",
+    minHeight: 46,
+  };
+
+  if (creatorCampaigns.length === 0) {
+    return (
+      <section className="id-launch-main">
+        <div className="id-launch-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Mic2 size={24} />
+            </div>
+            <div>
+              <h2>No Pay2Speak campaign for this creator</h2>
+              <p>
+                Campaign pages are built from creation transactions signed by
+                the creator address.
+              </p>
+            </div>
+          </div>
+          <code>{creatorAddress}</code>
+          <a
+            className="secondary link-button"
+            href={appHref(PAY2SPEAK_APP_URL, LOCAL_PAY2SPEAK_APP_URL)}
+          >
+            <span className="button-content">
+              <ArrowUpRight size={15} />
+              <span>Back to Pay2Speak</span>
+            </span>
+          </a>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="id-launch-main">
+      <div className="id-launch-hero">
+        <aside
+          className="id-launch-card"
+          style={hostPanelStyle}
+          aria-label="Pay2Speak host"
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 18,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={avatarStyle} aria-hidden="true">
+              {creatorInitial}
+            </div>
+            <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+              <span
+                style={{
+                  color: "var(--bg)",
+                  fontSize: ".78rem",
+                  fontWeight: 850,
+                  textTransform: "uppercase",
+                }}
+              >
+                Pay2Speak host
+              </span>
+              <h2
+                style={{
+                  color: "var(--bg)",
+                  fontSize: "clamp(2rem, 7vw, 4.3rem)",
+                  lineHeight: ".96",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                @{hostHandle}
+              </h2>
+              <p
+                style={{
+                  color: "var(--bg)",
+                  fontSize: "1rem",
+                  lineHeight: 1.5,
+                }}
+              >
+                {hostTitle}
+              </p>
+              <code style={{ color: "var(--bg)" }}>
+                {shortAddress(creatorAddress)}
+              </code>
+            </div>
+          </div>
+          <a
+            href="#pay2speak-fund"
+            className="primary link-button"
+            style={ctaStyle}
+          >
+            <span className="button-content">
+              <Mic2 size={17} />
+              <span>Fund this Space</span>
+            </span>
+          </a>
+        </aside>
+
+        <div className="id-launch-stats" aria-label="Creator campaign stats">
+          <div>
+            <strong>{creatorCampaigns.length.toLocaleString()}</strong>
+            <span>Campaigns</span>
+          </div>
+          <div>
+            <strong>{totalGross.toLocaleString()}</strong>
+            <span>Gross sats</span>
+          </div>
+          <div>
+            <strong>{totalTarget.toLocaleString()}</strong>
+            <span>Target sats</span>
+          </div>
+          <div>
+            <strong>{creatorFunding.length.toLocaleString()}</strong>
+            <span>Funding txs</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="id-launch-grid">
+        <section className="id-launch-card id-claim-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <TrendingUp size={24} />
+            </div>
+            <div>
+              <h2>{selectedCampaign?.title ?? "Pay2Speak campaign"}</h2>
+              <p>
+                {selectedCampaign?.status ?? "Funding"} from creator address{" "}
+                {shortAddress(creatorAddress)}.
+              </p>
+            </div>
+          </div>
+          {selectedCampaign ? (
+            <>
+              <Pay2SpeakProgressBar
+                label={`${selectedCampaign.title} funding progress`}
+                progress={pageProgress}
+              />
+              <div
+                className="id-launch-stats"
+                aria-label="Selected campaign stats"
+              >
+                <div>
+                  <span>Progress</span>
+                  <strong>{pageProgress}%</strong>
+                </div>
+                <div>
+                  <span>Gross funded</span>
+                  <strong>
+                    {selectedCampaign.fundedGrossSats.toLocaleString()} sats
+                  </strong>
+                </div>
+                <div>
+                  <span>Target</span>
+                  <strong>
+                    {selectedCampaign.targetGrossSats.toLocaleString()} sats
+                  </strong>
+                </div>
+                <div>
+                  <span>Questions</span>
+                  <strong>{campaignQuestions.length.toLocaleString()}</strong>
+                </div>
+              </div>
+            </>
+          ) : null}
+          <div className="id-record-actions">
+            <a
+              className="secondary small"
+              href={mempoolBase("livenet") + `/address/${creatorAddress}`}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="button-content">
+                <ArrowUpRight size={15} />
+                <span>Creator Address</span>
+              </span>
+            </a>
+            {selectedCampaign ? (
+              <a
+                className="secondary small"
+                href={mempoolTxUrl(selectedCampaign.txid, "livenet")}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <span className="button-content">
+                  <ArrowUpRight size={15} />
+                  <span>Campaign TX</span>
+                </span>
+              </a>
+            ) : null}
+          </div>
+        </section>
+
+        <section id="pay2speak-fund" className="id-launch-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <MessageCircle size={24} />
+            </div>
+            <div>
+              <h3>Send sats and a question</h3>
+              <p>
+                One Pay2Speak funding transaction records your gross
+                contribution and optional question on chain.
+              </p>
+            </div>
+          </div>
+          <form className="id-form" onSubmit={fundCampaign}>
+            <label>
+              Campaign
+              <select
+                onChange={(event) => setSelectedCampaignId(event.target.value)}
+                value={selectedCampaign?.txid ?? ""}
+              >
+                {creatorCampaigns.map((campaign) => (
+                  <option key={campaign.txid} value={campaign.txid}>
+                    {campaign.title} - {campaign.status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Gross sats
+              <input
+                min={1001}
+                onChange={(event) =>
+                  setContributionSats(Number(event.target.value))
+                }
+                type="number"
+                value={contributionSats}
+              />
+            </label>
+            <label>
+              Question
+              <textarea
+                maxLength={500}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="Optional question for the host"
+                value={question}
+              />
+            </label>
+            <div className="id-launch-stats" aria-label="Contribution preview">
+              <div>
+                <span>Contribution</span>
+                <strong>
+                  {(split?.grossSats ?? contributionSats).toLocaleString()} sats
+                </strong>
+              </div>
+              <div>
+                <span>Question</span>
+                <strong>{question.trim() ? "Attached" : "Optional"}</strong>
+              </div>
+              <div>
+                <span>Network fee</span>
+                <strong>Shown by wallet</strong>
+              </div>
+            </div>
+            <div
+              className={
+                fundingBytes > MAX_DATA_CARRIER_BYTES
+                  ? "counter bad"
+                  : "counter"
+              }
+            >
+              {fundingBytes.toLocaleString()} /{" "}
+              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+              bytes
+            </div>
+            <button
+              className="primary"
+              disabled={!canFundCampaign}
+              style={ctaStyle}
+              type="submit"
+            >
+              <span className="button-content">
+                <Send size={16} />
+                <span>{busy ? "Funding" : "Fund Campaign"}</span>
+              </span>
+            </button>
+            {!address ? (
+              <p className="field-note">
+                Connect UniSat to fund this campaign.
+              </p>
+            ) : null}
+          </form>
+        </section>
+      </div>
+
+      <div className="id-launch-grid">
+        <section className="id-launch-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <MessageSquareQuote size={24} />
+            </div>
+            <div>
+              <h3>Top questions</h3>
+              <p>
+                Ranked by gross sats attached to valid funding transactions.
+              </p>
+            </div>
+          </div>
+          <div className="activity-feed">
+            {campaignQuestions.length === 0 ? (
+              <div className="empty-state">
+                <h3>No questions yet</h3>
+                <p>Be the first to attach a question to this Space.</p>
+              </div>
+            ) : (
+              campaignQuestions.map((item) => (
+                <article
+                  className="activity-row"
+                  key={`${item.txid}-${item.question}`}
+                >
+                  <div className="activity-row-main">
+                    <div>
+                      <h4>{item.grossSats.toLocaleString()} sats</h4>
+                      <strong>{item.question}</strong>
+                    </div>
+                    <time dateTime={item.createdAt}>
+                      {formatDate(item.createdAt)}
+                    </time>
+                  </div>
+                  <div className="id-record-actions">
+                    <a
+                      className="secondary small"
+                      href={mempoolTxUrl(item.txid, "livenet")}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <span className="button-content">
+                        <ArrowUpRight size={15} />
+                        <span>View TX</span>
+                      </span>
+                    </a>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="id-launch-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Mic2 size={24} />
+            </div>
+            <div>
+              <h3>Creator campaigns</h3>
+              <p>
+                {creatorCampaigns.length.toLocaleString()} campaign
+                {creatorCampaigns.length === 1 ? "" : "s"} from this creator
+                address. Total gross: {totalGross.toLocaleString()} /{" "}
+                {totalTarget.toLocaleString()} sats.
+              </p>
+            </div>
+          </div>
+          <div className="id-record-list">
+            {creatorCampaigns.map((campaign) => (
+              <article className="id-record" key={campaign.txid}>
+                <div className="id-record-main">
+                  <div>
+                    <h4>{campaign.title}</h4>
+                    <span>
+                      {campaign.status} -{" "}
+                      {campaign.confirmed ? "Confirmed" : "Pending"} -{" "}
+                      {formatDate(campaign.createdAt)}
+                    </span>
+                  </div>
+                  <strong>{pay2SpeakCampaignProgress(campaign)}%</strong>
+                </div>
+                <Pay2SpeakProgressBar
+                  label={`${campaign.title} funding progress`}
+                  progress={pay2SpeakCampaignProgress(campaign)}
+                />
+                <dl className="activity-meta">
+                  <div>
+                    <dt>Gross</dt>
+                    <dd>
+                      {campaign.fundedGrossSats.toLocaleString()} /{" "}
+                      {campaign.targetGrossSats.toLocaleString()}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Funds</dt>
+                    <dd>{campaign.fundingCount.toLocaleString()}</dd>
+                  </div>
+                  <div>
+                    <dt>TX</dt>
+                    <dd>{shortAddress(campaign.txid)}</dd>
+                  </div>
+                </dl>
+                <div className="id-record-actions">
+                  <button
+                    className="secondary small"
+                    onClick={() => setSelectedCampaignId(campaign.txid)}
+                    type="button"
+                  >
+                    <span className="button-content">
+                      <MessageCircle size={15} />
+                      <span>Select</span>
+                    </span>
+                  </button>
+                  <a
+                    className="secondary small"
+                    href={mempoolTxUrl(campaign.txid, "livenet")}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span className="button-content">
+                      <ArrowUpRight size={15} />
+                      <span>View TX</span>
+                    </span>
+                  </a>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function Pay2SpeakWorkspace({
+  address,
+  busy,
+  campaignBytes,
+  campaigns,
+  canCreateCampaign,
+  canFundCampaign,
+  compact = false,
+  contributionSats,
+  createCampaign,
+  feeRate,
+  fundCampaign,
+  fundingBytes,
+  fundingRecords,
+  handle,
+  network,
+  question,
+  questions,
+  registryAddress,
+  selectedCampaignId,
+  setContributionSats,
+  setFeeRate,
+  setHandle,
+  setQuestion,
+  setSelectedCampaignId,
+  setSpaceNumber,
+  setTargetSats,
+  spaceNumber,
+  split,
+  targetSats,
+  onRefresh,
+}: Pay2SpeakWorkspaceProps) {
+  const selectedCampaign =
+    campaigns.find((campaign) => campaign.txid === selectedCampaignId) ??
+    campaigns[0];
+  const campaignQuestions = selectedCampaign
+    ? questions.filter((item) => item.campaignId === selectedCampaign.txid)
+    : [];
+  const confirmedFunding = fundingRecords.filter((item) => item.confirmed);
+  const totalGross = campaigns.reduce(
+    (total, campaign) => total + campaign.fundedGrossSats,
+    0,
+  );
+  const fundedCount = campaigns.filter(
+    (campaign) => campaign.status === "Funded",
+  ).length;
+
+  return (
+    <section className={compact ? "ids-workspace compact" : "id-launch-main"}>
+      <div className="id-launch-hero">
+        <div>
+          <span className="landing-kicker">Mainnet only</span>
+          <h2>Fund an X Space with sats.</h2>
+          <p>
+            Campaign creation and every funded question are small `pws1:`
+            OP_RETURN records. Confirmed Bitcoin history is canonical.
+          </p>
+        </div>
+        <div className="id-record-actions">
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={onRefresh}
+            type="button"
+          >
+            <span className="button-content">
+              <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
+              <span>{busy ? "Refreshing" : "Refresh"}</span>
+            </span>
+          </button>
+          <a
+            className="secondary link-button"
+            href={mempoolBase("livenet") + `/address/${registryAddress}`}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <span className="button-content">
+              <ArrowUpRight size={15} />
+              <span>Protocol TXs</span>
+            </span>
+          </a>
+        </div>
+      </div>
+
+      <div className="id-launch-stats" aria-label="Pay2Speak stats">
+        <div>
+          <strong>{campaigns.length.toLocaleString()}</strong>
+          <span>Campaigns</span>
+        </div>
+        <div>
+          <strong>{fundedCount.toLocaleString()}</strong>
+          <span>Funded</span>
+        </div>
+        <div>
+          <strong>{totalGross.toLocaleString()}</strong>
+          <span>Gross sats</span>
+        </div>
+        <div>
+          <strong>{confirmedFunding.length.toLocaleString()}</strong>
+          <span>Confirmed funds</span>
+        </div>
+      </div>
+
+      <div className="id-launch-grid">
+        <section className="id-launch-card id-claim-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Mic2 size={24} />
+            </div>
+            <div>
+              <h3>Create campaign</h3>
+              <p>
+                Writes
+                `pws1:c:&lt;space-number&gt;:&lt;x-handle&gt;:&lt;target-gross-sats&gt;`
+                as a mainnet campaign record.
+              </p>
+            </div>
+          </div>
+          <form className="id-form" onSubmit={createCampaign}>
+            <label>
+              X handle
+              <input
+                autoComplete="off"
+                onChange={(event) => setHandle(event.target.value)}
+                placeholder="handle"
+                value={handle}
+              />
+            </label>
+            <div className="id-form-grid">
+              <label>
+                Space #
+                <input
+                  min={0}
+                  onChange={(event) =>
+                    setSpaceNumber(Number(event.target.value))
+                  }
+                  type="number"
+                  value={spaceNumber}
+                />
+              </label>
+              <label>
+                Target gross sats
+                <input
+                  min={1001}
+                  onChange={(event) =>
+                    setTargetSats(Number(event.target.value))
+                  }
+                  type="number"
+                  value={targetSats}
+                />
+              </label>
+            </div>
+            <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+            <div
+              className={
+                campaignBytes > MAX_DATA_CARRIER_BYTES
+                  ? "counter bad"
+                  : "counter"
+              }
+            >
+              {campaignBytes.toLocaleString()} /{" "}
+              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+              bytes
+            </div>
+            <button
+              className="primary"
+              disabled={!canCreateCampaign}
+              type="submit"
+            >
+              <span className="button-content">
+                <Send size={16} />
+                <span>{busy ? "Creating" : "Create Campaign"}</span>
+              </span>
+            </button>
+          </form>
+        </section>
+
+        <section className="id-launch-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <MessageCircle size={24} />
+            </div>
+            <div>
+              <h3>Fund campaign</h3>
+              <p>
+                Funding records count gross donor spend. Questions are optional
+                and ranked by attached sats.
+              </p>
+            </div>
+          </div>
+          <form className="id-form" onSubmit={fundCampaign}>
+            <label>
+              Campaign
+              <select
+                onChange={(event) => setSelectedCampaignId(event.target.value)}
+                value={selectedCampaign?.txid ?? ""}
+              >
+                {campaigns.map((campaign) => (
+                  <option key={campaign.txid} value={campaign.txid}>
+                    {campaign.title} · {campaign.status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Gross sats
+              <input
+                min={1001}
+                onChange={(event) =>
+                  setContributionSats(Number(event.target.value))
+                }
+                type="number"
+                value={contributionSats}
+              />
+            </label>
+            <label>
+              Question
+              <textarea
+                maxLength={500}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="Optional question for the Space"
+                value={question}
+              />
+            </label>
+            <div className="id-launch-stats" aria-label="Contribution preview">
+              <div>
+                <span>Contribution</span>
+                <strong>
+                  {(split?.grossSats ?? contributionSats).toLocaleString()} sats
+                </strong>
+              </div>
+              <div>
+                <span>Question</span>
+                <strong>{question.trim() ? "Attached" : "Optional"}</strong>
+              </div>
+              <div>
+                <span>Network fee</span>
+                <strong>Shown by wallet</strong>
+              </div>
+            </div>
+            <div
+              className={
+                fundingBytes > MAX_DATA_CARRIER_BYTES
+                  ? "counter bad"
+                  : "counter"
+              }
+            >
+              {fundingBytes.toLocaleString()} /{" "}
+              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+              bytes
+            </div>
+            <button
+              className="primary"
+              disabled={!canFundCampaign}
+              type="submit"
+            >
+              <span className="button-content">
+                <Send size={16} />
+                <span>{busy ? "Funding" : "Fund Campaign"}</span>
+              </span>
+            </button>
+            {!address ? (
+              <p className="field-note">
+                Connect UniSat to create or fund Pay2Speak campaigns.
+              </p>
+            ) : null}
+          </form>
+        </section>
+      </div>
+
+      <section className="id-launch-card">
+        <div className="id-card-head">
+          <div className="empty-icon" aria-hidden="true">
+            <TrendingUp size={24} />
+          </div>
+          <div>
+            <h3>Campaigns</h3>
+            <p>
+              Campaign ID is the creation txid. Pending records are visible;
+              confirmed records are the durable source of truth.
+            </p>
+          </div>
+        </div>
+        <div className="id-record-list pay2speak-campaign-list">
+          {campaigns.length === 0 ? (
+            <div className="empty-state">
+              <h3>No campaigns yet</h3>
+              <p>Create the first Pay2Speak Space campaign on mainnet.</p>
+            </div>
+          ) : (
+            campaigns.map((campaign) => (
+              <article className="id-record" key={campaign.txid}>
+                <div className="id-record-main">
+                  <div>
+                    <h4>{campaign.title}</h4>
+                    <span>
+                      {campaign.status} ·{" "}
+                      {campaign.confirmed ? "Confirmed" : "Pending"} ·{" "}
+                      {formatDate(campaign.createdAt)}
+                    </span>
+                  </div>
+                  <strong>{pay2SpeakCampaignProgress(campaign)}%</strong>
+                </div>
+                <Pay2SpeakProgressBar
+                  label={`${campaign.title} funding progress`}
+                  progress={pay2SpeakCampaignProgress(campaign)}
+                />
+                <dl className="activity-meta">
+                  <div>
+                    <dt>Gross</dt>
+                    <dd>
+                      {campaign.fundedGrossSats.toLocaleString()} /{" "}
+                      {campaign.targetGrossSats.toLocaleString()}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Creator</dt>
+                    <dd>{shortAddress(campaign.creatorAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>Funds</dt>
+                    <dd>{campaign.fundingCount.toLocaleString()}</dd>
+                  </div>
+                </dl>
+                <div className="id-record-actions">
+                  <a
+                    className="secondary small"
+                    href={pay2SpeakCreatorUrl(campaign.creatorAddress)}
+                  >
+                    <span className="button-content">
+                      <Mic2 size={15} />
+                      <span>Creator Page</span>
+                    </span>
+                  </a>
+                  <button
+                    className="secondary small"
+                    onClick={() => setSelectedCampaignId(campaign.txid)}
+                    type="button"
+                  >
+                    <span className="button-content">
+                      <MessageCircle size={15} />
+                      <span>Fund</span>
+                    </span>
+                  </button>
+                  <a
+                    className="secondary small"
+                    href={mempoolTxUrl(campaign.txid, campaign.network)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span className="button-content">
+                      <ArrowUpRight size={15} />
+                      <span>View TX</span>
+                    </span>
+                  </a>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="id-card">
+        <div className="id-card-head">
+          <div className="empty-icon" aria-hidden="true">
+            <MessageSquareQuote size={24} />
+          </div>
+          <div>
+            <h3>
+              {selectedCampaign
+                ? `${selectedCampaign.title} questions`
+                : "Questions"}
+            </h3>
+            <p>Ranked by gross sats attached to valid funding transactions.</p>
+          </div>
+        </div>
+        <div className="activity-feed">
+          {campaignQuestions.length === 0 ? (
+            <div className="empty-state">
+              <h3>No questions yet</h3>
+              <p>Fund a campaign with an optional question to add one.</p>
+            </div>
+          ) : (
+            campaignQuestions.map((item) => (
+              <article
+                className="activity-row"
+                key={`${item.txid}-${item.question}`}
+              >
+                <div className="activity-row-main">
+                  <div>
+                    <h4>{item.grossSats.toLocaleString()} sats</h4>
+                    <strong>{item.question}</strong>
+                  </div>
+                  <time dateTime={item.createdAt}>
+                    {formatDate(item.createdAt)}
+                  </time>
+                </div>
+                <div className="id-record-actions">
+                  <a
+                    className="secondary small"
+                    href={mempoolTxUrl(item.txid, "livenet")}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span className="button-content">
+                      <ArrowUpRight size={15} />
+                      <span>View TX</span>
+                    </span>
+                  </a>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+    </section>
+  );
+}
+
 const GROWTH_MODEL_CHART_YEARS = 10;
-const GROWTH_MODEL_START_MS = Date.parse(`${GROWTH_MODEL_START_DATE}T00:00:00.000Z`);
+const GROWTH_MODEL_START_MS = Date.parse(
+  `${GROWTH_MODEL_START_DATE}T00:00:00.000Z`,
+);
 const MS_PER_MODEL_YEAR = 365 * 24 * 60 * 60 * 1000;
 
 function growthElapsedYears() {
@@ -11120,7 +16137,12 @@ function growthCompactNumber(value: number, decimals = 0) {
   }
 
   const scaled = value / unit.size;
-  const digits = scaled >= 100 ? 0 : scaled >= 10 ? Math.min(1, decimals + 1) : Math.min(2, decimals + 1);
+  const digits =
+    scaled >= 100
+      ? 0
+      : scaled >= 10
+        ? Math.min(1, decimals + 1)
+        : Math.min(2, decimals + 1);
   return `${scaled.toFixed(digits).replace(/\.0+$|(\.\d*[1-9])0+$/u, "$1")}${unit.label}`;
 }
 
@@ -11154,11 +16176,22 @@ function growthPercent(value: number) {
 }
 
 function isBrowserActivityItem(item: PowActivityItem) {
-  const searchText = [item.title, item.detail, item.description, ...item.tags].join(" ").toLowerCase();
-  const hasHtmlAttachment = searchText.includes("text/html") || searchText.includes("application/xhtml+xml") || /\.x?html?\b/u.test(searchText);
-  const hasHtmlBody = item.tags.some((tag) => tag.toLowerCase() === "html body") || isBrowserHtmlMessageBody(item.detail ?? "");
+  const searchText = [item.title, item.detail, item.description, ...item.tags]
+    .join(" ")
+    .toLowerCase();
+  const hasHtmlAttachment =
+    searchText.includes("text/html") ||
+    searchText.includes("application/xhtml+xml") ||
+    /\.x?html?\b/u.test(searchText);
+  const hasHtmlBody =
+    item.tags.some((tag) => tag.toLowerCase() === "html body") ||
+    isBrowserHtmlMessageBody(item.detail ?? "");
 
-  return item.kind === "file" ? hasHtmlAttachment : item.kind === "mail" || item.kind === "reply" ? hasHtmlBody : false;
+  return item.kind === "file"
+    ? hasHtmlAttachment
+    : item.kind === "mail" || item.kind === "reply"
+      ? hasHtmlBody
+      : false;
 }
 
 function growthActualNetworkValue(
@@ -11167,25 +16200,46 @@ function growthActualNetworkValue(
   sales: PowIdMarketplaceSale[],
   cutoffMs = Date.now(),
 ): GrowthActualNetworkValue {
-  const confirmedRecords = records.filter((record) => record.confirmed && Date.parse(record.createdAt) <= cutoffMs);
-  const confirmedActivity = idActivity.filter((item) => item.confirmed && Date.parse(item.createdAt) <= cutoffMs);
-  const confirmedSales = publicMarketplaceSales(sales).filter((sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs);
+  const confirmedRecords = records.filter(
+    (record) => record.confirmed && Date.parse(record.createdAt) <= cutoffMs,
+  );
+  const confirmedActivity = idActivity.filter(
+    (item) => item.confirmed && Date.parse(item.createdAt) <= cutoffMs,
+  );
+  const confirmedSales = publicMarketplaceSales(sales).filter(
+    (sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs,
+  );
   const powids = confirmedRecords.length;
   const mailFlowSats = confirmedActivity
-    .filter((item) => (item.kind === "mail" || item.kind === "reply") && !isBrowserActivityItem(item))
+    .filter(
+      (item) =>
+        (item.kind === "mail" || item.kind === "reply") &&
+        !isBrowserActivityItem(item),
+    )
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
-  const browserFlowSats = confirmedActivity.filter(isBrowserActivityItem).reduce((total, item) => total + (item.amountSats ?? 0), 0);
+  const browserFlowSats = confirmedActivity
+    .filter(isBrowserActivityItem)
+    .reduce((total, item) => total + (item.amountSats ?? 0), 0);
   const driveFlowSats = confirmedActivity
     .filter((item) => item.kind === "file" && !isBrowserActivityItem(item))
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
-  const marketplaceVolumeSats = confirmedSales.reduce((total, sale) => total + sale.priceSats, 0);
+  const marketplaceVolumeSats = confirmedSales.reduce(
+    (total, sale) => total + sale.priceSats,
+    0,
+  );
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const marketplaceSats = marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const marketplaceSats =
+    marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
-  const totalSats = idSats + mailSats + driveSats + marketplaceSats + browserSats;
-  const years = Math.max(0, (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR);
+  const totalSats =
+    idSats + mailSats + driveSats + marketplaceSats + browserSats;
+  const years = Math.max(
+    0,
+    (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) /
+      MS_PER_MODEL_YEAR,
+  );
 
   return {
     browserFlowSats,
@@ -11202,7 +16256,11 @@ function growthActualNetworkValue(
   };
 }
 
-function growthActualValuePoints(records: PowIdRecord[], idActivity: PowActivityItem[], sales: PowIdMarketplaceSale[]): GrowthValuePoint[] {
+function growthActualValuePoints(
+  records: PowIdRecord[],
+  idActivity: PowActivityItem[],
+  sales: PowIdMarketplaceSale[],
+): GrowthValuePoint[] {
   const eventTimes: Array<{ createdMs: number; label: string }> = [];
   const addEventTime = (createdAt: string, label: string) => {
     const createdMs = Date.parse(createdAt);
@@ -11218,7 +16276,10 @@ function growthActualValuePoints(records: PowIdRecord[], idActivity: PowActivity
   }
 
   for (const item of idActivity) {
-    if (item.confirmed && (item.kind === "mail" || item.kind === "reply" || item.kind === "file")) {
+    if (
+      item.confirmed &&
+      (item.kind === "mail" || item.kind === "reply" || item.kind === "file")
+    ) {
       addEventTime(item.createdAt, item.title);
     }
   }
@@ -11230,7 +16291,12 @@ function growthActualValuePoints(records: PowIdRecord[], idActivity: PowActivity
   }
 
   const points: GrowthValuePoint[] = [];
-  const startValue = growthActualNetworkValue(records, idActivity, sales, GROWTH_MODEL_START_MS);
+  const startValue = growthActualNetworkValue(
+    records,
+    idActivity,
+    sales,
+    GROWTH_MODEL_START_MS,
+  );
   points.push({
     label: "Model start",
     sats: startValue.totalSats,
@@ -11238,20 +16304,37 @@ function growthActualValuePoints(records: PowIdRecord[], idActivity: PowActivity
     years: 0,
   });
 
-  for (const { createdMs, label } of eventTimes.sort((left, right) => left.createdMs - right.createdMs)) {
-    const value = growthActualNetworkValue(records, idActivity, sales, createdMs);
+  for (const { createdMs, label } of eventTimes.sort(
+    (left, right) => left.createdMs - right.createdMs,
+  )) {
+    const value = growthActualNetworkValue(
+      records,
+      idActivity,
+      sales,
+      createdMs,
+    );
     points.push({
       label,
       sats: value.totalSats,
-      usd: growthSatsToUsdAtYears(value.totalSats, Math.max(0, (createdMs - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR)),
-      years: Math.max(0, (createdMs - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR),
+      usd: growthSatsToUsdAtYears(
+        value.totalSats,
+        Math.max(0, (createdMs - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR),
+      ),
+      years: Math.max(
+        0,
+        (createdMs - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR,
+      ),
     });
   }
 
   const elapsed = growthElapsedYears();
   const nowValue = growthActualNetworkValue(records, idActivity, sales);
   const lastPoint = points[points.length - 1];
-  if (!lastPoint || lastPoint.sats !== nowValue.totalSats || lastPoint.years < elapsed) {
+  if (
+    !lastPoint ||
+    lastPoint.sats !== nowValue.totalSats ||
+    lastPoint.years < elapsed
+  ) {
     points.push({
       label: "Real now",
       sats: nowValue.totalSats,
@@ -11266,8 +16349,10 @@ function growthActualValuePoints(records: PowIdRecord[], idActivity: PowActivity
 function growthModelValueAtYears(years: number): GrowthValuePoint {
   const rows = GROWTH_MODEL_CHART_ROWS;
   const clampedYears = Math.max(0, Math.min(GROWTH_MODEL_CHART_YEARS, years));
-  const before = [...rows].reverse().find((row) => row.years <= clampedYears) ?? rows[0];
-  const after = rows.find((row) => row.years >= clampedYears) ?? rows[rows.length - 1];
+  const before =
+    [...rows].reverse().find((row) => row.years <= clampedYears) ?? rows[0];
+  const after =
+    rows.find((row) => row.years >= clampedYears) ?? rows[rows.length - 1];
   if (!before || !after || before.years === after.years) {
     const row = before ?? after ?? growthModelStartRow();
     return {
@@ -11303,11 +16388,20 @@ function growthEventTimeLabel(createdAt: string) {
 }
 
 function growthActivityKindLabel(kind: PowActivityKind) {
-  if (kind === "id-register" || kind === "id-update" || kind === "id-transfer") {
+  if (
+    kind === "id-register" ||
+    kind === "id-update" ||
+    kind === "id-transfer"
+  ) {
     return "ID";
   }
 
-  if (kind === "id-list" || kind === "id-seal" || kind === "id-delist" || kind === "id-buy") {
+  if (
+    kind === "id-list" ||
+    kind === "id-seal" ||
+    kind === "id-delist" ||
+    kind === "id-buy"
+  ) {
     return "Marketplace";
   }
 
@@ -11318,7 +16412,11 @@ function growthActivityKindLabel(kind: PowActivityKind) {
   return kind === "reply" ? "Mail reply" : "Mail";
 }
 
-function growthRealEventItems(records: PowIdRecord[], idActivity: PowActivityItem[], sales: PowIdMarketplaceSale[]): GrowthRealEvent[] {
+function growthRealEventItems(
+  records: PowIdRecord[],
+  idActivity: PowActivityItem[],
+  sales: PowIdMarketplaceSale[],
+): GrowthRealEvent[] {
   const events = new Map<string, GrowthRealEvent>();
   const setEvent = (event: GrowthRealEvent) => {
     events.set(event.key, event);
@@ -11347,11 +16445,15 @@ function growthRealEventItems(records: PowIdRecord[], idActivity: PowActivityIte
     }
 
     setEvent({
-      amountLabel: item.amountSats ? `${item.amountSats.toLocaleString()} sats` : "Confirmed",
+      amountLabel: item.amountSats
+        ? `${item.amountSats.toLocaleString()} sats`
+        : "Confirmed",
       createdAt: item.createdAt,
       detail: item.detail || item.description,
       key: item.txid,
-      kind: isBrowserActivityItem(item) ? "Browser" : growthActivityKindLabel(item.kind),
+      kind: isBrowserActivityItem(item)
+        ? "Browser"
+        : growthActivityKindLabel(item.kind),
       network: item.network,
       title: item.id ? `${item.title}: ${item.id}@proofofwork.me` : item.title,
       txid: item.txid,
@@ -11375,16 +16477,29 @@ function growthRealEventItems(records: PowIdRecord[], idActivity: PowActivityIte
     });
   }
 
-  return [...events.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+  return [...events.values()].sort(
+    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
+  );
 }
 
-function growthChartPath(points: Array<{ sats: number; years: number }>, xFor: (years: number) => number, yFor: (value: number) => number) {
+function growthChartPath(
+  points: Array<{ sats: number; years: number }>,
+  xFor: (years: number) => number,
+  yFor: (value: number) => number,
+) {
   return points
-    .map((point) => `${xFor(point.years).toFixed(2)},${yFor(point.sats).toFixed(2)}`)
+    .map(
+      (point) =>
+        `${xFor(point.years).toFixed(2)},${yFor(point.sats).toFixed(2)}`,
+    )
     .join(" ");
 }
 
-function GrowthLineChart({ actualPoints }: { actualPoints: GrowthValuePoint[] }) {
+function GrowthLineChart({
+  actualPoints,
+}: {
+  actualPoints: GrowthValuePoint[];
+}) {
   const width = 920;
   const height = 390;
   const padLeft = 72;
@@ -11393,50 +16508,120 @@ function GrowthLineChart({ actualPoints }: { actualPoints: GrowthValuePoint[] })
   const padBottom = 52;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
-  const modelPoints = GROWTH_MODEL_CHART_ROWS.filter((row) => row.years <= GROWTH_MODEL_CHART_YEARS).map((row) => ({
+  const modelPoints = GROWTH_MODEL_CHART_ROWS.filter(
+    (row) => row.years <= GROWTH_MODEL_CHART_YEARS,
+  ).map((row) => ({
     label: row.label,
     sats: row.totalSats,
     usd: row.totalUsdBase,
     years: row.years,
   }));
-  const visibleActualPoints = actualPoints.map((point) => ({ ...point, years: Math.min(GROWTH_MODEL_CHART_YEARS, point.years) }));
-  const yValues = [...modelPoints.map((row) => row.sats), ...visibleActualPoints.map((point) => point.sats)].filter((value) => value > 0);
+  const visibleActualPoints = actualPoints.map((point) => ({
+    ...point,
+    years: Math.min(GROWTH_MODEL_CHART_YEARS, point.years),
+  }));
+  const yValues = [
+    ...modelPoints.map((row) => row.sats),
+    ...visibleActualPoints.map((point) => point.sats),
+  ].filter((value) => value > 0);
   const yMin = Math.max(1, Math.floor(Math.min(...yValues) * 0.72));
   const yMax = Math.max(10_000_000, Math.ceil(Math.max(...yValues) * 1.2));
   const logMin = Math.log10(yMin);
   const logMax = Math.log10(yMax);
-  const xFor = (years: number) => padLeft + (Math.max(0, Math.min(GROWTH_MODEL_CHART_YEARS, years)) / GROWTH_MODEL_CHART_YEARS) * plotWidth;
-  const yFor = (value: number) => padTop + (1 - (Math.log10(Math.max(yMin, value)) - logMin) / (logMax - logMin || 1)) * plotHeight;
-  const yTicks = Array.from({ length: Math.floor(logMax) - Math.floor(logMin) + 1 }, (_, index) => 10 ** (Math.floor(logMin) + index))
-    .filter((tick) => tick >= yMin && tick <= yMax);
+  const xFor = (years: number) =>
+    padLeft +
+    (Math.max(0, Math.min(GROWTH_MODEL_CHART_YEARS, years)) /
+      GROWTH_MODEL_CHART_YEARS) *
+      plotWidth;
+  const yFor = (value: number) =>
+    padTop +
+    (1 -
+      (Math.log10(Math.max(yMin, value)) - logMin) / (logMax - logMin || 1)) *
+      plotHeight;
+  const yTicks = Array.from(
+    { length: Math.floor(logMax) - Math.floor(logMin) + 1 },
+    (_, index) => 10 ** (Math.floor(logMin) + index),
+  ).filter((tick) => tick >= yMin && tick <= yMax);
   const xTicks = [0, 1, 2, 5, 10];
 
   return (
-    <svg className="growth-chart" role="img" viewBox={`0 0 ${width} ${height}`} aria-label="Modeled Bitcoin Computer network value compared with real confirmed network value">
-      <rect className="growth-chart-bg" x="0" y="0" width={width} height={height} rx="18" />
+    <svg
+      className="growth-chart"
+      role="img"
+      viewBox={`0 0 ${width} ${height}`}
+      aria-label="Modeled Bitcoin Computer network value compared with real confirmed network value"
+    >
+      <rect
+        className="growth-chart-bg"
+        x="0"
+        y="0"
+        width={width}
+        height={height}
+        rx="18"
+      />
       {yTicks.map((tick) => (
         <g key={`y-${tick}`}>
-          <line className="growth-chart-grid" x1={padLeft} x2={width - padRight} y1={yFor(tick)} y2={yFor(tick)} />
-          <text className="growth-chart-label" x={padLeft - 14} y={yFor(tick) + 4} textAnchor="end">
+          <line
+            className="growth-chart-grid"
+            x1={padLeft}
+            x2={width - padRight}
+            y1={yFor(tick)}
+            y2={yFor(tick)}
+          />
+          <text
+            className="growth-chart-label"
+            x={padLeft - 14}
+            y={yFor(tick) + 4}
+            textAnchor="end"
+          >
             {growthCompactNumber(tick)}
           </text>
         </g>
       ))}
       {xTicks.map((tick) => (
         <g key={`x-${tick}`}>
-          <line className="growth-chart-grid growth-chart-grid-vertical" x1={xFor(tick)} x2={xFor(tick)} y1={padTop} y2={height - padBottom} />
-          <text className="growth-chart-label" x={xFor(tick)} y={height - 20} textAnchor="middle">
+          <line
+            className="growth-chart-grid growth-chart-grid-vertical"
+            x1={xFor(tick)}
+            x2={xFor(tick)}
+            y1={padTop}
+            y2={height - padBottom}
+          />
+          <text
+            className="growth-chart-label"
+            x={xFor(tick)}
+            y={height - 20}
+            textAnchor="middle"
+          >
             {tick === 0 ? "now" : `${tick}y`}
           </text>
         </g>
       ))}
-      <polyline className="growth-chart-line model" points={growthChartPath(modelPoints, xFor, yFor)} />
-      <polyline className="growth-chart-line actual" points={growthChartPath(visibleActualPoints, xFor, yFor)} />
+      <polyline
+        className="growth-chart-line model"
+        points={growthChartPath(modelPoints, xFor, yFor)}
+      />
+      <polyline
+        className="growth-chart-line actual"
+        points={growthChartPath(visibleActualPoints, xFor, yFor)}
+      />
       {modelPoints.map((point) => (
-        <circle className="growth-chart-dot model" cx={xFor(point.years)} cy={yFor(point.sats)} key={`model-${point.label}`} r="4.5" />
+        <circle
+          className="growth-chart-dot model"
+          cx={xFor(point.years)}
+          cy={yFor(point.sats)}
+          key={`model-${point.label}`}
+          r="4.5"
+        />
       ))}
       {visibleActualPoints.map((point, index) => (
-        <circle className="growth-chart-dot actual" cx={xFor(point.years)} cy={yFor(point.sats)} key={`actual-${point.label}-${index}`} r={index === visibleActualPoints.length - 1 ? 6 : 4} />
+        <circle
+          className="growth-chart-dot actual"
+          cx={xFor(point.years)}
+          cy={yFor(point.sats)}
+          key={`actual-${point.label}-${index}`}
+          r={index === visibleActualPoints.length - 1 ? 6 : 4}
+        />
       ))}
     </svg>
   );
@@ -11521,7 +16706,11 @@ function GrowthApp({
   return (
     <main className="desktop-public-app activity-public-app growth-public-app">
       <header className="desktop-public-header">
-        <a className="landing-brand" href={HOME_APP_URL} aria-label="ProofOfWork.Me home">
+        <a
+          className="landing-brand"
+          href={HOME_APP_URL}
+          aria-label="ProofOfWork.Me home"
+        >
           <div className="brand-mark" aria-hidden="true">
             PoW
           </div>
@@ -11536,7 +16725,9 @@ function GrowthApp({
           <button
             aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
             className="icon-button"
-            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
             title={theme === "dark" ? "Light mode" : "Dark mode"}
             type="button"
           >
@@ -11583,20 +16774,38 @@ function GrowthWorkspace({
 }) {
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const confirmedActivity = idActivity.filter((item) => item.confirmed);
-  const actualValue = growthActualNetworkValue(registryRecords, idActivity, registrySales);
-  const actualPoints = growthActualValuePoints(registryRecords, idActivity, registrySales);
-  const realEvents = growthRealEventItems(registryRecords, idActivity, registrySales);
+  const actualValue = growthActualNetworkValue(
+    registryRecords,
+    idActivity,
+    registrySales,
+  );
+  const actualPoints = growthActualValuePoints(
+    registryRecords,
+    idActivity,
+    registrySales,
+  );
+  const realEvents = growthRealEventItems(
+    registryRecords,
+    idActivity,
+    registrySales,
+  );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
-  const oneYear = GROWTH_MODEL_ROWS.find((row) => row.years === 1) ?? GROWTH_MODEL_ROWS[1];
-  const fiveYear = GROWTH_MODEL_ROWS.find((row) => row.years === 5) ?? GROWTH_MODEL_ROWS[3];
+  const oneYear =
+    GROWTH_MODEL_ROWS.find((row) => row.years === 1) ?? GROWTH_MODEL_ROWS[1];
+  const fiveYear =
+    GROWTH_MODEL_ROWS.find((row) => row.years === 5) ?? GROWTH_MODEL_ROWS[3];
   const currentActual = actualValue.powids;
   const elapsedYears = growthElapsedYears();
   const modelNow = growthModelValueAtYears(elapsedYears);
   const valueDeltaSats = actualValue.totalSats - modelNow.sats;
   const valueDeltaPct = modelNow.sats > 0 ? valueDeltaSats / modelNow.sats : 0;
-  const mailActions = confirmedActivity.filter((item) => item.kind === "mail" || item.kind === "reply").length;
+  const mailActions = confirmedActivity.filter(
+    (item) => item.kind === "mail" || item.kind === "reply",
+  ).length;
   const browserActions = confirmedActivity.filter(isBrowserActivityItem).length;
-  const driveActions = confirmedActivity.filter((item) => item.kind === "file" && !isBrowserActivityItem(item)).length;
+  const driveActions = confirmedActivity.filter(
+    (item) => item.kind === "file" && !isBrowserActivityItem(item),
+  ).length;
 
   return (
     <section className="growth-workspace">
@@ -11605,7 +16814,9 @@ function GrowthWorkspace({
           <span className="landing-kicker">Bitcoin Computer growth model</span>
           <h2>Model the future. Measure the chain.</h2>
           <p>
-            The blue line is modeled Bitcoin Computer network value. The green line is real confirmed mainnet value from IDs, Mail, Drive, Marketplace, and Browser.
+            The blue line is modeled Bitcoin Computer network value. The green
+            line is real confirmed mainnet value from IDs, Mail, Drive,
+            Marketplace, and Browser.
           </p>
         </div>
         <div className="growth-model-card">
@@ -11615,7 +16826,10 @@ function GrowthWorkspace({
             </div>
             <div>
               <h3>Canonical baseline</h3>
-              <p>Generated {GROWTH_MODEL_GENERATED_ON}. Model start {GROWTH_MODEL_START_DATE}.</p>
+              <p>
+                Generated {GROWTH_MODEL_GENERATED_ON}. Model start{" "}
+                {GROWTH_MODEL_START_DATE}.
+              </p>
             </div>
           </div>
           <dl className="growth-assumption-list">
@@ -11637,10 +16851,20 @@ function GrowthWorkspace({
             </div>
             <div>
               <dt>Canonical fee</dt>
-              <dd>{GROWTH_MODEL_INPUTS.canonicalFee.toLocaleString("en-US", { maximumFractionDigits: 5 })} sat/vB</dd>
+              <dd>
+                {GROWTH_MODEL_INPUTS.canonicalFee.toLocaleString("en-US", {
+                  maximumFractionDigits: 5,
+                })}{" "}
+                sat/vB
+              </dd>
             </div>
           </dl>
-          <button className="secondary small" disabled={busy} onClick={onRefresh} type="button">
+          <button
+            className="secondary small"
+            disabled={busy}
+            onClick={onRefresh}
+            type="button"
+          >
             <span className="button-content">
               <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
               <span>{busy ? "Refreshing" : "Refresh chain metrics"}</span>
@@ -11652,57 +16876,83 @@ function GrowthWorkspace({
       <div className="growth-stat-grid" aria-label="Growth headline stats">
         <div>
           <strong>{growthSats(actualValue.totalSats)}</strong>
-          <span>Real network value now · {growthUsd(actualValue.totalUsd)}</span>
+          <span>
+            Real network value now · {growthUsd(actualValue.totalUsd)}
+          </span>
         </div>
         <div>
           <strong>{growthSats(modelNow.sats)}</strong>
           <span>Modeled value now · {growthUsd(modelNow.usd)}</span>
         </div>
         <div>
-          <strong>{valueDeltaSats >= 0 ? "+" : ""}{growthSats(valueDeltaSats)}</strong>
-          <span>{valueDeltaPct >= 0 ? "+" : ""}{growthPercent(valueDeltaPct)} versus model now</span>
+          <strong>
+            {valueDeltaSats >= 0 ? "+" : ""}
+            {growthSats(valueDeltaSats)}
+          </strong>
+          <span>
+            {valueDeltaPct >= 0 ? "+" : ""}
+            {growthPercent(valueDeltaPct)} versus model now
+          </span>
         </div>
         <div>
           <strong>{currentActual.toLocaleString()}</strong>
-          <span>Confirmed IDs · {pendingRecords.length.toLocaleString()} pending</span>
+          <span>
+            Confirmed IDs · {pendingRecords.length.toLocaleString()} pending
+          </span>
         </div>
         <div>
           <strong>{confirmedActivity.length.toLocaleString()}</strong>
           <span>Confirmed computer actions</span>
         </div>
         <div>
-          <strong>{marketplaceStats.confirmedVolumeSats.toLocaleString()}</strong>
-          <span>Marketplace sale sats · {marketplaceStats.confirmedSales.toLocaleString()} confirmed sales</span>
+          <strong>
+            {marketplaceStats.confirmedVolumeSats.toLocaleString()}
+          </strong>
+          <span>
+            Marketplace sale sats ·{" "}
+            {marketplaceStats.confirmedSales.toLocaleString()} confirmed sales
+          </span>
         </div>
       </div>
 
-      <section className="growth-explainer-grid" aria-label="Growth model explainer">
+      <section
+        className="growth-explainer-grid"
+        aria-label="Growth model explainer"
+      >
         <article className="growth-explainer-card primary">
           <span>Plain read</span>
           <h3>Blue is the success case. Green is Bitcoin history.</h3>
           <p>
-            The model asks what the Bitcoin Computer can become if IDs, Mail, Drive, Marketplace, and Browser compound together. The real line only counts confirmed mainnet records that already exist.
+            The model asks what the Bitcoin Computer can become if IDs, Mail,
+            Drive, Marketplace, and Browser compound together. The real line
+            only counts confirmed mainnet records that already exist.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>Network value</span>
           <h3>Everything is valued in sats first.</h3>
           <p>
-            IDs use n squared network value. Mail, Drive, Marketplace, and Browser use confirmed payment flow multiplied by the same value multiple, then translated to USD with the Bitcoin benchmark.
+            IDs use n squared network value. Mail, Drive, Marketplace, and
+            Browser use confirmed payment flow multiplied by the same value
+            multiple, then translated to USD with the Bitcoin benchmark.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>Real events</span>
           <h3>The green line moves when Bitcoin confirms.</h3>
           <p>
-            Registrations, messages, replies, file writes, HTML page writes, and buyer-funded marketplace sales are pulled from the live registry and log endpoints. Pending mempool events wait until they confirm.
+            Registrations, messages, replies, file writes, HTML page writes, and
+            buyer-funded marketplace sales are pulled from the live registry and
+            log endpoints. Pending mempool events wait until they confirm.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>New products</span>
           <h3>Every product joins the same model.</h3>
           <p>
-            A product needs real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace cost. That keeps Browser beside IDs, Mail, Drive, and Marketplace instead of bolted on.
+            A product needs real chain inputs, a usage assumption, a value
+            assumption, fee elasticity, and blockspace cost. That keeps Browser
+            beside IDs, Mail, Drive, and Marketplace instead of bolted on.
           </p>
         </article>
       </section>
@@ -11711,26 +16961,46 @@ function GrowthWorkspace({
         <div className="id-launch-section-head">
           <div>
             <h3>Modeled network value vs real confirmed value</h3>
-            <p>Log scale, 10-year window. Values are shown in sats and translated to USD through the same BTC/USD benchmark.</p>
+            <p>
+              Log scale, 10-year window. Values are shown in sats and translated
+              to USD through the same BTC/USD benchmark.
+            </p>
           </div>
           <div className="growth-chart-legend" aria-label="Chart legend">
-            <span><i className="model" /> Model</span>
-            <span><i className="actual" /> Real</span>
+            <span>
+              <i className="model" /> Model
+            </span>
+            <span>
+              <i className="actual" /> Real
+            </span>
           </div>
         </div>
-        <div className="growth-chart-value-strip" aria-label="Current chart values">
+        <div
+          className="growth-chart-value-strip"
+          aria-label="Current chart values"
+        >
           <div>
-            <span><i className="model" /> Modeled now</span>
+            <span>
+              <i className="model" /> Modeled now
+            </span>
             <strong>{growthSats(modelNow.sats)}</strong>
-            <small>{growthUsd(modelNow.usd)} at {elapsedYears.toFixed(2)} years</small>
+            <small>
+              {growthUsd(modelNow.usd)} at {elapsedYears.toFixed(2)} years
+            </small>
           </div>
           <div>
-            <span><i className="actual" /> Real now</span>
+            <span>
+              <i className="actual" /> Real now
+            </span>
             <strong>{growthSats(actualValue.totalSats)}</strong>
-            <small>{growthUsd(actualValue.totalUsd)} from confirmed events</small>
+            <small>
+              {growthUsd(actualValue.totalUsd)} from confirmed events
+            </small>
           </div>
           <div>
-            <span><i className="model" /> 12m model</span>
+            <span>
+              <i className="model" /> 12m model
+            </span>
             <strong>{growthSats(oneYear.totalSats)}</strong>
             <small>{growthUsd(oneYear.totalUsdBase)} success path</small>
           </div>
@@ -11738,17 +17008,29 @@ function GrowthWorkspace({
         <GrowthLineChart actualPoints={actualPoints} />
       </section>
 
-      <section className="growth-events-card" aria-label="Real confirmed growth events">
+      <section
+        className="growth-events-card"
+        aria-label="Real confirmed growth events"
+      >
         <div className="id-launch-section-head">
           <div>
             <h3>Real growth events</h3>
-            <p>The green line is rebuilt from confirmed Bitcoin events. These are the newest receipts feeding the real network value.</p>
+            <p>
+              The green line is rebuilt from confirmed Bitcoin events. These are
+              the newest receipts feeding the real network value.
+            </p>
           </div>
         </div>
         {realEvents.length > 0 ? (
           <div className="growth-event-list">
             {realEvents.slice(0, 8).map((event) => (
-              <a className="growth-event-item" href={mempoolTxUrl(event.txid, event.network)} key={event.key} rel="noreferrer" target="_blank">
+              <a
+                className="growth-event-item"
+                href={mempoolTxUrl(event.txid, event.network)}
+                key={event.key}
+                rel="noreferrer"
+                target="_blank"
+              >
                 <div>
                   <span className="growth-event-kind">{event.kind}</span>
                   <strong>{event.title}</strong>
@@ -11763,27 +17045,42 @@ function GrowthWorkspace({
             ))}
           </div>
         ) : (
-          <p className="empty-copy">No confirmed growth events loaded yet. Refresh chain metrics to pull the latest registry and log state.</p>
+          <p className="empty-copy">
+            No confirmed growth events loaded yet. Refresh chain metrics to pull
+            the latest registry and log state.
+          </p>
         )}
       </section>
 
-      <section className="growth-product-section" aria-label="Growth product metrics">
+      <section
+        className="growth-product-section"
+        aria-label="Growth product metrics"
+      >
         <div className="id-launch-section-head">
           <div>
             <h3>Products in the model</h3>
-            <p>Every product gets a real metric, a usage assumption, a value assumption, a fee elasticity, and blockspace accounting.</p>
+            <p>
+              Every product gets a real metric, a usage assumption, a value
+              assumption, a fee elasticity, and blockspace accounting.
+            </p>
           </div>
         </div>
         <div className="growth-product-grid">
           <GrowthProductCard
-            actual={growthSats(actualValue.powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2)}
+            actual={growthSats(
+              actualValue.powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2,
+            )}
             actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2, elapsedYears))} · ${currentActual.toLocaleString()} confirmed IDs`}
             icon={<AtSign size={24} />}
             modelFiveYear={growthSats(fiveYear.idSats)}
-            modelFiveYearLabel={growthUsd(growthSatsToUsdAtYears(fiveYear.idSats, fiveYear.years))}
+            modelFiveYearLabel={growthUsd(
+              growthSatsToUsdAtYears(fiveYear.idSats, fiveYear.years),
+            )}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.idSats)}
-            modelOneYearLabel={growthUsd(growthSatsToUsdAtYears(oneYear.idSats, oneYear.years))}
+            modelOneYearLabel={growthUsd(
+              growthSatsToUsdAtYears(oneYear.idSats, oneYear.years),
+            )}
             name="IDs"
             note="Network stock value: n squared against current ID value density."
           />
@@ -11792,10 +17089,14 @@ function GrowthWorkspace({
             actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.mailSats, elapsedYears))} · ${actualValue.mailFlowSats.toLocaleString()} paid sats · ${mailActions.toLocaleString()} actions`}
             icon={<Mail size={24} />}
             modelFiveYear={growthSats(fiveYear.mailSats)}
-            modelFiveYearLabel={growthUsd(growthSatsToUsdAtYears(fiveYear.mailSats, fiveYear.years))}
+            modelFiveYearLabel={growthUsd(
+              growthSatsToUsdAtYears(fiveYear.mailSats, fiveYear.years),
+            )}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.mailSats)}
-            modelOneYearLabel={growthUsd(growthSatsToUsdAtYears(oneYear.mailSats, oneYear.years))}
+            modelOneYearLabel={growthUsd(
+              growthSatsToUsdAtYears(oneYear.mailSats, oneYear.years),
+            )}
             name="Mail"
             note="Relationship flow across the confirmed ID graph."
           />
@@ -11804,10 +17105,14 @@ function GrowthWorkspace({
             actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.driveSats, elapsedYears))} · ${actualValue.driveFlowSats.toLocaleString()} file sats · ${driveActions.toLocaleString()} actions`}
             icon={<FileText size={24} />}
             modelFiveYear={growthSats(fiveYear.driveSats)}
-            modelFiveYearLabel={growthUsd(growthSatsToUsdAtYears(fiveYear.driveSats, fiveYear.years))}
+            modelFiveYearLabel={growthUsd(
+              growthSatsToUsdAtYears(fiveYear.driveSats, fiveYear.years),
+            )}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.driveSats)}
-            modelOneYearLabel={growthUsd(growthSatsToUsdAtYears(oneYear.driveSats, oneYear.years))}
+            modelOneYearLabel={growthUsd(
+              growthSatsToUsdAtYears(oneYear.driveSats, oneYear.years),
+            )}
             name="Drive"
             note="File writes priced through the same fee-collapse and blockspace constraint."
           />
@@ -11816,10 +17121,14 @@ function GrowthWorkspace({
             actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.marketplaceSats, elapsedYears))} · ${marketplaceStats.confirmedVolumeSats.toLocaleString()} sale sats · ${registryListings.length.toLocaleString()} active listings`}
             icon={<Users size={24} />}
             modelFiveYear={growthSats(fiveYear.marketplaceSats)}
-            modelFiveYearLabel={growthUsd(growthSatsToUsdAtYears(fiveYear.marketplaceSats, fiveYear.years))}
+            modelFiveYearLabel={growthUsd(
+              growthSatsToUsdAtYears(fiveYear.marketplaceSats, fiveYear.years),
+            )}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.marketplaceSats)}
-            modelOneYearLabel={growthUsd(growthSatsToUsdAtYears(oneYear.marketplaceSats, oneYear.years))}
+            modelOneYearLabel={growthUsd(
+              growthSatsToUsdAtYears(oneYear.marketplaceSats, oneYear.years),
+            )}
             name="Marketplace"
             note="Buyer-funded transfers become a first-class product in the Bitcoin Computer model."
           />
@@ -11828,28 +17137,49 @@ function GrowthWorkspace({
             actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.browserSats, elapsedYears))} · ${actualValue.browserFlowSats.toLocaleString()} page sats · ${browserActions.toLocaleString()} actions`}
             icon={<Monitor size={24} />}
             modelFiveYear={growthSats(fiveYear.browserSats)}
-            modelFiveYearLabel={growthUsd(growthSatsToUsdAtYears(fiveYear.browserSats, fiveYear.years))}
+            modelFiveYearLabel={growthUsd(
+              growthSatsToUsdAtYears(fiveYear.browserSats, fiveYear.years),
+            )}
             modelLabel="network value"
             modelOneYear={growthSats(oneYear.browserSats)}
-            modelOneYearLabel={growthUsd(growthSatsToUsdAtYears(oneYear.browserSats, oneYear.years))}
+            modelOneYearLabel={growthUsd(
+              growthSatsToUsdAtYears(oneYear.browserSats, oneYear.years),
+            )}
             name="Browser"
             note="HTML pages rendered from OP_RETURN message bodies or verified file attachments by txid."
           />
         </div>
       </section>
 
-      <section className="growth-assumption-grid" aria-label="Model assumptions">
+      <section
+        className="growth-assumption-grid"
+        aria-label="Model assumptions"
+      >
         <article>
           <h3>Product contract</h3>
-          <p>New products are not side quests. They enter the same model with real chain inputs, per-user usage, value multiple, fee elasticity, and vbyte cost.</p>
+          <p>
+            New products are not side quests. They enter the same model with
+            real chain inputs, per-user usage, value multiple, fee elasticity,
+            and vbyte cost.
+          </p>
         </article>
         <article>
           <h3>Blockspace constraint</h3>
-          <p>The model compounds until the current theoretical ceiling is binding: {growthCompactNumber(GROWTH_MODEL_INPUTS.blockspaceVbytesPerYear)} vB per year.</p>
+          <p>
+            The model compounds until the current theoretical ceiling is
+            binding:{" "}
+            {growthCompactNumber(GROWTH_MODEL_INPUTS.blockspaceVbytesPerYear)}{" "}
+            vB per year.
+          </p>
         </article>
         <article>
           <h3>Canonical path</h3>
-          <p>At 12 months the model reaches {Math.round(oneYear.powids).toLocaleString()} PowIDs and {growthSats(oneYear.totalSats)} / {growthUsd(oneYear.totalUsdBase)} total modeled Bitcoin Computer value.</p>
+          <p>
+            At 12 months the model reaches{" "}
+            {Math.round(oneYear.powids).toLocaleString()} PowIDs and{" "}
+            {growthSats(oneYear.totalSats)} / {growthUsd(oneYear.totalUsdBase)}{" "}
+            total modeled Bitcoin Computer value.
+          </p>
         </article>
       </section>
     </section>
@@ -11874,7 +17204,11 @@ function LandingApp({
   return (
     <main className="landing-app">
       <header className="landing-topbar">
-        <a className="landing-brand" href={HOME_APP_URL} aria-label="ProofOfWork.Me home">
+        <a
+          className="landing-brand"
+          href={HOME_APP_URL}
+          aria-label="ProofOfWork.Me home"
+        >
           <div className="brand-mark" aria-hidden="true">
             PoW
           </div>
@@ -11889,7 +17223,9 @@ function LandingApp({
           <button
             aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
             className="icon-button"
-            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
             title={theme === "dark" ? "Light mode" : "Dark mode"}
             type="button"
           >
@@ -11900,37 +17236,57 @@ function LandingApp({
 
       <section className="landing-hero">
         <div className="landing-hero-content">
-          <span className="landing-kicker">Bitcoin-native identity, mail, files, pages, markets, logs, and growth</span>
+          <span className="landing-kicker">
+            Bitcoin-native identity, mail, files, pages, markets, logs, and
+            growth
+          </span>
           <h2>ProofOfWork.Me</h2>
           <p>
-            Claim a permanent on-chain ID, then use the Bitcoin Computer for mail, files, HTML pages, marketplace actions, and chain-readable proof.
+            Claim a permanent on-chain ID, then use the Bitcoin Computer for
+            mail, files, HTML pages, marketplace actions, and chain-readable
+            proof.
           </p>
           <div className="landing-actions">
-            <a className="primary link-button" href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}>
+            <a
+              className="primary link-button"
+              href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}
+            >
               <span className="button-content">
                 <AtSign size={17} />
                 <span>Claim an ID</span>
               </span>
             </a>
-            <a className="secondary link-button" href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}>
+            <a
+              className="secondary link-button"
+              href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+            >
               <span className="button-content">
                 <Mail size={17} />
                 <span>Open Computer</span>
               </span>
             </a>
-            <a className="secondary link-button" href={appHref(DESKTOP_APP_URL, LOCAL_DESKTOP_APP_URL)}>
+            <a
+              className="secondary link-button"
+              href={appHref(DESKTOP_APP_URL, LOCAL_DESKTOP_APP_URL)}
+            >
               <span className="button-content">
                 <Monitor size={17} />
                 <span>Open Desktop</span>
               </span>
             </a>
-            <a className="secondary link-button" href={appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}>
+            <a
+              className="secondary link-button"
+              href={appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}
+            >
               <span className="button-content">
                 <FileText size={17} />
                 <span>Open Browser</span>
               </span>
             </a>
-            <a className="secondary link-button" href={appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL)}>
+            <a
+              className="secondary link-button"
+              href={appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL)}
+            >
               <span className="button-content">
                 <Users size={17} />
                 <span>Marketplace</span>
@@ -11941,12 +17297,23 @@ function LandingApp({
       </section>
 
       <section className="landing-main" aria-label="ProofOfWork.Me onboarding">
-        <section className="landing-video" aria-label="ProofOfWork.Me overview video">
+        <section
+          className="landing-video"
+          aria-label="ProofOfWork.Me overview video"
+        >
           <div className="landing-video-copy">
             <span className="landing-kicker">Video overview</span>
             <h3>The Bitcoin Computer is live</h3>
-            <p>Watch the current walkthrough, then open the apps below and verify the records from Bitcoin.</p>
-            <a className="secondary link-button" href={LANDING_VIDEO_URL} rel="noreferrer" target="_blank">
+            <p>
+              Watch the current walkthrough, then open the apps below and verify
+              the records from Bitcoin.
+            </p>
+            <a
+              className="secondary link-button"
+              href={LANDING_VIDEO_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
               <span className="button-content">
                 <ArrowUpRight size={16} />
                 <span>Open on YouTube</span>
@@ -11965,11 +17332,17 @@ function LandingApp({
           </div>
         </section>
 
-        <section className="landing-deck" aria-label="ProofOfWork.Me general deck">
+        <section
+          className="landing-deck"
+          aria-label="ProofOfWork.Me general deck"
+        >
           <div className="landing-deck-copy">
             <span className="landing-kicker">General deck</span>
             <h3>The Bitcoin Computer</h3>
-            <p>Download the current ProofOfWork.Me overview: IDs, Mail, Files, Desktop, Browser, Marketplace, Log, Growth, and agents.</p>
+            <p>
+              Download the current ProofOfWork.Me overview: IDs, Mail, Files,
+              Desktop, Browser, Marketplace, Log, Growth, and agents.
+            </p>
           </div>
           <div className="landing-deck-panel">
             <div className="empty-icon" aria-hidden="true">
@@ -11988,20 +17361,31 @@ function LandingApp({
           </div>
         </section>
 
-        <section className="landing-testimonial" aria-label="On-chain testimonial">
+        <section
+          className="landing-testimonial"
+          aria-label="On-chain testimonial"
+        >
           <div className="empty-icon" aria-hidden="true">
             <MessageSquareQuote size={24} />
           </div>
           <div>
             <span className="landing-kicker">On-chain testimonial</span>
             <blockquote>
-              "Truth above all else. We will not yield to foolish yet powerful tyrants for the true power resides with us. We need only converge on the truth."
+              "Truth above all else. We will not yield to foolish yet powerful
+              tyrants for the true power resides with us. We need only converge
+              on the truth."
             </blockquote>
             <p>
-              Published to Bitcoin through ProofOfWork.Me by D.D. Subject: <strong>Freedom and love</strong>.
+              Published to Bitcoin through ProofOfWork.Me by D.D. Subject:{" "}
+              <strong>Freedom and love</strong>.
             </p>
           </div>
-          <a className="secondary link-button" href={LANDING_TESTIMONIAL_TX_URL} rel="noreferrer" target="_blank">
+          <a
+            className="secondary link-button"
+            href={LANDING_TESTIMONIAL_TX_URL}
+            rel="noreferrer"
+            target="_blank"
+          >
             <span className="button-content">
               <ArrowUpRight size={16} />
               <span>View TX</span>
@@ -12009,7 +17393,10 @@ function LandingApp({
           </a>
         </section>
 
-        <section className="landing-stats" aria-label="ProofOfWork ID registry stats">
+        <section
+          className="landing-stats"
+          aria-label="ProofOfWork ID registry stats"
+        >
           <div>
             <span>Total IDs</span>
             <strong>{registryRecords.length.toLocaleString()}</strong>
@@ -12038,10 +17425,14 @@ function LandingApp({
             <div>
               <h3>Claim Your ID</h3>
               <p>
-                Register <code>user@proofofwork.me</code> to your Bitcoin receive address through the canonical mainnet registry.
+                Register <code>user@proofofwork.me</code> to your Bitcoin
+                receive address through the canonical mainnet registry.
               </p>
             </div>
-            <a className="primary link-button" href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}>
+            <a
+              className="primary link-button"
+              href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}
+            >
               <span className="button-content">
                 <AtSign size={16} />
                 <span>Go to IDs</span>
@@ -12055,9 +17446,15 @@ function LandingApp({
             </div>
             <div>
               <h3>Open Computer</h3>
-              <p>Send and receive Bitcoin-native mail, replies, and small files with local drafts, archive, favorites, and backups.</p>
+              <p>
+                Send and receive Bitcoin-native mail, replies, and small files
+                with local drafts, archive, favorites, and backups.
+              </p>
             </div>
-            <a className="secondary link-button" href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}>
+            <a
+              className="secondary link-button"
+              href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+            >
               <span className="button-content">
                 <Mail size={16} />
                 <span>Open App</span>
@@ -12071,9 +17468,15 @@ function LandingApp({
             </div>
             <div>
               <h3>Open Desktop</h3>
-              <p>Search an address or confirmed ProofOfWork ID and browse public confirmed files.</p>
+              <p>
+                Search an address or confirmed ProofOfWork ID and browse public
+                confirmed files.
+              </p>
             </div>
-            <a className="secondary link-button" href={appHref(DESKTOP_APP_URL, LOCAL_DESKTOP_APP_URL)}>
+            <a
+              className="secondary link-button"
+              href={appHref(DESKTOP_APP_URL, LOCAL_DESKTOP_APP_URL)}
+            >
               <span className="button-content">
                 <Monitor size={16} />
                 <span>Open Desktop</span>
@@ -12087,9 +17490,15 @@ function LandingApp({
             </div>
             <div>
               <h3>Open Browser</h3>
-              <p>Paste a txid and render HTML from ProofOfWork message bodies or verified <code>text/html</code> attachments.</p>
+              <p>
+                Paste a txid and render HTML from ProofOfWork message bodies or
+                verified <code>text/html</code> attachments.
+              </p>
             </div>
-            <a className="secondary link-button" href={appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}>
+            <a
+              className="secondary link-button"
+              href={appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}
+            >
               <span className="button-content">
                 <FileText size={16} />
                 <span>Open Browser</span>
@@ -12103,9 +17512,15 @@ function LandingApp({
             </div>
             <div>
               <h3>Open Marketplace</h3>
-              <p>List confirmed ProofOfWork IDs, delist them, and execute buyer-funded ownership transfers on chain.</p>
+              <p>
+                List confirmed ProofOfWork IDs, delist them, and execute
+                buyer-funded ownership transfers on chain.
+              </p>
             </div>
-            <a className="secondary link-button" href={appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL)}>
+            <a
+              className="secondary link-button"
+              href={appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL)}
+            >
               <span className="button-content">
                 <Users size={16} />
                 <span>Open Marketplace</span>
@@ -12119,9 +17534,15 @@ function LandingApp({
             </div>
             <div>
               <h3>Open Log</h3>
-              <p>Read the public Bitcoin Computer activity feed for IDs, mail, replies, files, Browser pages, and marketplace events.</p>
+              <p>
+                Read the public Bitcoin Computer activity feed for IDs, mail,
+                replies, files, Browser pages, and marketplace events.
+              </p>
             </div>
-            <a className="secondary link-button" href={appHref(LOG_APP_URL, LOCAL_LOG_APP_URL)}>
+            <a
+              className="secondary link-button"
+              href={appHref(LOG_APP_URL, LOCAL_LOG_APP_URL)}
+            >
               <span className="button-content">
                 <Clock size={16} />
                 <span>Open Log</span>
@@ -12135,9 +17556,15 @@ function LandingApp({
             </div>
             <div>
               <h3>Open Growth</h3>
-              <p>Compare the canonical Bitcoin Computer growth model against real confirmed network value in sats and USD.</p>
+              <p>
+                Compare the canonical Bitcoin Computer growth model against real
+                confirmed network value in sats and USD.
+              </p>
             </div>
-            <a className="secondary link-button" href={appHref(GROWTH_APP_URL, LOCAL_GROWTH_APP_URL)}>
+            <a
+              className="secondary link-button"
+              href={appHref(GROWTH_APP_URL, LOCAL_GROWTH_APP_URL)}
+            >
               <span className="button-content">
                 <TrendingUp size={16} />
                 <span>Open Growth</span>
@@ -12151,10 +17578,16 @@ function LandingApp({
             <span className="landing-kicker">Canonical registry</span>
             <h3>{shortAddress(registryAddress)}</h3>
             <p>
-              ProofOfWork IDs are resolved from Bitcoin. First confirmed valid registration wins, and the app only routes mail to confirmed IDs.
+              ProofOfWork IDs are resolved from Bitcoin. First confirmed valid
+              registration wins, and the app only routes mail to confirmed IDs.
             </p>
           </div>
-          <a className="secondary link-button" href={`https://mempool.space/address/${registryAddress}`} rel="noreferrer" target="_blank">
+          <a
+            className="secondary link-button"
+            href={`https://mempool.space/address/${registryAddress}`}
+            rel="noreferrer"
+            target="_blank"
+          >
             <span className="button-content">
               <ArrowUpRight size={16} />
               <span>View Registry</span>
@@ -12221,9 +17654,19 @@ function IdLaunchApp({
   const ownedIds = ownedPowIds(registryRecords, address);
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
-  const confirmedMatch = normalizedId ? confirmedRecords.find((record) => record.id === normalizedId) : undefined;
-  const pendingMatch = normalizedId ? pendingRecords.find((record) => record.id === normalizedId) : undefined;
-  const availabilityTone = !normalizedId ? "idle" : confirmedMatch ? "bad" : pendingMatch ? "idle" : "good";
+  const confirmedMatch = normalizedId
+    ? confirmedRecords.find((record) => record.id === normalizedId)
+    : undefined;
+  const pendingMatch = normalizedId
+    ? pendingRecords.find((record) => record.id === normalizedId)
+    : undefined;
+  const availabilityTone = !normalizedId
+    ? "idle"
+    : confirmedMatch
+      ? "bad"
+      : pendingMatch
+        ? "idle"
+        : "good";
   const availabilityTitle = !normalizedId
     ? "Search any ID"
     : confirmedMatch
@@ -12259,27 +17702,46 @@ function IdLaunchApp({
             aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
             className="icon-button"
             disabled={busy}
-            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
             title={theme === "dark" ? "Light mode" : "Dark mode"}
             type="button"
           >
             {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
           </button>
-          <button className="secondary" disabled={busy} onClick={onRefresh} type="button">
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={onRefresh}
+            type="button"
+          >
             <span className="button-content">
               <RefreshCw className={busy ? "refresh-spin" : ""} size={16} />
               <span>{busy ? "Refreshing" : "Refresh"}</span>
             </span>
           </button>
           {hasUnisat ? (
-            <button className="secondary" disabled={busy} onClick={connectWallet} type="button">
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={connectWallet}
+              type="button"
+            >
               <span className="button-content">
                 <Wallet size={16} />
-                <span>{address ? shortAddress(address) : "Connect UniSat"}</span>
+                <span>
+                  {address ? shortAddress(address) : "Connect UniSat"}
+                </span>
               </span>
             </button>
           ) : (
-            <a className="secondary link-button" href={UNISAT_DOWNLOAD_URL} rel="noreferrer" target="_blank">
+            <a
+              className="secondary link-button"
+              href={UNISAT_DOWNLOAD_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
               <span className="button-content">
                 <Wallet size={16} />
                 <span>Install UniSat</span>
@@ -12288,7 +17750,12 @@ function IdLaunchApp({
             </a>
           )}
           {address ? (
-            <button className="secondary" disabled={busy} onClick={disconnectWallet} type="button">
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={disconnectWallet}
+              type="button"
+            >
               <span className="button-content">
                 <LogOut size={16} />
                 <span>Disconnect</span>
@@ -12309,8 +17776,8 @@ function IdLaunchApp({
             <span className="id-launch-kicker">Bitcoin-native identity</span>
             <h2>Claim your ProofOfWork ID.</h2>
             <p>
-              Register a permanent on-chain mail identity that resolves to your Bitcoin receive address.
-              First confirmed valid registration wins.
+              Register a permanent on-chain mail identity that resolves to your
+              Bitcoin receive address. First confirmed valid registration wins.
             </p>
           </div>
 
@@ -12338,14 +17805,23 @@ function IdLaunchApp({
               </div>
               <div>
                 <h3>Register ID</h3>
-                <p>Pay {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats to the canonical registry address.</p>
+                <p>
+                  Pay {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats to the
+                  canonical registry address.
+                </p>
               </div>
             </div>
 
             <label>
               ID
               <div className="id-input-row">
-                <input autoComplete="off" onChange={(event) => setIdName(event.target.value)} placeholder="user" spellCheck={false} value={idName} />
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setIdName(event.target.value)}
+                  placeholder="user"
+                  spellCheck={false}
+                  value={idName}
+                />
                 <span>@proofofwork.me</span>
               </div>
             </label>
@@ -12362,7 +17838,12 @@ function IdLaunchApp({
               </label>
               <label>
                 Receive address
-                <input autoComplete="off" onChange={(event) => setIdReceiveAddress(event.target.value)} spellCheck={false} value={idReceiveAddress} />
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setIdReceiveAddress(event.target.value)}
+                  spellCheck={false}
+                  value={idReceiveAddress}
+                />
               </label>
             </div>
 
@@ -12371,7 +17852,11 @@ function IdLaunchApp({
               <div className="id-advanced-content">
                 <label>
                   PGP public key optional
-                  <textarea onChange={(event) => setIdPgpKey(event.target.value)} placeholder="Paste an armored public key later when encryption is ready." value={idPgpKey} />
+                  <textarea
+                    onChange={(event) => setIdPgpKey(event.target.value)}
+                    placeholder="Paste an armored public key later when encryption is ready."
+                    value={idPgpKey}
+                  />
                 </label>
                 <FeeRateControl
                   feeRate={feeRate}
@@ -12386,8 +17871,16 @@ function IdLaunchApp({
               </div>
             </details>
 
-            <div className={registrationBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
-              {registrationBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
+            <div
+              className={
+                registrationBytes > MAX_DATA_CARRIER_BYTES
+                  ? "counter bad"
+                  : "counter"
+              }
+            >
+              {registrationBytes.toLocaleString()} /{" "}
+              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+              bytes
             </div>
 
             <button className="primary" disabled={!canRegister} type="submit">
@@ -12407,17 +17900,33 @@ function IdLaunchApp({
                   </div>
                   <div>
                     <h3>Verify on X</h3>
-                    <p>Post public proof for {lastRegisteredId.id}@proofofwork.me.</p>
+                    <p>
+                      Post public proof for {lastRegisteredId.id}
+                      @proofofwork.me.
+                    </p>
                   </div>
                 </div>
                 <div className="id-record-actions">
-                  <a className="primary link-button" href={xVerificationUrl(lastRegisteredId)} rel="noreferrer" target="_blank">
+                  <a
+                    className="primary link-button"
+                    href={xVerificationUrl(lastRegisteredId)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
                     <span className="button-content">
                       <ArrowUpRight size={16} />
                       <span>Verify on X</span>
                     </span>
                   </a>
-                  <a className="secondary link-button" href={mempoolTxUrl(lastRegisteredId.txid, lastRegisteredId.network)} rel="noreferrer" target="_blank">
+                  <a
+                    className="secondary link-button"
+                    href={mempoolTxUrl(
+                      lastRegisteredId.txid,
+                      lastRegisteredId.network,
+                    )}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
                     <span className="button-content">
                       <ArrowUpRight size={16} />
                       <span>View TX</span>
@@ -12450,11 +17959,14 @@ function IdLaunchApp({
               <IdRecordList
                 records={ownedIds}
                 allowVerification
-                empty={address ? "No IDs for this wallet yet." : "Connect UniSat to see your IDs."}
+                empty={
+                  address
+                    ? "No IDs for this wallet yet."
+                    : "Connect UniSat to see your IDs."
+                }
                 searchPlaceholder="Search your IDs"
               />
             </section>
-
           </aside>
         </div>
 
@@ -12462,16 +17974,28 @@ function IdLaunchApp({
           <div className="id-launch-section-head">
             <div>
               <h3>Public Registry</h3>
-              <p>Global records create the network effect. Verification actions only appear for your own IDs.</p>
+              <p>
+                Global records create the network effect. Verification actions
+                only appear for your own IDs.
+              </p>
             </div>
-            <button className="secondary small" disabled={busy} onClick={onRefresh} type="button">
+            <button
+              className="secondary small"
+              disabled={busy}
+              onClick={onRefresh}
+              type="button"
+            >
               <span className="button-content">
                 <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
                 <span>Refresh</span>
               </span>
             </button>
           </div>
-          <IdRecordList records={registryRecords} empty="No registry records found yet." initialLimit={12} />
+          <IdRecordList
+            records={registryRecords}
+            empty="No registry records found yet."
+            initialLimit={12}
+          />
         </section>
       </section>
 
@@ -12559,9 +18083,15 @@ function MarketplaceApp({
 }) {
   const confirmedRecords = registryRecords.filter((record) => record.confirmed);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
-  const ownerControlledIds = confirmedRecords.filter((record) => record.ownerAddress === address);
-  const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
-  const walletPendingEvents = pendingEvents.filter((event) => pendingIdEventTouchesAddress(event, address));
+  const ownerControlledIds = confirmedRecords.filter(
+    (record) => record.ownerAddress === address,
+  );
+  const managedId =
+    ownerControlledIds.find((record) => record.id === managedIdName) ??
+    ownerControlledIds[0];
+  const walletPendingEvents = pendingEvents.filter((event) =>
+    pendingIdEventTouchesAddress(event, address),
+  );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
 
   return (
@@ -12584,27 +18114,46 @@ function MarketplaceApp({
             aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
             className="icon-button"
             disabled={busy}
-            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
             title={theme === "dark" ? "Light mode" : "Dark mode"}
             type="button"
           >
             {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
           </button>
-          <button className="secondary" disabled={busy} onClick={onRefresh} type="button">
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={onRefresh}
+            type="button"
+          >
             <span className="button-content">
               <RefreshCw className={busy ? "refresh-spin" : ""} size={16} />
               <span>{busy ? "Refreshing" : "Refresh"}</span>
             </span>
           </button>
           {hasUnisat ? (
-            <button className="secondary" disabled={busy} onClick={connectWallet} type="button">
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={connectWallet}
+              type="button"
+            >
               <span className="button-content">
                 <Wallet size={16} />
-                <span>{address ? shortAddress(address) : "Connect UniSat"}</span>
+                <span>
+                  {address ? shortAddress(address) : "Connect UniSat"}
+                </span>
               </span>
             </button>
           ) : (
-            <a className="secondary link-button" href={UNISAT_DOWNLOAD_URL} rel="noreferrer" target="_blank">
+            <a
+              className="secondary link-button"
+              href={UNISAT_DOWNLOAD_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
               <span className="button-content">
                 <Wallet size={16} />
                 <span>Install UniSat</span>
@@ -12613,7 +18162,12 @@ function MarketplaceApp({
             </a>
           )}
           {address ? (
-            <button className="secondary" disabled={busy} onClick={disconnectWallet} type="button">
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={disconnectWallet}
+              type="button"
+            >
               <span className="button-content">
                 <LogOut size={16} />
                 <span>Disconnect</span>
@@ -12634,8 +18188,10 @@ function MarketplaceApp({
             <span className="id-launch-kicker">ProofOfWork ID marketplace</span>
             <h2>Transfer Bitcoin-native names.</h2>
             <p>
-              Sellers publish on-chain listings. Buyers fund the seller payment plus the
-              {` ${ID_MUTATION_PRICE_SATS.toLocaleString()} `}sat registry transfer in one Bitcoin transaction.
+              Sellers publish on-chain listings. Buyers fund the seller payment
+              plus the
+              {` ${ID_MUTATION_PRICE_SATS.toLocaleString()} `}sat registry
+              transfer in one Bitcoin transaction.
             </p>
           </div>
 
@@ -12653,7 +18209,9 @@ function MarketplaceApp({
               <span>ID Sales</span>
             </div>
             <div>
-              <strong>{marketplaceStats.totalVolumeSats.toLocaleString()}</strong>
+              <strong>
+                {marketplaceStats.totalVolumeSats.toLocaleString()}
+              </strong>
               <span>Volume sats</span>
             </div>
             <div>
@@ -12675,19 +18233,32 @@ function MarketplaceApp({
               </div>
               <div>
                 <h3>List an ID</h3>
-                <p>Publish an on-chain listing for one of your confirmed IDs. Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.</p>
+                <p>
+                  Publish an on-chain listing for one of your confirmed IDs.
+                  Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.
+                </p>
               </div>
             </div>
 
             {ownerControlledIds.length === 0 ? (
-              <p className="field-note">{address ? "This wallet does not own any confirmed IDs yet." : "Connect the owner wallet to list confirmed IDs."}</p>
+              <p className="field-note">
+                {address
+                  ? "This wallet does not own any confirmed IDs yet."
+                  : "Connect the owner wallet to list confirmed IDs."}
+              </p>
             ) : (
               <>
                 <label>
                   ID
-                  <select value={managedId?.id ?? ""} onChange={(event) => setManagedIdName(event.target.value)}>
+                  <select
+                    value={managedId?.id ?? ""}
+                    onChange={(event) => setManagedIdName(event.target.value)}
+                  >
                     {ownerControlledIds.map((record) => (
-                      <option key={`${record.network}-${record.id}`} value={record.id}>
+                      <option
+                        key={`${record.network}-${record.id}`}
+                        value={record.id}
+                      >
                         {record.id}@proofofwork.me
                       </option>
                     ))}
@@ -12709,7 +18280,11 @@ function MarketplaceApp({
                     </div>
                   </dl>
                 ) : null}
-                <p className="field-note">The published listing includes on-chain sale terms. Delisting costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and transfers invalidate old listings.</p>
+                <p className="field-note">
+                  The published listing includes on-chain sale terms. Delisting
+                  costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and
+                  transfers invalidate old listings.
+                </p>
               </>
             )}
           </section>
@@ -12756,13 +18331,20 @@ function MarketplaceApp({
               </div>
               <div>
                 <h3>Pending Transfers</h3>
-                <p>Listings, purchases, and transfers touching your wallet stay here until confirmation.</p>
+                <p>
+                  Listings, purchases, and transfers touching your wallet stay
+                  here until confirmation.
+                </p>
               </div>
             </div>
             <PendingIdEventList
               address={address}
               events={walletPendingEvents}
-              empty={address ? "No pending marketplace transfers for this wallet." : "Connect a wallet to see pending marketplace transfers."}
+              empty={
+                address
+                  ? "No pending marketplace transfers for this wallet."
+                  : "Connect a wallet to see pending marketplace transfers."
+              }
             />
           </section>
 
@@ -12773,7 +18355,10 @@ function MarketplaceApp({
               </div>
               <div>
                 <h3>Registry Supply</h3>
-                <p>Confirmed IDs are the assets. The public listing book will build on the same registry.</p>
+                <p>
+                  Confirmed IDs are the assets. The public listing book will
+                  build on the same registry.
+                </p>
               </div>
             </div>
             <IdRecordList
@@ -12858,14 +18443,27 @@ function MarketplaceWorkspace({
   useListing: (listing: PowIdListing) => void;
   onRefresh: () => void;
 }) {
-  const confirmedRecords = registryRecords.filter((record) => record.network === network && record.confirmed);
-  const pendingRecords = registryRecords.filter((record) => record.network === network && !record.confirmed);
-  const networkListings = registryListings.filter((listing) => listing.network === network);
+  const confirmedRecords = registryRecords.filter(
+    (record) => record.network === network && record.confirmed,
+  );
+  const pendingRecords = registryRecords.filter(
+    (record) => record.network === network && !record.confirmed,
+  );
+  const networkListings = registryListings.filter(
+    (listing) => listing.network === network,
+  );
   const networkSales = registrySales.filter((sale) => sale.network === network);
   const marketplaceStats = marketplaceStatsFromSales(networkSales);
-  const ownerControlledIds = confirmedRecords.filter((record) => record.ownerAddress === address);
-  const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
-  const walletPendingEvents = pendingEvents.filter((event) => event.network === network && pendingIdEventTouchesAddress(event, address));
+  const ownerControlledIds = confirmedRecords.filter(
+    (record) => record.ownerAddress === address,
+  );
+  const managedId =
+    ownerControlledIds.find((record) => record.id === managedIdName) ??
+    ownerControlledIds[0];
+  const walletPendingEvents = pendingEvents.filter(
+    (event) =>
+      event.network === network && pendingIdEventTouchesAddress(event, address),
+  );
 
   return (
     <section className="ids-workspace marketplace-workspace">
@@ -12878,7 +18476,12 @@ function MarketplaceWorkspace({
               : `No ID marketplace configured for ${networkLabel(network)}`}
           </span>
         </div>
-        <button className="secondary small" disabled={busy || !registryAddress} onClick={onRefresh} type="button">
+        <button
+          className="secondary small"
+          disabled={busy || !registryAddress}
+          onClick={onRefresh}
+          type="button"
+        >
           <span className="button-content">
             <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
             <span>{busy ? "Refreshing" : "Refresh"}</span>
@@ -12886,7 +18489,10 @@ function MarketplaceWorkspace({
         </button>
       </div>
 
-      <div className="id-launch-stats marketplace-workspace-stats" aria-label="Marketplace stats">
+      <div
+        className="id-launch-stats marketplace-workspace-stats"
+        aria-label="Marketplace stats"
+      >
         <div>
           <strong>{networkListings.length.toLocaleString()}</strong>
           <span>Active Listings</span>
@@ -12913,19 +18519,32 @@ function MarketplaceWorkspace({
             </div>
             <div>
               <h3>List an ID</h3>
-              <p>Publish an on-chain listing for one of your confirmed IDs. Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.</p>
+              <p>
+                Publish an on-chain listing for one of your confirmed IDs.
+                Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.
+              </p>
             </div>
           </div>
 
           {ownerControlledIds.length === 0 ? (
-            <p className="field-note">{address ? "This wallet does not own any confirmed IDs yet." : "Connect the owner wallet to list confirmed IDs."}</p>
+            <p className="field-note">
+              {address
+                ? "This wallet does not own any confirmed IDs yet."
+                : "Connect the owner wallet to list confirmed IDs."}
+            </p>
           ) : (
             <>
               <label>
                 ID
-                <select value={managedId?.id ?? ""} onChange={(event) => setManagedIdName(event.target.value)}>
+                <select
+                  value={managedId?.id ?? ""}
+                  onChange={(event) => setManagedIdName(event.target.value)}
+                >
                   {ownerControlledIds.map((record) => (
-                    <option key={`${record.network}-${record.id}`} value={record.id}>
+                    <option
+                      key={`${record.network}-${record.id}`}
+                      value={record.id}
+                    >
                       {record.id}@proofofwork.me
                     </option>
                   ))}
@@ -12948,7 +18567,9 @@ function MarketplaceWorkspace({
                 </dl>
               ) : null}
               <p className="field-note">
-                The published listing includes on-chain sale terms. Delisting costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and transfers invalidate old listings.
+                The published listing includes on-chain sale terms. Delisting
+                costs {ID_MUTATION_PRICE_SATS.toLocaleString()} sats and
+                transfers invalidate old listings.
               </p>
             </>
           )}
@@ -12985,7 +18606,9 @@ function MarketplaceWorkspace({
           onDelist={delistListing}
           onSeal={sealListing}
           onUse={useListing}
-          pendingEvents={pendingEvents.filter((event) => event.network === network)}
+          pendingEvents={pendingEvents.filter(
+            (event) => event.network === network,
+          )}
           setFeeRate={setFeeRate}
         />
 
@@ -12996,13 +18619,20 @@ function MarketplaceWorkspace({
             </div>
             <div>
               <h3>Pending Transfers</h3>
-              <p>Listings, purchases, and transfers touching your wallet stay here until confirmation.</p>
+              <p>
+                Listings, purchases, and transfers touching your wallet stay
+                here until confirmation.
+              </p>
             </div>
           </div>
           <PendingIdEventList
             address={address}
             events={walletPendingEvents}
-            empty={address ? "No pending marketplace transfers for this wallet." : "Connect a wallet to see pending marketplace transfers."}
+            empty={
+              address
+                ? "No pending marketplace transfers for this wallet."
+                : "Connect a wallet to see pending marketplace transfers."
+            }
           />
         </section>
 
@@ -13013,12 +18643,19 @@ function MarketplaceWorkspace({
             </div>
             <div>
               <h3>Registry Supply</h3>
-              <p>Confirmed IDs are marketplace assets. The standalone marketplace uses the same registry.</p>
+              <p>
+                Confirmed IDs are marketplace assets. The standalone marketplace
+                uses the same registry.
+              </p>
             </div>
           </div>
           <IdRecordList
             records={confirmedRecords}
-            empty={registryAddress ? "No confirmed registry records found yet." : "Switch to Mainnet to browse the ID marketplace."}
+            empty={
+              registryAddress
+                ? "No confirmed registry records found yet."
+                : "Switch to Mainnet to browse the ID marketplace."
+            }
             initialLimit={24}
             searchPlaceholder="Search registry supply"
           />
@@ -13034,25 +18671,45 @@ function SocialFooter({ compact = false }: { compact?: boolean }) {
       <span>ProofOfWork.Me</span>
       <DomainNav compact={compact} />
       <nav className="social-nav" aria-label="Official ProofOfWork.Me links">
-        <a href={X_URL} rel="noreferrer" target="_blank" aria-label="ProofOfWork.Me on X">
+        <a
+          href={X_URL}
+          rel="noreferrer"
+          target="_blank"
+          aria-label="ProofOfWork.Me on X"
+        >
           <span className="button-content">
             <X size={14} />
             <span>X</span>
           </span>
         </a>
-        <a href={YOUTUBE_URL} rel="noreferrer" target="_blank" aria-label="ProofOfWork.Me on YouTube">
+        <a
+          href={YOUTUBE_URL}
+          rel="noreferrer"
+          target="_blank"
+          aria-label="ProofOfWork.Me on YouTube"
+        >
           <span className="button-content">
             <span aria-hidden="true">YT</span>
             <span>YouTube</span>
           </span>
         </a>
-        <a href={GITHUB_URL} rel="noreferrer" target="_blank" aria-label="ProofOfWork.Me on GitHub">
+        <a
+          href={GITHUB_URL}
+          rel="noreferrer"
+          target="_blank"
+          aria-label="ProofOfWork.Me on GitHub"
+        >
           <span className="button-content">
             <GitBranch size={14} />
             <span>GitHub</span>
           </span>
         </a>
-        <a href={DISCORD_URL} rel="noreferrer" target="_blank" aria-label="ProofOfWork.Me Discord">
+        <a
+          href={DISCORD_URL}
+          rel="noreferrer"
+          target="_blank"
+          aria-label="ProofOfWork.Me Discord"
+        >
           <span className="button-content">
             <MessageCircle size={14} />
             <span>Discord</span>
@@ -13102,7 +18759,10 @@ function ContactsWorkspace({
       <div className="files-toolbar">
         <div>
           <h2>Contacts</h2>
-          <span>{contacts.length.toLocaleString()} local contact{contacts.length === 1 ? "" : "s"} on {networkLabel(network)}</span>
+          <span>
+            {contacts.length.toLocaleString()} local contact
+            {contacts.length === 1 ? "" : "s"} on {networkLabel(network)}
+          </span>
         </div>
       </div>
 
@@ -13114,13 +18774,21 @@ function ContactsWorkspace({
             </div>
             <div>
               <h3>Add Contact</h3>
-              <p>Save a Bitcoin address or confirmed ProofOfWork ID locally for compose.</p>
+              <p>
+                Save a Bitcoin address or confirmed ProofOfWork ID locally for
+                compose.
+              </p>
             </div>
           </div>
 
           <label>
             Name optional
-            <input autoComplete="off" onChange={(event) => setName(event.target.value)} placeholder="Satoshi" value={name} />
+            <input
+              autoComplete="off"
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Satoshi"
+              value={name}
+            />
           </label>
 
           <label>
@@ -13128,7 +18796,11 @@ function ContactsWorkspace({
             <input
               autoComplete="off"
               onChange={(event) => setTarget(event.target.value)}
-              placeholder={network === "livenet" ? "bitcoin@proofofwork.me or bc1..." : "tb1..."}
+              placeholder={
+                network === "livenet"
+                  ? "bitcoin@proofofwork.me or bc1..."
+                  : "tb1..."
+              }
               spellCheck={false}
               value={target}
             />
@@ -13149,19 +18821,30 @@ function ContactsWorkspace({
             </div>
             <div>
               <h3>Address Book</h3>
-              <p>Contacts stay in this browser and are included in backup export/import.</p>
+              <p>
+                Contacts stay in this browser and are included in backup
+                export/import.
+              </p>
             </div>
           </div>
 
           {contacts.length === 0 ? (
-            <p className="field-note">No contacts saved for {networkLabel(network)} yet.</p>
+            <p className="field-note">
+              No contacts saved for {networkLabel(network)} yet.
+            </p>
           ) : (
             <div className="id-record-list">
               {contacts.map((contact) => (
-                <article className="id-record contact-record" key={contactKey(contact)}>
+                <article
+                  className="id-record contact-record"
+                  key={contactKey(contact)}
+                >
                   <div>
                     <strong>{contact.name}</strong>
-                    <span>{contact.source === "registry" ? "Registry" : "Manual"} · {networkLabel(contact.network)}</span>
+                    <span>
+                      {contact.source === "registry" ? "Registry" : "Manual"} ·{" "}
+                      {networkLabel(contact.network)}
+                    </span>
                   </div>
                   <dl>
                     <div>
@@ -13178,13 +18861,21 @@ function ContactsWorkspace({
                     </div>
                   </dl>
                   <div className="id-record-actions">
-                    <button className="primary small" onClick={() => onCompose(contact)} type="button">
+                    <button
+                      className="primary small"
+                      onClick={() => onCompose(contact)}
+                      type="button"
+                    >
                       <span className="button-content">
                         <PenLine size={15} />
                         <span>Write</span>
                       </span>
                     </button>
-                    <button className="secondary small" onClick={() => onRemove(contact)} type="button">
+                    <button
+                      className="secondary small"
+                      onClick={() => onRemove(contact)}
+                      type="button"
+                    >
                       <span className="button-content">
                         <Trash2 size={15} />
                         <span>Remove</span>
@@ -13277,24 +18968,66 @@ function IdsWorkspace({
   const normalizedId = normalizePowId(idName);
   const idError = powIdError(normalizedId);
   const ownedIds = ownedPowIds(registryRecords, address);
-  const ownerControlledIds = registryRecords.filter((record) => record.network === network && record.confirmed && record.ownerAddress === address);
-  const walletPendingEvents = pendingEvents.filter((event) => event.network === network && pendingIdEventTouchesAddress(event, address));
-  const managedId = ownerControlledIds.find((record) => record.id === managedIdName) ?? ownerControlledIds[0];
-  const receiverUpdateResolution = resolveRecipientInput(idUpdateReceiveAddress, network, registryRecords, registryAddress);
-  const receiverUpdateNote = idUpdateReceiveAddress.trim() ? receiveResolutionNote(receiverUpdateResolution) : "";
-  const transferTargetResolution = resolvePowIdOwnerInput(idTransferOwnerAddress, network, registryRecords, registryAddress);
-  const transferTargetNote = idTransferOwnerAddress.trim() ? ownerResolutionNote(transferTargetResolution) : "";
-  const transferReceiveResolution = idTransferReceiveAddress.trim() ? resolveRecipientInput(idTransferReceiveAddress, network, registryRecords, registryAddress) : undefined;
-  const transferReceiveNote = transferReceiveResolution ? receiveResolutionNote(transferReceiveResolution) : "";
+  const ownerControlledIds = registryRecords.filter(
+    (record) =>
+      record.network === network &&
+      record.confirmed &&
+      record.ownerAddress === address,
+  );
+  const walletPendingEvents = pendingEvents.filter(
+    (event) =>
+      event.network === network && pendingIdEventTouchesAddress(event, address),
+  );
+  const managedId =
+    ownerControlledIds.find((record) => record.id === managedIdName) ??
+    ownerControlledIds[0];
+  const receiverUpdateResolution = resolveRecipientInput(
+    idUpdateReceiveAddress,
+    network,
+    registryRecords,
+    registryAddress,
+  );
+  const receiverUpdateNote = idUpdateReceiveAddress.trim()
+    ? receiveResolutionNote(receiverUpdateResolution)
+    : "";
+  const transferTargetResolution = resolvePowIdOwnerInput(
+    idTransferOwnerAddress,
+    network,
+    registryRecords,
+    registryAddress,
+  );
+  const transferTargetNote = idTransferOwnerAddress.trim()
+    ? ownerResolutionNote(transferTargetResolution)
+    : "";
+  const transferReceiveResolution = idTransferReceiveAddress.trim()
+    ? resolveRecipientInput(
+        idTransferReceiveAddress,
+        network,
+        registryRecords,
+        registryAddress,
+      )
+    : undefined;
+  const transferReceiveNote = transferReceiveResolution
+    ? receiveResolutionNote(transferReceiveResolution)
+    : "";
 
   return (
     <section className="ids-workspace">
       <div className="files-toolbar">
         <div>
           <h2>ProofOfWork IDs</h2>
-          <span>{registryAddress ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${ownedIds.length} yours` : `No registry configured for ${networkLabel(network)}`}</span>
+          <span>
+            {registryAddress
+              ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${ownedIds.length} yours`
+              : `No registry configured for ${networkLabel(network)}`}
+          </span>
         </div>
-        <button className="secondary small" disabled={busy || !registryAddress} onClick={onRefresh} type="button">
+        <button
+          className="secondary small"
+          disabled={busy || !registryAddress}
+          onClick={onRefresh}
+          type="button"
+        >
           <span className="button-content">
             <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
             <span>{busy ? "Refreshing" : "Refresh"}</span>
@@ -13310,18 +19043,30 @@ function IdsWorkspace({
             </div>
             <div>
               <h3>Register ID</h3>
-              <p>First confirmed valid claim wins. Registration pays {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats to the registry.</p>
+              <p>
+                First confirmed valid claim wins. Registration pays{" "}
+                {ID_REGISTRATION_PRICE_SATS.toLocaleString()} sats to the
+                registry.
+              </p>
             </div>
           </div>
 
           <label>
             ID
             <div className="id-input-row">
-              <input autoComplete="off" onChange={(event) => setIdName(event.target.value)} placeholder="user" spellCheck={false} value={idName} />
+              <input
+                autoComplete="off"
+                onChange={(event) => setIdName(event.target.value)}
+                placeholder="user"
+                spellCheck={false}
+                value={idName}
+              />
               <span>@proofofwork.me</span>
             </div>
           </label>
-          {normalizedId && idError ? <p className="field-note bad">{idError}</p> : null}
+          {normalizedId && idError ? (
+            <p className="field-note bad">{idError}</p>
+          ) : null}
 
           <label>
             Owner
@@ -13330,12 +19075,21 @@ function IdsWorkspace({
 
           <label>
             Receive address
-            <input autoComplete="off" onChange={(event) => setIdReceiveAddress(event.target.value)} spellCheck={false} value={idReceiveAddress} />
+            <input
+              autoComplete="off"
+              onChange={(event) => setIdReceiveAddress(event.target.value)}
+              spellCheck={false}
+              value={idReceiveAddress}
+            />
           </label>
 
           <label>
             PGP public key optional
-            <textarea onChange={(event) => setIdPgpKey(event.target.value)} placeholder="Paste an armored public key later when encryption is ready." value={idPgpKey} />
+            <textarea
+              onChange={(event) => setIdPgpKey(event.target.value)}
+              placeholder="Paste an armored public key later when encryption is ready."
+              value={idPgpKey}
+            />
           </label>
 
           <FeeRateControl
@@ -13349,8 +19103,16 @@ function IdsWorkspace({
             }
           />
 
-          <div className={registrationBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
-            {registrationBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
+          <div
+            className={
+              registrationBytes > MAX_DATA_CARRIER_BYTES
+                ? "counter bad"
+                : "counter"
+            }
+          >
+            {registrationBytes.toLocaleString()} /{" "}
+            {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+            bytes
           </div>
 
           <button className="primary" disabled={!canRegister} type="submit">
@@ -13368,19 +19130,31 @@ function IdsWorkspace({
             </div>
             <div>
               <h3>Manage ID</h3>
-              <p>Current owners can update routing or transfer the asset. Each registry mutation pays {ID_MUTATION_PRICE_SATS.toLocaleString()} sats.</p>
+              <p>
+                Current owners can update routing or transfer the asset. Each
+                registry mutation pays {ID_MUTATION_PRICE_SATS.toLocaleString()}{" "}
+                sats.
+              </p>
             </div>
           </div>
 
           {ownerControlledIds.length === 0 ? (
-            <p className="field-note">Connect the current owner wallet to manage confirmed IDs.</p>
+            <p className="field-note">
+              Connect the current owner wallet to manage confirmed IDs.
+            </p>
           ) : (
             <>
               <label>
                 ID
-                <select value={managedId?.id ?? ""} onChange={(event) => setManagedIdName(event.target.value)}>
+                <select
+                  value={managedId?.id ?? ""}
+                  onChange={(event) => setManagedIdName(event.target.value)}
+                >
                   {ownerControlledIds.map((record) => (
-                    <option key={`${record.network}-${record.id}`} value={record.id}>
+                    <option
+                      key={`${record.network}-${record.id}`}
+                      value={record.id}
+                    >
                       {record.id}@proofofwork.me
                     </option>
                   ))}
@@ -13409,13 +19183,42 @@ function IdsWorkspace({
               <form className="id-action-form" onSubmit={submitUpdate}>
                 <label>
                   New receive address or ID
-                  <input autoComplete="off" onChange={(event) => setIdUpdateReceiveAddress(event.target.value)} spellCheck={false} value={idUpdateReceiveAddress} />
+                  <input
+                    autoComplete="off"
+                    onChange={(event) =>
+                      setIdUpdateReceiveAddress(event.target.value)
+                    }
+                    spellCheck={false}
+                    value={idUpdateReceiveAddress}
+                  />
                 </label>
-                {receiverUpdateNote ? <p className={receiverUpdateResolution.error ? "field-note bad" : "field-note good"}>{receiverUpdateNote}</p> : null}
-                <div className={idReceiverUpdateBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
-                  {idReceiverUpdateBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
+                {receiverUpdateNote ? (
+                  <p
+                    className={
+                      receiverUpdateResolution.error
+                        ? "field-note bad"
+                        : "field-note good"
+                    }
+                  >
+                    {receiverUpdateNote}
+                  </p>
+                ) : null}
+                <div
+                  className={
+                    idReceiverUpdateBytes > MAX_DATA_CARRIER_BYTES
+                      ? "counter bad"
+                      : "counter"
+                  }
+                >
+                  {idReceiverUpdateBytes.toLocaleString()} /{" "}
+                  {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN
+                  data-carrier bytes
                 </div>
-                <button className="secondary" disabled={!canUpdate} type="submit">
+                <button
+                  className="secondary"
+                  disabled={!canUpdate}
+                  type="submit"
+                >
                   <span className="button-content">
                     <RefreshCw size={15} />
                     <span>Update Receiver</span>
@@ -13426,24 +19229,65 @@ function IdsWorkspace({
               <form className="id-action-form" onSubmit={submitTransfer}>
                 <label>
                   New owner address or ID
-                  <input autoComplete="off" onChange={(event) => setIdTransferOwnerAddress(event.target.value)} spellCheck={false} value={idTransferOwnerAddress} />
+                  <input
+                    autoComplete="off"
+                    onChange={(event) =>
+                      setIdTransferOwnerAddress(event.target.value)
+                    }
+                    spellCheck={false}
+                    value={idTransferOwnerAddress}
+                  />
                 </label>
-                {transferTargetNote ? <p className={transferTargetResolution.error ? "field-note bad" : "field-note good"}>{transferTargetNote}</p> : null}
+                {transferTargetNote ? (
+                  <p
+                    className={
+                      transferTargetResolution.error
+                        ? "field-note bad"
+                        : "field-note good"
+                    }
+                  >
+                    {transferTargetNote}
+                  </p>
+                ) : null}
                 <label>
                   New receive address or ID optional
                   <input
                     autoComplete="off"
-                    onChange={(event) => setIdTransferReceiveAddress(event.target.value)}
+                    onChange={(event) =>
+                      setIdTransferReceiveAddress(event.target.value)
+                    }
                     placeholder="Defaults to new owner"
                     spellCheck={false}
                     value={idTransferReceiveAddress}
                   />
                 </label>
-                {transferReceiveNote ? <p className={transferReceiveResolution?.error ? "field-note bad" : "field-note good"}>{transferReceiveNote}</p> : null}
-                <div className={idTransferBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
-                  {idTransferBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
+                {transferReceiveNote ? (
+                  <p
+                    className={
+                      transferReceiveResolution?.error
+                        ? "field-note bad"
+                        : "field-note good"
+                    }
+                  >
+                    {transferReceiveNote}
+                  </p>
+                ) : null}
+                <div
+                  className={
+                    idTransferBytes > MAX_DATA_CARRIER_BYTES
+                      ? "counter bad"
+                      : "counter"
+                  }
+                >
+                  {idTransferBytes.toLocaleString()} /{" "}
+                  {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN
+                  data-carrier bytes
                 </div>
-                <button className="primary" disabled={!canTransfer} type="submit">
+                <button
+                  className="primary"
+                  disabled={!canTransfer}
+                  type="submit"
+                >
                   <span className="button-content">
                     <Send size={15} />
                     <span>Transfer ID</span>
@@ -13462,17 +19306,33 @@ function IdsWorkspace({
               </div>
               <div>
                 <h3>Verify on X</h3>
-                <p>Post a public proof for {lastRegisteredId.id}@proofofwork.me with the registry transaction link.</p>
+                <p>
+                  Post a public proof for {lastRegisteredId.id}@proofofwork.me
+                  with the registry transaction link.
+                </p>
               </div>
             </div>
             <div className="id-record-actions">
-              <a className="primary link-button" href={xVerificationUrl(lastRegisteredId)} rel="noreferrer" target="_blank">
+              <a
+                className="primary link-button"
+                href={xVerificationUrl(lastRegisteredId)}
+                rel="noreferrer"
+                target="_blank"
+              >
                 <span className="button-content">
                   <ArrowUpRight size={16} />
                   <span>Verify on X</span>
                 </span>
               </a>
-              <a className="secondary link-button" href={mempoolTxUrl(lastRegisteredId.txid, lastRegisteredId.network)} rel="noreferrer" target="_blank">
+              <a
+                className="secondary link-button"
+                href={mempoolTxUrl(
+                  lastRegisteredId.txid,
+                  lastRegisteredId.network,
+                )}
+                rel="noreferrer"
+                target="_blank"
+              >
                 <span className="button-content">
                   <ArrowUpRight size={16} />
                   <span>View TX</span>
@@ -13509,13 +19369,20 @@ function IdsWorkspace({
             </div>
             <div>
               <h3>Pending IDs</h3>
-              <p>Incoming and outgoing ID transfers appear here until they confirm.</p>
+              <p>
+                Incoming and outgoing ID transfers appear here until they
+                confirm.
+              </p>
             </div>
           </div>
           <PendingIdEventList
             address={address}
             events={walletPendingEvents}
-            empty={address ? "No in-flight ID transfers for this wallet." : "Connect a wallet to see pending ID transfers."}
+            empty={
+              address
+                ? "No in-flight ID transfers for this wallet."
+                : "Connect a wallet to see pending ID transfers."
+            }
           />
         </section>
 
@@ -13526,13 +19393,20 @@ function IdsWorkspace({
             </div>
             <div>
               <h3>Registry</h3>
-              <p>Confirmed records are final. Pending records can still change before confirmation.</p>
+              <p>
+                Confirmed records are final. Pending records can still change
+                before confirmation.
+              </p>
             </div>
           </div>
           <IdRecordList
             records={registryRecords}
             contacts={contacts}
-            empty={registryAddress ? "No registry records found yet." : "Registry address is not configured for this network."}
+            empty={
+              registryAddress
+                ? "No registry records found yet."
+                : "Registry address is not configured for this network."
+            }
             initialLimit={24}
             onAddContact={onAddContact}
             searchPlaceholder="Search registry IDs"
@@ -13563,8 +19437,12 @@ function MarketplaceListingList({
   setFeeRate: (value: number) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const filteredListings = searchQuery ? listings.filter((listing) => idListingMatchesSearch(listing, searchQuery)) : listings;
-  const sellerListings = address ? listings.filter((listing) => listing.sellerAddress === address) : [];
+  const filteredListings = searchQuery
+    ? listings.filter((listing) => idListingMatchesSearch(listing, searchQuery))
+    : listings;
+  const sellerListings = address
+    ? listings.filter((listing) => listing.sellerAddress === address)
+    : [];
   const pendingSealByListingId = new Map(
     pendingEvents
       .filter((event) => event.kind === "seal" && event.listingId)
@@ -13586,7 +19464,11 @@ function MarketplaceListingList({
       return pendingSeal ? "Seal pending" : "Ticket needs seal";
     }
 
-    return listing.listingVersion === "list4" ? "Hardened" : listing.listingVersion === "list3" ? "Anchored" : "Legacy";
+    return listing.listingVersion === "list4"
+      ? "Hardened"
+      : listing.listingVersion === "list3"
+        ? "Anchored"
+        : "Legacy";
   };
 
   return (
@@ -13597,7 +19479,10 @@ function MarketplaceListingList({
         </div>
         <div>
           <h3>Active Listings</h3>
-          <p>On-chain listings are canceled by delisting, expiry, or any ownership transfer.</p>
+          <p>
+            On-chain listings are canceled by delisting, expiry, or any
+            ownership transfer.
+          </p>
         </div>
       </div>
 
@@ -13612,7 +19497,11 @@ function MarketplaceListingList({
       {sellerListings.length > 0 ? (
         <div className="listing-fee-control">
           <div>
-            <strong>{hasUnsealedSellerTicket ? "Seal fee rate" : "Seller action fee rate"}</strong>
+            <strong>
+              {hasUnsealedSellerTicket
+                ? "Seal fee rate"
+                : "Seller action fee rate"}
+            </strong>
             <span>Used for sealing and delisting marketplace listings.</span>
           </div>
           <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
@@ -13634,7 +19523,9 @@ function MarketplaceListingList({
                 <div>
                   <strong>{listing.id}@proofofwork.me</strong>
                   <span>
-                    {listing.priceSats.toLocaleString()} sats · {listingStatus(listing)} · Listed {formatDate(listing.createdAt)}
+                    {listing.priceSats.toLocaleString()} sats ·{" "}
+                    {listingStatus(listing)} · Listed{" "}
+                    {formatDate(listing.createdAt)}
                   </span>
                 </div>
                 <dl>
@@ -13644,7 +19535,11 @@ function MarketplaceListingList({
                   </div>
                   <div>
                     <dt>Buyer</dt>
-                    <dd>{listing.buyerAddress ? shortAddress(listing.buyerAddress) : "Any"}</dd>
+                    <dd>
+                      {listing.buyerAddress
+                        ? shortAddress(listing.buyerAddress)
+                        : "Any"}
+                    </dd>
                   </div>
                   <div>
                     <dt>Listing</dt>
@@ -13652,23 +19547,46 @@ function MarketplaceListingList({
                   </div>
                 </dl>
                 <div className="id-record-actions">
-                  <button className="primary small" disabled={!listingCanBePurchased(listing)} onClick={() => onUse(listing)} type="button">
+                  <button
+                    className="primary small"
+                    disabled={!listingCanBePurchased(listing)}
+                    onClick={() => onUse(listing)}
+                    type="button"
+                  >
                     <span className="button-content">
                       <Send size={15} />
-                      <span>{listingCanBePurchased(listing) ? "Select Listing" : pendingSeal ? "Seal Pending" : "Not Sealed"}</span>
+                      <span>
+                        {listingCanBePurchased(listing)
+                          ? "Select Listing"
+                          : pendingSeal
+                            ? "Seal Pending"
+                            : "Not Sealed"}
+                      </span>
                     </span>
                   </button>
                   {address && listing.sellerAddress === address ? (
                     <>
-                      {listing.listingVersion === "list5" && !saleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization) && !pendingSeal ? (
-                        <button className="secondary small" onClick={() => onSeal(listing)} type="button">
+                      {listing.listingVersion === "list5" &&
+                      !saleAuthorizationUsesSaleTicketAnchor(
+                        listing.saleAuthorization,
+                      ) &&
+                      !pendingSeal ? (
+                        <button
+                          className="secondary small"
+                          onClick={() => onSeal(listing)}
+                          type="button"
+                        >
                           <span className="button-content">
                             <Send size={15} />
                             <span>Seal</span>
                           </span>
                         </button>
                       ) : null}
-                      <button className="secondary small" onClick={() => onDelist(listing)} type="button">
+                      <button
+                        className="secondary small"
+                        onClick={() => onDelist(listing)}
+                        type="button"
+                      >
                         <span className="button-content">
                           <Trash2 size={15} />
                           <span>Delist</span>
@@ -13676,14 +19594,24 @@ function MarketplaceListingList({
                       </button>
                     </>
                   ) : null}
-                  <a className="secondary small link-button" href={mempoolTxUrl(listing.txid, listing.network)} rel="noreferrer" target="_blank">
+                  <a
+                    className="secondary small link-button"
+                    href={mempoolTxUrl(listing.txid, listing.network)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
                     <span className="button-content">
                       <ArrowUpRight size={15} />
                       <span>View TX</span>
                     </span>
                   </a>
                   {sealTxid ? (
-                    <a className="secondary small link-button" href={mempoolTxUrl(sealTxid, listing.network)} rel="noreferrer" target="_blank">
+                    <a
+                      className="secondary small link-button"
+                      href={mempoolTxUrl(sealTxid, listing.network)}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
                       <span className="button-content">
                         <ArrowUpRight size={15} />
                         <span>View Seal TX</span>
@@ -13726,7 +19654,12 @@ function FeeRateControl({
       </div>
       <div className="fee-presets" aria-label="Fee presets">
         {[0.1, 0.25, 0.5, 1].map((preset) => (
-          <button aria-pressed={feeRate === preset} key={preset} onClick={() => setFeeRate(preset)} type="button">
+          <button
+            aria-pressed={feeRate === preset}
+            key={preset}
+            onClick={() => setFeeRate(preset)}
+            type="button"
+          >
             {preset}
           </button>
         ))}
@@ -13791,7 +19724,9 @@ function IdMarketplaceCard({
       return undefined;
     }
   }, [idSaleAuthorization, network]);
-  const saleIsReady = parsedSale ? saleAuthorizationCanBroadcast(parsedSale) : false;
+  const saleIsReady = parsedSale
+    ? saleAuthorizationCanBroadcast(parsedSale)
+    : false;
 
   return (
     <section className="id-card id-marketplace-card">
@@ -13801,7 +19736,11 @@ function IdMarketplaceCard({
         </div>
         <div>
           <h3>Marketplace Transfer</h3>
-          <p>Listings create a sale-ticket UTXO. Buyers settle by spending that ticket and paying the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat registry transfer.</p>
+          <p>
+            Listings create a sale-ticket UTXO. Buyers settle by spending that
+            ticket and paying the {ID_MUTATION_PRICE_SATS.toLocaleString()} sat
+            registry transfer.
+          </p>
         </div>
       </div>
 
@@ -13817,7 +19756,9 @@ function IdMarketplaceCard({
             Seller price sats
             <input
               min={0}
-              onChange={(event) => setIdSalePriceSats(Number(event.target.value))}
+              onChange={(event) =>
+                setIdSalePriceSats(Number(event.target.value))
+              }
               step={1}
               type="number"
               value={idSalePriceSats}
@@ -13845,7 +19786,12 @@ function IdMarketplaceCard({
           </label>
           <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           <div className="id-record-actions">
-            <button className="primary" disabled={!canCreateSaleAuthorization} onClick={publishListing} type="button">
+            <button
+              className="primary"
+              disabled={!canCreateSaleAuthorization}
+              onClick={publishListing}
+              type="button"
+            >
               <span className="button-content">
                 <Send size={15} />
                 <span>{busy ? "Publishing" : "Publish On-Chain"}</span>
@@ -13855,8 +19801,16 @@ function IdMarketplaceCard({
         </div>
 
         <form className="id-action-form" onSubmit={submitPurchase}>
-          <h4>{parsedSale ? `Buy ${parsedSale.id}@proofofwork.me` : "Select an on-chain listing"}</h4>
-          <p className={parsedSale && saleIsReady ? "field-note good" : "field-note"}>
+          <h4>
+            {parsedSale
+              ? `Buy ${parsedSale.id}@proofofwork.me`
+              : "Select an on-chain listing"}
+          </h4>
+          <p
+            className={
+              parsedSale && saleIsReady ? "field-note good" : "field-note"
+            }
+          >
             {parsedSale && saleIsReady
               ? `Selected listing price: ${parsedSale.priceSats.toLocaleString()} sats.`
               : "Choose an active listing below. The purchase form fills from that on-chain listing."}
@@ -13864,21 +19818,38 @@ function IdMarketplaceCard({
           <div className="compose-grid">
             <label>
               New owner
-              <input autoComplete="off" onChange={(event) => setIdPurchaseOwnerAddress(event.target.value)} spellCheck={false} value={idPurchaseOwnerAddress} />
+              <input
+                autoComplete="off"
+                onChange={(event) =>
+                  setIdPurchaseOwnerAddress(event.target.value)
+                }
+                spellCheck={false}
+                value={idPurchaseOwnerAddress}
+              />
             </label>
             <label>
               New receive optional
               <input
                 autoComplete="off"
-                onChange={(event) => setIdPurchaseReceiveAddress(event.target.value)}
+                onChange={(event) =>
+                  setIdPurchaseReceiveAddress(event.target.value)
+                }
                 placeholder="Defaults to new owner"
                 spellCheck={false}
                 value={idPurchaseReceiveAddress}
               />
             </label>
           </div>
-          <div className={idPurchaseBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
-            {idPurchaseBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
+          <div
+            className={
+              idPurchaseBytes > MAX_DATA_CARRIER_BYTES
+                ? "counter bad"
+                : "counter"
+            }
+          >
+            {idPurchaseBytes.toLocaleString()} /{" "}
+            {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+            bytes
           </div>
           <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
           <div className="id-record-actions">
@@ -13905,7 +19876,9 @@ function PendingIdEventList({
   events: PowIdPendingEvent[];
 }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const filteredEvents = searchQuery ? events.filter((event) => pendingIdEventMatchesSearch(event, searchQuery)) : events;
+  const filteredEvents = searchQuery
+    ? events.filter((event) => pendingIdEventMatchesSearch(event, searchQuery))
+    : events;
 
   if (events.length === 0) {
     return <p className="field-note">{empty}</p>;
@@ -13925,38 +19898,67 @@ function PendingIdEventList({
       ) : (
         <div className="id-record-list">
           {filteredEvents.map((event) => (
-        <article className="id-record" key={`${event.network}-${event.txid}-${event.kind}`}>
-          <div>
-            <strong>{event.id ? `${event.id}@proofofwork.me` : "Registry event"}</strong>
-            <span>{pendingIdEventLabel(event, address)} · {event.amountSats.toLocaleString()} sats</span>
-          </div>
-          <dl>
-            <div>
-              <dt>Current Owner</dt>
-              <dd>{event.currentOwnerAddress ? shortAddress(event.currentOwnerAddress) : "Unknown"}</dd>
-            </div>
-            <div>
-              <dt>New Owner</dt>
-              <dd>{event.ownerAddress ? shortAddress(event.ownerAddress) : event.kind === "update" ? "No change" : "Unknown"}</dd>
-            </div>
-            <div>
-              <dt>Receives</dt>
-              <dd>{event.receiveAddress ? shortAddress(event.receiveAddress) : event.currentReceiveAddress ? shortAddress(event.currentReceiveAddress) : "Unknown"}</dd>
-            </div>
-            <div>
-              <dt>TX</dt>
-              <dd>{shortAddress(event.txid)}</dd>
-            </div>
-          </dl>
-          <div className="id-record-actions">
-            <a className="secondary small link-button" href={mempoolTxUrl(event.txid, event.network)} rel="noreferrer" target="_blank">
-              <span className="button-content">
-                <ArrowUpRight size={15} />
-                <span>View TX</span>
-              </span>
-            </a>
-          </div>
-        </article>
+            <article
+              className="id-record"
+              key={`${event.network}-${event.txid}-${event.kind}`}
+            >
+              <div>
+                <strong>
+                  {event.id ? `${event.id}@proofofwork.me` : "Registry event"}
+                </strong>
+                <span>
+                  {pendingIdEventLabel(event, address)} ·{" "}
+                  {event.amountSats.toLocaleString()} sats
+                </span>
+              </div>
+              <dl>
+                <div>
+                  <dt>Current Owner</dt>
+                  <dd>
+                    {event.currentOwnerAddress
+                      ? shortAddress(event.currentOwnerAddress)
+                      : "Unknown"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>New Owner</dt>
+                  <dd>
+                    {event.ownerAddress
+                      ? shortAddress(event.ownerAddress)
+                      : event.kind === "update"
+                        ? "No change"
+                        : "Unknown"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Receives</dt>
+                  <dd>
+                    {event.receiveAddress
+                      ? shortAddress(event.receiveAddress)
+                      : event.currentReceiveAddress
+                        ? shortAddress(event.currentReceiveAddress)
+                        : "Unknown"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>TX</dt>
+                  <dd>{shortAddress(event.txid)}</dd>
+                </div>
+              </dl>
+              <div className="id-record-actions">
+                <a
+                  className="secondary small link-button"
+                  href={mempoolTxUrl(event.txid, event.network)}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <span className="button-content">
+                    <ArrowUpRight size={15} />
+                    <span>View TX</span>
+                  </span>
+                </a>
+              </div>
+            </article>
           ))}
         </div>
       )}
@@ -13990,7 +19992,12 @@ function IdSearchControl({
           value={value}
         />
         {value ? (
-          <button aria-label="Clear search" className="icon-button id-search-clear" onClick={() => setValue("")} type="button">
+          <button
+            aria-label="Clear search"
+            className="icon-button id-search-clear"
+            onClick={() => setValue("")}
+            type="button"
+          >
             <X size={14} />
           </button>
         ) : null}
@@ -14023,9 +20030,17 @@ function IdRecordList({
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const filteredRecords = searchQuery ? records.filter((record) => idRecordMatchesSearch(record, searchQuery)) : records;
-  const visibleRecords = initialLimit && !expanded && !searchQuery ? filteredRecords.slice(0, initialLimit) : filteredRecords;
-  const hiddenCount = Math.max(0, filteredRecords.length - visibleRecords.length);
+  const filteredRecords = searchQuery
+    ? records.filter((record) => idRecordMatchesSearch(record, searchQuery))
+    : records;
+  const visibleRecords =
+    initialLimit && !expanded && !searchQuery
+      ? filteredRecords.slice(0, initialLimit)
+      : filteredRecords;
+  const hiddenCount = Math.max(
+    0,
+    filteredRecords.length - visibleRecords.length,
+  );
 
   if (records.length === 0) {
     return <p className="field-note">{empty}</p>;
@@ -14045,69 +20060,103 @@ function IdRecordList({
       ) : (
         <div className="id-record-list">
           {visibleRecords.map((record) => {
-        const saved = contacts.some((contact) => contactKey(contact) === registryContactKey(record));
+            const saved = contacts.some(
+              (contact) => contactKey(contact) === registryContactKey(record),
+            );
 
-        return (
-          <article className="id-record" key={`${record.network}-${record.txid}-${record.id}`}>
-            <div>
-              <strong>{record.id}@proofofwork.me</strong>
-              <span>{record.confirmed ? "Confirmed" : "Pending"} · {record.amountSats.toLocaleString()} sats</span>
-            </div>
-            <dl>
-              <div>
-                <dt>Owner</dt>
-                <dd>{shortAddress(record.ownerAddress)}</dd>
-              </div>
-              <div>
-                <dt>Receives</dt>
-                <dd>{shortAddress(record.receiveAddress)}</dd>
-              </div>
-              <div>
-                <dt>PGP</dt>
-                <dd>{record.pgpKey ? "Registered" : "None"}</dd>
-              </div>
-              <div>
-                <dt>TX</dt>
-                <dd>{shortAddress(record.txid)}</dd>
-              </div>
-            </dl>
-            <div className="id-record-actions">
-              {allowVerification ? (
-                <a className="secondary small link-button" href={xVerificationUrl(record)} rel="noreferrer" target="_blank">
-                  <span className="button-content">
-                    <ArrowUpRight size={15} />
-                    <span>Verify on X</span>
+            return (
+              <article
+                className="id-record"
+                key={`${record.network}-${record.txid}-${record.id}`}
+              >
+                <div>
+                  <strong>{record.id}@proofofwork.me</strong>
+                  <span>
+                    {record.confirmed ? "Confirmed" : "Pending"} ·{" "}
+                    {record.amountSats.toLocaleString()} sats
                   </span>
-                </a>
-              ) : null}
-              {onAddContact && record.confirmed ? (
-                <button className="secondary small" disabled={saved} onClick={() => onAddContact(record)} type="button">
-                  <span className="button-content">
-                    <UserPlus size={15} />
-                    <span>{saved ? "Saved" : "Add Contact"}</span>
-                  </span>
-                </button>
-              ) : null}
-              <a className="secondary small link-button" href={mempoolTxUrl(record.txid, record.network)} rel="noreferrer" target="_blank">
-                <span className="button-content">
-                  <ArrowUpRight size={15} />
-                  <span>View TX</span>
-                </span>
-              </a>
-            </div>
-          </article>
-        );
+                </div>
+                <dl>
+                  <div>
+                    <dt>Owner</dt>
+                    <dd>{shortAddress(record.ownerAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>Receives</dt>
+                    <dd>{shortAddress(record.receiveAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>PGP</dt>
+                    <dd>{record.pgpKey ? "Registered" : "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>TX</dt>
+                    <dd>{shortAddress(record.txid)}</dd>
+                  </div>
+                </dl>
+                <div className="id-record-actions">
+                  {allowVerification ? (
+                    <a
+                      className="secondary small link-button"
+                      href={xVerificationUrl(record)}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <span className="button-content">
+                        <ArrowUpRight size={15} />
+                        <span>Verify on X</span>
+                      </span>
+                    </a>
+                  ) : null}
+                  {onAddContact && record.confirmed ? (
+                    <button
+                      className="secondary small"
+                      disabled={saved}
+                      onClick={() => onAddContact(record)}
+                      type="button"
+                    >
+                      <span className="button-content">
+                        <UserPlus size={15} />
+                        <span>{saved ? "Saved" : "Add Contact"}</span>
+                      </span>
+                    </button>
+                  ) : null}
+                  <a
+                    className="secondary small link-button"
+                    href={mempoolTxUrl(record.txid, record.network)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span className="button-content">
+                      <ArrowUpRight size={15} />
+                      <span>View TX</span>
+                    </span>
+                  </a>
+                </div>
+              </article>
+            );
           })}
         </div>
       )}
       {hiddenCount > 0 ? (
-        <button className="secondary registry-expand-button" onClick={() => setExpanded(true)} type="button">
+        <button
+          className="secondary registry-expand-button"
+          onClick={() => setExpanded(true)}
+          type="button"
+        >
           <span className="button-content">
             <span>Show all IDs ({hiddenCount.toLocaleString()} more)</span>
           </span>
         </button>
-      ) : expanded && initialLimit && !searchQuery && records.length > initialLimit ? (
-        <button className="secondary registry-expand-button" onClick={() => setExpanded(false)} type="button">
+      ) : expanded &&
+        initialLimit &&
+        !searchQuery &&
+        records.length > initialLimit ? (
+        <button
+          className="secondary registry-expand-button"
+          onClick={() => setExpanded(false)}
+          type="button"
+        >
           <span className="button-content">
             <span>Show fewer IDs</span>
           </span>
@@ -14138,19 +20187,21 @@ function MessageList({
 }) {
   if (messages.length === 0) {
     const emptyIcon =
-      activeFolder === "inbox"
-        ? <Inbox size={26} />
-        : activeFolder === "incoming"
-          ? <Mail size={26} />
-          : activeFolder === "outbox"
-            ? <Clock size={26} />
-            : activeFolder === "favorites"
-              ? <Star size={26} />
-            : activeFolder === "archive"
-              ? <Archive size={26} />
-              : activeFolder === "custom"
-                ? <FolderPlus size={26} />
-              : <Send size={26} />;
+      activeFolder === "inbox" ? (
+        <Inbox size={26} />
+      ) : activeFolder === "incoming" ? (
+        <Mail size={26} />
+      ) : activeFolder === "outbox" ? (
+        <Clock size={26} />
+      ) : activeFolder === "favorites" ? (
+        <Star size={26} />
+      ) : activeFolder === "archive" ? (
+        <Archive size={26} />
+      ) : activeFolder === "custom" ? (
+        <FolderPlus size={26} />
+      ) : (
+        <Send size={26} />
+      );
     const emptyTitle =
       activeFolder === "inbox"
         ? "No Inbox messages"
@@ -14164,7 +20215,7 @@ function MessageList({
                 ? "No archived messages"
                 : activeFolder === "custom"
                   ? "No messages here yet"
-                : "No Sent messages";
+                  : "No Sent messages";
     const emptyCopy =
       activeFolder === "inbox"
         ? "Confirmed received mail will land here after the next scan."
@@ -14178,7 +20229,7 @@ function MessageList({
                 ? "Archived mail will appear here."
                 : activeFolder === "custom"
                   ? "Open confirmed mail and add it to this local folder."
-                : "Confirmed sent mail appears here after a scan.";
+                  : "Confirmed sent mail appears here after a scan.";
 
     return (
       <div className="empty-state empty-list">
@@ -14188,7 +20239,11 @@ function MessageList({
         <h3>{emptyTitle}</h3>
         <p>{emptyCopy}</p>
         {activeFolder === "sent" && inboxCount > 0 ? (
-          <button className="secondary small" onClick={onOpenInbox} type="button">
+          <button
+            className="secondary small"
+            onClick={onOpenInbox}
+            type="button"
+          >
             Open Inbox ({inboxCount})
           </button>
         ) : null}
@@ -14201,7 +20256,10 @@ function MessageList({
       {messages.map((message) => {
         const key = mailKey(message);
         const peer = peerAddress(message);
-        const explorerNetwork = explorerNetworkFor(message.network, activeNetwork);
+        const explorerNetwork = explorerNetworkFor(
+          message.network,
+          activeNetwork,
+        );
 
         return (
           <button
@@ -14219,7 +20277,9 @@ function MessageList({
             <div className="message-preview">{mailPreview(message)}</div>
             <div className="message-meta">
               <span>{message.amountSats.toLocaleString()} sats</span>
-              {message.folder === "sent" ? <span>{deliveryLabel(sentDeliveryStatus(message))}</span> : null}
+              {message.folder === "sent" ? (
+                <span>{deliveryLabel(sentDeliveryStatus(message))}</span>
+              ) : null}
               {message.folder === "incoming" ? <span>Pending</span> : null}
               {favoriteKeys.has(key) ? <span>Favorite</span> : null}
               {message.attachment ? <span>Attachment</span> : null}
@@ -14262,13 +20322,19 @@ function DraftList({
   return (
     <div className="message-list">
       <article className="message-row draft-row" data-current="true">
-        <button className="draft-open" onClick={() => onOpen(draft)} type="button">
+        <button
+          className="draft-open"
+          onClick={() => onOpen(draft)}
+          type="button"
+        >
           <div className="message-row-top">
             <strong>{recipientInputSummary(draft.recipient)}</strong>
             <span>{formatDate(draft.updatedAt)}</span>
           </div>
           <div className="message-subject">{messageSubject(draft)}</div>
-          <div className="message-preview">{mailPreview(draft) || "Unsent ProofOfWork.Me mail"}</div>
+          <div className="message-preview">
+            {mailPreview(draft) || "Unsent ProofOfWork.Me mail"}
+          </div>
           <div className="message-meta">
             <span>{draft.amountSats.toLocaleString()} sats</span>
             {draft.attachment ? <span>Attachment</span> : null}
@@ -14321,10 +20387,16 @@ function DesktopWorkspace({
   onSelect: (message: MailMessage) => void;
 }) {
   const fileMessages = sortMessages(
-    fileSurfaceMessages(messages).filter((message) => fileFilter === "all" || attachmentKind(message.attachment) === fileFilter),
+    fileSurfaceMessages(messages).filter(
+      (message) =>
+        fileFilter === "all" ||
+        attachmentKind(message.attachment) === fileFilter,
+    ),
     sortMode,
   ).filter(hasAttachment);
-  const selectedFile = fileMessages.find((message) => mailKey(message) === selectedKey) ?? fileMessages[0];
+  const selectedFile =
+    fileMessages.find((message) => mailKey(message) === selectedKey) ??
+    fileMessages[0];
 
   if (!profile) {
     return (
@@ -14336,7 +20408,10 @@ function DesktopWorkspace({
             </div>
             <span>ProofOfWork Desktop</span>
             <h2>Open a public Bitcoin desktop.</h2>
-            <form className="desktop-search desktop-search-large" onSubmit={onSearch}>
+            <form
+              className="desktop-search desktop-search-large"
+              onSubmit={onSearch}
+            >
               <Search size={18} aria-hidden="true" />
               <input
                 autoComplete="off"
@@ -14345,7 +20420,11 @@ function DesktopWorkspace({
                 spellCheck={false}
                 value={desktopQuery}
               />
-              <button className="primary" disabled={busy || !desktopQuery.trim()} type="submit">
+              <button
+                className="primary"
+                disabled={busy || !desktopQuery.trim()}
+                type="submit"
+              >
                 <span className="button-content">
                   <Monitor size={16} />
                   <span>{busy ? "Opening" : "Open"}</span>
@@ -14369,7 +20448,9 @@ function DesktopWorkspace({
         <div>
           <h2>{profile.label} Desktop</h2>
           <span>
-            {fileMessages.length.toLocaleString()} public file{fileMessages.length === 1 ? "" : "s"} · {shortAddress(profile.address)}
+            {fileMessages.length.toLocaleString()} public file
+            {fileMessages.length === 1 ? "" : "s"} ·{" "}
+            {shortAddress(profile.address)}
           </span>
         </div>
         <form className="desktop-search" onSubmit={onSearch}>
@@ -14381,7 +20462,11 @@ function DesktopWorkspace({
             spellCheck={false}
             value={desktopQuery}
           />
-          <button className="secondary small" disabled={busy || !desktopQuery.trim()} type="submit">
+          <button
+            className="secondary small"
+            disabled={busy || !desktopQuery.trim()}
+            type="submit"
+          >
             <span className="button-content">
               <Search size={15} />
               <span>Search</span>
@@ -14390,7 +20475,12 @@ function DesktopWorkspace({
         </form>
         <label className="sort-control">
           Type
-          <select value={fileFilter} onChange={(event) => setFileFilter(event.target.value as FileFilter)}>
+          <select
+            value={fileFilter}
+            onChange={(event) =>
+              setFileFilter(event.target.value as FileFilter)
+            }
+          >
             <option value="all">All files</option>
             <option value="image">Images</option>
             <option value="pdf">PDFs</option>
@@ -14400,7 +20490,10 @@ function DesktopWorkspace({
         </label>
         <label className="sort-control">
           Sort
-          <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+          <select
+            value={sortMode}
+            onChange={(event) => setSortMode(event.target.value as SortMode)}
+          >
             <option value="value">Highest sats</option>
             <option value="newest">Newest</option>
             <option value="oldest">Oldest</option>
@@ -14410,13 +20503,23 @@ function DesktopWorkspace({
             <option value="thread">Thread</option>
           </select>
         </label>
-        <button className="secondary small" disabled={busy} onClick={onRefresh} type="button">
+        <button
+          className="secondary small"
+          disabled={busy}
+          onClick={onRefresh}
+          type="button"
+        >
           <span className="button-content">
             <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
             <span>{busy ? "Refreshing" : "Refresh"}</span>
           </span>
         </button>
-        <button className="secondary small" disabled={busy} onClick={onClear} type="button">
+        <button
+          className="secondary small"
+          disabled={busy}
+          onClick={onClear}
+          type="button"
+        >
           <span className="button-content">
             <X size={15} />
             <span>Clear</span>
@@ -14430,14 +20533,24 @@ function DesktopWorkspace({
             <Monitor size={26} />
           </div>
           <h3>No public files</h3>
-          <p>{profile.label} has no confirmed ProofOfWork.Me attachments on this network.</p>
+          <p>
+            {profile.label} has no confirmed ProofOfWork.Me attachments on this
+            network.
+          </p>
         </div>
       ) : (
         <div className="files-browser desktop-browser">
-          <div className="files-desktop" aria-label={`${profile.label} public files`}>
+          <div
+            className="files-desktop"
+            aria-label={`${profile.label} public files`}
+          >
             {fileMessages.map((message) => (
               <FileTile
-                active={selectedFile ? mailKey(selectedFile) === mailKey(message) : false}
+                active={
+                  selectedFile
+                    ? mailKey(selectedFile) === mailKey(message)
+                    : false
+                }
                 activeNetwork={activeNetwork}
                 key={mailKey(message)}
                 message={message}
@@ -14507,9 +20620,22 @@ function FilesWorkspace({
           <div className="empty-icon" aria-hidden="true">
             <Paperclip size={26} />
           </div>
-          <h3>{connected ? (fileFilter === "all" ? "No files" : `No ${fileFilterLabel(fileFilter).toLowerCase()}`) : "Connect to view files"}</h3>
-          <p>Attachments from Inbox and Sent will appear here as a desktop-style file space.</p>
-          <button className="secondary small" onClick={onOpenInbox} type="button">
+          <h3>
+            {connected
+              ? fileFilter === "all"
+                ? "No files"
+                : `No ${fileFilterLabel(fileFilter).toLowerCase()}`
+              : "Connect to view files"}
+          </h3>
+          <p>
+            Attachments from Inbox and Sent will appear here as a desktop-style
+            file space.
+          </p>
+          <button
+            className="secondary small"
+            onClick={onOpenInbox}
+            type="button"
+          >
             Open Inbox
           </button>
         </div>
@@ -14580,12 +20706,16 @@ function FilesToolbar({
       <div>
         <h2>Files</h2>
         <span>
-          {fileCount.toLocaleString()} attachment{fileCount === 1 ? "" : "s"} across mail
+          {fileCount.toLocaleString()} attachment{fileCount === 1 ? "" : "s"}{" "}
+          across mail
         </span>
       </div>
       <label className="sort-control">
         Type
-        <select value={fileFilter} onChange={(event) => setFileFilter(event.target.value as FileFilter)}>
+        <select
+          value={fileFilter}
+          onChange={(event) => setFileFilter(event.target.value as FileFilter)}
+        >
           <option value="all">All files</option>
           <option value="image">Images</option>
           <option value="pdf">PDFs</option>
@@ -14595,7 +20725,10 @@ function FilesToolbar({
       </label>
       <label className="sort-control">
         Sort
-        <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+        <select
+          value={sortMode}
+          onChange={(event) => setSortMode(event.target.value as SortMode)}
+        >
           <option value="value">Highest sats</option>
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
@@ -14605,7 +20738,12 @@ function FilesToolbar({
           <option value="thread">Thread</option>
         </select>
       </label>
-      <button className="secondary small" disabled={busy || !connected} onClick={onRefresh} type="button">
+      <button
+        className="secondary small"
+        disabled={busy || !connected}
+        onClick={onRefresh}
+        type="button"
+      >
         <span className="button-content">
           <RefreshCw className={refreshing ? "refresh-spin" : ""} size={15} />
           <span>{refreshing ? "Refreshing" : "Refresh"}</span>
@@ -14630,11 +20768,17 @@ function FileTile({
   const explorerNetwork = explorerNetworkFor(message.network, activeNetwork);
 
   return (
-    <button aria-current={active} className="file-tile" onClick={() => onSelect(message)} type="button">
+    <button
+      aria-current={active}
+      className="file-tile"
+      onClick={() => onSelect(message)}
+      type="button"
+    >
       <FilePreview attachment={attachment} />
       <strong title={attachment.name}>{attachment.name}</strong>
       <span>
-        {formatBytes(attachment.size)} · {fileFilterLabel(attachmentKind(attachment)).replace(/s$/u, "")}
+        {formatBytes(attachment.size)} ·{" "}
+        {fileFilterLabel(attachmentKind(attachment)).replace(/s$/u, "")}
       </span>
       <div className="file-tile-meta">
         <span>{message.amountSats.toLocaleString()} sats</span>
@@ -14682,7 +20826,10 @@ function AttachmentViewer({ attachment }: { attachment: MailAttachment }) {
 
   if (previewKind === "image") {
     return (
-      <section className="attachment-viewer image-viewer" aria-label={`${attachment.name} preview`}>
+      <section
+        className="attachment-viewer image-viewer"
+        aria-label={`${attachment.name} preview`}
+      >
         <img alt={attachment.name} src={href} />
       </section>
     );
@@ -14690,7 +20837,10 @@ function AttachmentViewer({ attachment }: { attachment: MailAttachment }) {
 
   if (previewKind === "audio") {
     return (
-      <section className="attachment-viewer media-viewer" aria-label={`${attachment.name} audio player`}>
+      <section
+        className="attachment-viewer media-viewer"
+        aria-label={`${attachment.name} audio player`}
+      >
         <audio controls preload="metadata" src={href}>
           <a download={attachment.name} href={href}>
             Download {attachment.name}
@@ -14702,7 +20852,10 @@ function AttachmentViewer({ attachment }: { attachment: MailAttachment }) {
 
   if (previewKind === "video") {
     return (
-      <section className="attachment-viewer media-viewer video-viewer" aria-label={`${attachment.name} video player`}>
+      <section
+        className="attachment-viewer media-viewer video-viewer"
+        aria-label={`${attachment.name} video player`}
+      >
         <video controls preload="metadata" src={href}>
           <a download={attachment.name} href={href}>
             Download {attachment.name}
@@ -14714,12 +20867,19 @@ function AttachmentViewer({ attachment }: { attachment: MailAttachment }) {
 
   if (previewKind === "pdf") {
     return (
-      <section className="attachment-viewer pdf-viewer" aria-label={`${attachment.name} PDF preview`}>
+      <section
+        className="attachment-viewer pdf-viewer"
+        aria-label={`${attachment.name} PDF preview`}
+      >
         <object data={href} type="application/pdf">
           <div>
             <FileText size={34} />
             <strong>PDF preview unavailable</strong>
-            <a className="secondary small link-button" download={attachment.name} href={href}>
+            <a
+              className="secondary small link-button"
+              download={attachment.name}
+              href={href}
+            >
               Download PDF
             </a>
           </div>
@@ -14730,10 +20890,17 @@ function AttachmentViewer({ attachment }: { attachment: MailAttachment }) {
 
   if (previewKind === "text") {
     return (
-      <section className="attachment-viewer text-viewer" aria-label={`${attachment.name} text preview`}>
+      <section
+        className="attachment-viewer text-viewer"
+        aria-label={`${attachment.name} text preview`}
+      >
         <div className="attachment-viewer-head">
           <span>{attachmentCodeLabel(attachment)}</span>
-          <button className="secondary small" onClick={() => void copyText()} type="button">
+          <button
+            className="secondary small"
+            onClick={() => void copyText()}
+            type="button"
+          >
             <span className="button-content">
               {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
               <span>{copied ? "Copied" : "Copy"}</span>
@@ -14748,10 +20915,15 @@ function AttachmentViewer({ attachment }: { attachment: MailAttachment }) {
   }
 
   return (
-    <section className="attachment-viewer unsupported-viewer" aria-label={`${attachment.name} file preview`}>
+    <section
+      className="attachment-viewer unsupported-viewer"
+      aria-label={`${attachment.name} file preview`}
+    >
       <FileText size={34} />
       <strong>No inline preview</strong>
-      <p>This file type is saved on-chain. Download it to open with a local app.</p>
+      <p>
+        This file type is saved on-chain. Download it to open with a local app.
+      </p>
     </section>
   );
 }
@@ -14789,28 +20961,46 @@ function FileInspector({
       <AttachmentViewer attachment={attachment} />
       <div className="file-detail-actions">
         {isBrowserHtmlAttachment(attachment) ? (
-          <a className="primary link-button" href={browserTxUrl(message.txid, explorerNetwork)} rel="noreferrer" target="_blank">
+          <a
+            className="primary link-button"
+            href={browserTxUrl(message.txid, explorerNetwork)}
+            rel="noreferrer"
+            target="_blank"
+          >
             <span className="button-content">
               <Monitor size={15} />
               <span>Open in Browser</span>
             </span>
           </a>
         ) : null}
-        <a className="primary link-button" download={attachment.name} href={attachmentHref(attachment)}>
+        <a
+          className="primary link-button"
+          download={attachment.name}
+          href={attachmentHref(attachment)}
+        >
           <span className="button-content">
             <Download size={15} />
             <span>Download</span>
           </span>
         </a>
         {onOpenMessage ? (
-          <button className="secondary" onClick={() => onOpenMessage(message)} type="button">
+          <button
+            className="secondary"
+            onClick={() => onOpenMessage(message)}
+            type="button"
+          >
             <span className="button-content">
               <Mail size={15} />
               <span>Open Message</span>
             </span>
           </button>
         ) : null}
-        <a className="secondary link-button" href={mempoolTxUrl(message.txid, explorerNetwork)} rel="noreferrer" target="_blank">
+        <a
+          className="secondary link-button"
+          href={mempoolTxUrl(message.txid, explorerNetwork)}
+          rel="noreferrer"
+          target="_blank"
+        >
           <span className="button-content">
             <ArrowUpRight size={15} />
             <span>View TX</span>
@@ -14883,14 +21073,24 @@ function OnboardingPane({
           </span>
         </div>
         {hasUnisat ? (
-          <button className="primary" disabled={busy} onClick={onConnect} type="button">
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={onConnect}
+            type="button"
+          >
             <span className="button-content">
               <Wallet size={17} />
               <span>{busy ? "Connecting" : "Connect UniSat"}</span>
             </span>
           </button>
         ) : (
-          <a className="primary link-button" href={UNISAT_DOWNLOAD_URL} rel="noreferrer" target="_blank">
+          <a
+            className="primary link-button"
+            href={UNISAT_DOWNLOAD_URL}
+            rel="noreferrer"
+            target="_blank"
+          >
             <span className="button-content">
               <Wallet size={17} />
               <span>Download UniSat</span>
@@ -14972,7 +21172,9 @@ function ComposePane({
     setRecipient(recipientTokens.filter((item) => item !== target).join(", "));
   };
   const removeCcRecipient = (target: string) => {
-    setCcRecipient(ccRecipientTokens.filter((item) => item !== target).join(", "));
+    setCcRecipient(
+      ccRecipientTokens.filter((item) => item !== target).join(", "),
+    );
   };
 
   return (
@@ -14984,7 +21186,12 @@ function ComposePane({
         </div>
         <div className="reader-actions">
           {draftMode && onDiscardDraft ? (
-            <button className="secondary small" disabled={busy} onClick={onDiscardDraft} type="button">
+            <button
+              className="secondary small"
+              disabled={busy}
+              onClick={onDiscardDraft}
+              type="button"
+            >
               <span className="button-content">
                 <X size={15} />
                 <span>Discard</span>
@@ -15006,7 +21213,11 @@ function ComposePane({
           <span>
             Replying to <code>{parentTxid}</code>
           </span>
-          <button className="secondary small" onClick={() => setParentTxid(undefined)} type="button">
+          <button
+            className="secondary small"
+            onClick={() => setParentTxid(undefined)}
+            type="button"
+          >
             Remove
           </button>
         </div>
@@ -15023,27 +21234,43 @@ function ComposePane({
           autoComplete="off"
           list="proof-contact-options"
           onChange={(event) => setRecipient(event.target.value)}
-          placeholder={network === "livenet" ? "bc1... or user@proofofwork.me" : "tb1..."}
+          placeholder={
+            network === "livenet" ? "bc1... or user@proofofwork.me" : "tb1..."
+          }
           spellCheck={false}
           value={recipient}
         />
         <datalist id="proof-contact-options">
           {contacts.map((contact) => (
-            <option key={contactKey(contact)} label={contact.name} value={contactTarget(contact)} />
+            <option
+              key={contactKey(contact)}
+              label={contact.name}
+              value={contactTarget(contact)}
+            />
           ))}
         </datalist>
       </label>
       {recipientTokens.length > 0 ? (
         <div className="recipient-chip-list" aria-label="Recipients">
           {recipientTokens.map((token, index) => (
-            <button className="recipient-chip" key={`${token}-${index}`} onClick={() => removeRecipient(token)} title="Remove recipient" type="button">
+            <button
+              className="recipient-chip"
+              key={`${token}-${index}`}
+              onClick={() => removeRecipient(token)}
+              title="Remove recipient"
+              type="button"
+            >
               <span>{shortAddress(token)}</span>
               <X size={13} />
             </button>
           ))}
         </div>
       ) : null}
-      {recipientNote ? <p className={recipientError ? "field-note bad" : "field-note"}>{recipientNote}</p> : null}
+      {recipientNote ? (
+        <p className={recipientError ? "field-note bad" : "field-note"}>
+          {recipientNote}
+        </p>
+      ) : null}
 
       <label>
         CC
@@ -15059,14 +21286,24 @@ function ComposePane({
       {ccRecipientTokens.length > 0 ? (
         <div className="recipient-chip-list" aria-label="CC recipients">
           {ccRecipientTokens.map((token, index) => (
-            <button className="recipient-chip" key={`${token}-${index}`} onClick={() => removeCcRecipient(token)} title="Remove CC recipient" type="button">
+            <button
+              className="recipient-chip"
+              key={`${token}-${index}`}
+              onClick={() => removeCcRecipient(token)}
+              title="Remove CC recipient"
+              type="button"
+            >
               <span>{shortAddress(token)}</span>
               <X size={13} />
             </button>
           ))}
         </div>
       ) : null}
-      {ccRecipientNote ? <p className={ccRecipientError ? "field-note bad" : "field-note"}>{ccRecipientNote}</p> : null}
+      {ccRecipientNote ? (
+        <p className={ccRecipientError ? "field-note bad" : "field-note"}>
+          {ccRecipientNote}
+        </p>
+      ) : null}
 
       <label>
         Subject
@@ -15094,7 +21331,10 @@ function ComposePane({
 
       <label className="memo-field">
         Message
-        <textarea onChange={(event) => setMemo(event.target.value)} value={memo} />
+        <textarea
+          onChange={(event) => setMemo(event.target.value)}
+          value={memo}
+        />
       </label>
 
       <div className="attachment-control">
@@ -15115,13 +21355,25 @@ function ComposePane({
             <span>{attachment ? "Replace attachment" : "Attach file"}</span>
           </span>
         </label>
-        <span>One file, {formatBytes(MAX_ATTACHMENT_BYTES)} max before encoding.</span>
+        <span>
+          One file, {formatBytes(MAX_ATTACHMENT_BYTES)} max before encoding.
+        </span>
       </div>
 
-      {attachment ? <AttachmentCard attachment={attachment} onRemove={() => setAttachment(undefined)} /> : null}
+      {attachment ? (
+        <AttachmentCard
+          attachment={attachment}
+          onRemove={() => setAttachment(undefined)}
+        />
+      ) : null}
 
-      <div className={dataCarrierBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"}>
-        {dataCarrierBytes.toLocaleString()} / {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
+      <div
+        className={
+          dataCarrierBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"
+        }
+      >
+        {dataCarrierBytes.toLocaleString()} /{" "}
+        {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier bytes
       </div>
     </form>
   );
@@ -15155,7 +21407,11 @@ function AttachmentCard({
             </span>
           </button>
         ) : (
-          <a className="secondary small link-button" download={attachment.name} href={attachmentHref(attachment)}>
+          <a
+            className="secondary small link-button"
+            download={attachment.name}
+            href={attachmentHref(attachment)}
+          >
             <span className="button-content">
               <Download size={15} />
               <span>Download</span>
@@ -15204,30 +21460,55 @@ function Reader({
   onArchiveToggle: (message: MailMessage, archived: boolean) => void;
   onCheckBroadcasts: () => void;
   onFavoriteToggle: (message: MailMessage, favorite: boolean) => void;
-  onFolderToggle: (message: MailMessage, folderId: string, enabled: boolean) => void;
+  onFolderToggle: (
+    message: MailMessage,
+    folderId: string,
+    enabled: boolean,
+  ) => void;
   onReply: (message: MailMessage) => void;
   onReplyAll: (message: MailMessage) => void;
   onRestoreDraft: (message: MailMessage) => void;
   threadMessages: MailMessage[];
 }) {
   const peerLabel = message.folder === "sent" ? "To" : "From";
-  const peer = message.folder === "sent" ? recipientListText(message.toRecipients ?? message.recipients, message.to) : message.from;
-  const ccRecipients = message.folder === "sent" ? message.ccRecipients ?? [] : [];
+  const peer =
+    message.folder === "sent"
+      ? recipientListText(
+          message.toRecipients ?? message.recipients,
+          message.to,
+        )
+      : message.from;
+  const ccRecipients =
+    message.folder === "sent" ? (message.ccRecipients ?? []) : [];
   const explorerNetwork = explorerNetworkFor(message.network, activeNetwork);
-  const hasReplyAllTargets = (message.recipients?.length ?? 0) > 1 || (isInboundFolder(message.folder) && Boolean(message.recipients?.length));
-  const availableFolders = customFolders.filter((folder) => !folderIds.includes(folder.id));
-  const activeCustomFolder = customFolders.find((folder) => folder.id === activeCustomFolderId);
+  const hasReplyAllTargets =
+    (message.recipients?.length ?? 0) > 1 ||
+    (isInboundFolder(message.folder) && Boolean(message.recipients?.length));
+  const availableFolders = customFolders.filter(
+    (folder) => !folderIds.includes(folder.id),
+  );
+  const activeCustomFolder = customFolders.find(
+    (folder) => folder.id === activeCustomFolderId,
+  );
 
   return (
     <article className="reader">
       <div className="pane-head">
         <div>
           <h2>{messageSubject(message)}</h2>
-          <span>{formatDate(message.createdAt)}{message.parentTxid ? " · Reply" : ""}</span>
+          <span>
+            {formatDate(message.createdAt)}
+            {message.parentTxid ? " · Reply" : ""}
+          </span>
         </div>
         <div className="reader-actions">
           {deliveryStatus && deliveryStatus !== "confirmed" ? (
-            <button className="secondary small" disabled={checkingBroadcasts} onClick={onCheckBroadcasts} type="button">
+            <button
+              className="secondary small"
+              disabled={checkingBroadcasts}
+              onClick={onCheckBroadcasts}
+              type="button"
+            >
               <span className="button-content">
                 <RefreshCw size={15} />
                 <span>{checkingBroadcasts ? "Checking" : "Check TX"}</span>
@@ -15235,7 +21516,11 @@ function Reader({
             </button>
           ) : null}
           {deliveryStatus === "dropped" ? (
-            <button className="secondary small" onClick={() => onRestoreDraft(message)} type="button">
+            <button
+              className="secondary small"
+              onClick={() => onRestoreDraft(message)}
+              type="button"
+            >
               <span className="button-content">
                 <FilePenLine size={15} />
                 <span>Rebuild Draft</span>
@@ -15243,7 +21528,11 @@ function Reader({
             </button>
           ) : null}
           {favoriteable ? (
-            <button className="secondary small" onClick={() => onFavoriteToggle(message, !favorited)} type="button">
+            <button
+              className="secondary small"
+              onClick={() => onFavoriteToggle(message, !favorited)}
+              type="button"
+            >
               <span className="button-content">
                 <Star className={favorited ? "star-filled" : ""} size={15} />
                 <span>{favorited ? "Unfavorite" : "Favorite"}</span>
@@ -15251,7 +21540,11 @@ function Reader({
             </button>
           ) : null}
           {archivable ? (
-            <button className="secondary small" onClick={() => onArchiveToggle(message, !archived)} type="button">
+            <button
+              className="secondary small"
+              onClick={() => onArchiveToggle(message, !archived)}
+              type="button"
+            >
               <span className="button-content">
                 <Archive size={15} />
                 <span>{archived ? "Unarchive" : "Archive"}</span>
@@ -15281,29 +21574,50 @@ function Reader({
               </select>
             </label>
           ) : null}
-          {folderable && activeCustomFolder && folderIds.includes(activeCustomFolder.id) ? (
-            <button className="secondary small" onClick={() => onFolderToggle(message, activeCustomFolder.id, false)} type="button">
+          {folderable &&
+          activeCustomFolder &&
+          folderIds.includes(activeCustomFolder.id) ? (
+            <button
+              className="secondary small"
+              onClick={() =>
+                onFolderToggle(message, activeCustomFolder.id, false)
+              }
+              type="button"
+            >
               <span className="button-content">
                 <FolderPlus size={15} />
                 <span>Remove</span>
               </span>
             </button>
           ) : null}
-          <button className="secondary small" onClick={() => onReply(message)} type="button">
+          <button
+            className="secondary small"
+            onClick={() => onReply(message)}
+            type="button"
+          >
             <span className="button-content">
               <Reply size={15} />
               <span>Reply</span>
             </span>
           </button>
           {hasReplyAllTargets ? (
-            <button className="secondary small" onClick={() => onReplyAll(message)} type="button">
+            <button
+              className="secondary small"
+              onClick={() => onReplyAll(message)}
+              type="button"
+            >
               <span className="button-content">
                 <Users size={15} />
                 <span>Reply All</span>
               </span>
             </button>
           ) : null}
-          <a className="secondary small link-button" href={mempoolTxUrl(message.txid, explorerNetwork)} rel="noreferrer" target="_blank">
+          <a
+            className="secondary small link-button"
+            href={mempoolTxUrl(message.txid, explorerNetwork)}
+            rel="noreferrer"
+            target="_blank"
+          >
             <span className="button-content">
               <ArrowUpRight size={15} />
               <span>View TX</span>
@@ -15317,7 +21631,9 @@ function Reader({
           <dt>{peerLabel}</dt>
           <dd>{peer}</dd>
         </div>
-        {isInboundFolder(message.folder) && message.recipients && message.recipients.length > 1 ? (
+        {isInboundFolder(message.folder) &&
+        message.recipients &&
+        message.recipients.length > 1 ? (
           <div>
             <dt>To</dt>
             <dd>{recipientListText(message.recipients, message.to)}</dd>
@@ -15364,7 +21680,9 @@ function Reader({
 
       <pre>{message.memo}</pre>
 
-      {message.attachment ? <AttachmentCard attachment={message.attachment} /> : null}
+      {message.attachment ? (
+        <AttachmentCard attachment={message.attachment} />
+      ) : null}
 
       {threadMessages.length > 1 ? (
         <section className="thread-panel">
@@ -15372,8 +21690,14 @@ function Reader({
           {threadMessages.map((threadMessage) => (
             <article className="thread-item" key={mailKey(threadMessage)}>
               <div>
-                <strong>{isInboundFolder(threadMessage.folder) ? "From" : "To"} {shortAddress(peerAddress(threadMessage))}</strong>
-                <span>{formatDate(threadMessage.createdAt)} · {threadMessage.amountSats.toLocaleString()} sats</span>
+                <strong>
+                  {isInboundFolder(threadMessage.folder) ? "From" : "To"}{" "}
+                  {shortAddress(peerAddress(threadMessage))}
+                </strong>
+                <span>
+                  {formatDate(threadMessage.createdAt)} ·{" "}
+                  {threadMessage.amountSats.toLocaleString()} sats
+                </span>
               </div>
               <p>{mailPreview(threadMessage)}</p>
             </article>

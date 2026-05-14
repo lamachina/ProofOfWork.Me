@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="pow:protocol" content="pwt1">
+<meta name="pow:app" content="ProofOfWork Token Test">
+<meta name="pow:network" content="testnet4">
+<meta name="pow:registry" content="muXmSXKGiJWaEMtjHSvWsEuxiqJS4Nw44h">
+<meta name="pwt:ticker" content="WORK">
+<meta name="pwt:max" content="21000000">
+<meta name="pwt:mint-limit" content="1000">
+<meta name="pwt:mint-fee" content="1000">
+<meta name="pwt:action-fee" content="546">
+<title>PWT-1 Token Test</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0f14;--panel:#141a20;--line:#27313b;--text:#eef4fb;--muted:#9fb0c1;--blue:#58a6ff;--green:#27d68a;--red:#ff6b6b;--yellow:#f4c542}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#080b0f,#11161c 28%,#0b0f14);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+main{width:min(1180px,100%);margin:0 auto;padding:24px}.top{display:grid;gap:10px;margin-bottom:18px}h1{font-size:28px;margin:0}p{margin:0;color:var(--muted)}code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid var(--line);background:rgba(20,26,32,.94);border-radius:8px;padding:14px}.card h2{margin:0 0 12px;font-size:16px}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.full{grid-column:1/-1}label{display:grid;gap:5px;color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase}input,select,textarea,button{border:1px solid var(--line);border-radius:7px;background:#0d1218;color:var(--text);font:inherit}input,select,textarea{width:100%;padding:10px}textarea{min-height:84px;resize:vertical}button{padding:10px 12px;font-weight:800;cursor:pointer}button.primary{background:var(--blue);border-color:var(--blue);color:#06101c}button.ghost{background:#111820}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.statgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.stat{border:1px solid var(--line);border-radius:7px;padding:10px;background:#0d1218}.stat b{display:block;font-size:20px}.ok{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--yellow)}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted);font-size:12px;text-transform:uppercase}.small{font-size:12px;color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;word-break:break-all}.pill{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:2px 7px;color:var(--muted);font-size:12px}.split{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.log{max-height:360px;overflow:auto}.intent{white-space:pre-wrap;min-height:170px;max-height:300px;overflow:auto}.hide{display:none}@media (max-width:900px){main{padding:14px}.grid,.split,.fields,.statgrid{grid-template-columns:1fr}}
+</style>
+<main>
+  <section class="top">
+    <p class="pill">PWT-1 autonomous token prototype</p>
+    <h1>ProofOfWork Token Test</h1>
+    <p>One HTML page defines token rules. One registry address stores confirmed mint, transfer, list5, seal5, delist5, and buy5 events. Computer signs; Bitcoin history is the database.</p>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Token Registry</h2>
+      <div class="fields">
+        <label>Network<select id="network"><option value="mainnet">Mainnet</option><option value="testnet4" selected>Testnet4</option><option value="testnet">Testnet3</option></select></label>
+        <label>Ticker<input id="ticker" value="WORK" maxlength="12"></label>
+        <label class="full">Registry address<input id="registry" value="muXmSXKGiJWaEMtjHSvWsEuxiqJS4Nw44h" placeholder="tb1... or m..."></label>
+        <label class="full">Token HTML txid<input id="tokenTxid" placeholder="Computer can pass this as the loaded HTML txid"></label>
+        <label>Max supply<input id="maxSupply" type="number" value="21000000" min="1"></label>
+        <label>Mint limit<input id="mintLimit" type="number" value="1000" min="1"></label>
+        <label>Mint output sats<input id="mintFee" type="number" value="1000" min="546"></label>
+        <label>Action output sats<input id="actionFee" type="number" value="546" min="546"></label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="load">Load Registry</button>
+        <button class="ghost" id="demo">Load Demo Events</button>
+        <button class="ghost" id="clear">Clear</button>
+      </div>
+      <p id="status" class="small" style="margin-top:10px">Ready. Enter a registry address or use demo events.</p>
+    </div>
+
+    <div class="card">
+      <h2>State</h2>
+      <div class="statgrid">
+        <div class="stat"><span class="small">Supply</span><b id="supply">0</b></div>
+        <div class="stat"><span class="small">Holders</span><b id="holders">0</b></div>
+        <div class="stat"><span class="small">Open listings</span><b id="openListings">0</b></div>
+        <div class="stat"><span class="small">Valid events</span><b id="validEvents">0</b></div>
+      </div>
+      <p class="small" style="margin-top:12px">Validation uses confirmed registry payments, OP_RETURN messages, first input owner as actor, and exact seller payment for buys.</p>
+    </div>
+  </section>
+
+  <section class="split" style="margin-top:14px">
+    <div class="card">
+      <h2>Actions</h2>
+      <div class="fields">
+        <label>Your signing address<input id="actor" placeholder="wallet address used as tx input"></label>
+        <label>Recipient<input id="recipient" placeholder="recipient address"></label>
+        <label>Amount<input id="amount" type="number" value="100" min="1"></label>
+        <label>Listing price sats<input id="price" type="number" value="5000" min="1"></label>
+        <label>Seller public key<input id="sellerPublicKey" placeholder="Computer can fill from UniSat"></label>
+        <label>Sale-ticket scriptPubKey<input id="anchorScriptPubKey" placeholder="Computer can fill from seller address"></label>
+        <label>Buyer lock<input id="buyerLock" placeholder="optional buyer address"></label>
+        <label>Expires at block/time<input id="expiresAt" placeholder="optional"></label>
+        <label class="full">Sale-ticket signature<input id="anchorSignature" placeholder="filled by Computer during seal5"></label>
+        <label class="full">Listing to act on<select id="listingSelect"><option value="">No active listing selected</option></select></label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="mint">Mint</button>
+        <button id="send">Transfer</button>
+        <button id="list">List5</button>
+        <button id="seal">Seal5</button>
+        <button id="delist">Delist5</button>
+        <button id="buy">Buy5</button>
+      </div>
+      <p class="small" style="margin-top:10px">Listings mirror the ID marketplace: list5 creates a sale-ticket, seal5 signs it, buy5 spends it.</p>
+    </div>
+
+    <div class="card">
+      <h2>Computer Intent</h2>
+      <pre id="intent" class="intent small">No intent yet.</pre>
+      <div class="row">
+        <button class="primary" id="copyIntent">Copy Intent</button>
+        <button class="ghost" id="postIntent">Send to Parent</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid" style="margin-top:14px">
+    <div class="card">
+      <h2>Balances</h2>
+      <div class="log"><table><thead><tr><th>Address</th><th>Balance</th><th>Reserved</th><th>Spendable</th></tr></thead><tbody id="balances"></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>Listings</h2>
+      <div class="log"><table><thead><tr><th>Listing</th><th>Seller</th><th>Amount</th><th>Price</th><th>Status</th><th>Ticket</th></tr></thead><tbody id="listings"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:14px">
+    <h2>Event Log</h2>
+    <div class="log"><table><thead><tr><th>Status</th><th>Tx</th><th>Actor</th><th>Message</th><th>Note</th></tr></thead><tbody id="events"></tbody></table></div>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const SIGHASH_SINGLE_ANYONECANPAY = 131;
+  const SALE_VERSION = "pwt-sale-v1";
+  const TICKET_TYPE = "sale-ticket-v1";
+  const TICKET_VALUE = 546;
+  const TICKET_VOUT = 2;
+  const state = { txs: [], events: [], balances: new Map(), listings: new Map(), lastIntent: null };
+  const cfg = () => ({
+    network: $("network").value,
+    ticker: $("ticker").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12) || "WORK",
+    registry: $("registry").value.trim(),
+    tokenHtmlTxid: $("tokenTxid").value.trim() || window.POW_CONTEXT?.txid || "local-pwt1-template",
+    maxSupply: int($("maxSupply").value),
+    mintLimit: int($("mintLimit").value),
+    mintFee: int($("mintFee").value),
+    actionFee: int($("actionFee").value)
+  });
+  function int(v) { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0; }
+  function mempoolBase(n) { return n === "testnet4" ? "https://mempool.space/testnet4" : n === "testnet" ? "https://mempool.space/testnet" : "https://mempool.space"; }
+  function short(s) { return s && s.length > 18 ? s.slice(0, 8) + "..." + s.slice(-8) : s || ""; }
+  function setStatus(text, cls) { $("status").textContent = text; $("status").className = "small " + (cls || ""); }
+  function b64u(text) {
+    const bytes = new TextEncoder().encode(text);
+    let bin = "";
+    bytes.forEach(b => bin += String.fromCharCode(b));
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+  function unb64u(text) {
+    const padded = text.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((text.length + 3) % 4);
+    const bin = atob(padded);
+    return new TextDecoder("utf-8", { fatal: false }).decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+  }
+  function decodeHex(hex) {
+    if (!hex || hex.length % 2) return "";
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  }
+  function opReturns(tx) {
+    return (tx.vout || []).filter(o => o.scriptpubkey_type === "op_return").map(o => {
+      const asm = String(o.scriptpubkey_asm || "");
+      return asm.split(" ").slice(1).filter(x => /^[0-9a-f]+$/i.test(x)).map(decodeHex).join("");
+    }).filter(Boolean);
+  }
+  function actor(tx, registry) {
+    const ins = (tx.vin || []).map(v => v.prevout && v.prevout.scriptpubkey_address).filter(Boolean);
+    return ins.find(a => a !== registry) || ins[0] || "unknown";
+  }
+  function paidTo(tx, address) {
+    return (tx.vout || []).reduce((t, o) => t + (o.scriptpubkey_address === address && Number.isFinite(o.value) ? o.value : 0), 0);
+  }
+  function confirmed(tx) { return !!(tx.status && tx.status.confirmed); }
+  function txHeight(tx) { return tx.status && tx.status.block_height || 0; }
+  function txTime(tx) { return tx.status && tx.status.block_time || 0; }
+  function balanceOf(address) { return state.balances.get(address) || 0; }
+  function activeListing(l) { return l.status === "unsealed" || l.status === "open"; }
+  function reserveOf(address) {
+    let total = 0;
+    state.listings.forEach(l => { if (activeListing(l) && l.seller === address) total += l.amount; });
+    return total;
+  }
+  function spendable(address) { return balanceOf(address) - reserveOf(address); }
+  function credit(address, amount) { state.balances.set(address, balanceOf(address) + amount); }
+  function debit(address, amount) { state.balances.set(address, balanceOf(address) - amount); }
+  function event(tx, msg, ok, note, extra) {
+    const who = actor(tx, cfg().registry);
+    return Object.assign({ txid: tx.txid || "demo-" + Math.random().toString(16).slice(2), actor: who, msg, ok, note }, extra || {});
+  }
+  function normalizeAuth(a, includeSeal) {
+    const base = {
+      version: a.version || SALE_VERSION,
+      tokenHtmlTxid: a.tokenHtmlTxid || "",
+      registry: a.registry || "",
+      network: a.network || "",
+      ticker: String(a.ticker || "").toUpperCase(),
+      amount: int(a.amount),
+      priceSats: int(a.priceSats),
+      sellerAddress: a.sellerAddress || "",
+      sellerPublicKey: String(a.sellerPublicKey || "").toLowerCase(),
+      buyerAddress: a.buyerAddress || "",
+      nonce: a.nonce || "",
+      expiresAt: a.expiresAt || "",
+      anchorType: a.anchorType || TICKET_TYPE,
+      anchorVout: int(a.anchorVout),
+      anchorValueSats: int(a.anchorValueSats),
+      anchorScriptPubKey: String(a.anchorScriptPubKey || "").toLowerCase(),
+      anchorSigHashType: int(a.anchorSigHashType)
+    };
+    if (includeSeal) {
+      base.anchorTxid = String(a.anchorTxid || "").toLowerCase();
+      base.anchorSignature = String(a.anchorSignature || "").toLowerCase();
+    }
+    return base;
+  }
+  function parseAuth(encoded) {
+    try {
+      const parsed = JSON.parse(unb64u(encoded));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      return normalizeAuth(parsed, true);
+    } catch { return null; }
+  }
+  function authTermsMatch(left, right) {
+    return JSON.stringify(normalizeAuth(left, false)) === JSON.stringify(normalizeAuth(right, false));
+  }
+  function authError(a) {
+    const c = cfg();
+    if (!a) return "sale ticket JSON is invalid";
+    if (a.version !== SALE_VERSION) return "sale ticket version mismatch";
+    if (a.tokenHtmlTxid !== c.tokenHtmlTxid) return "token HTML txid mismatch";
+    if (a.registry !== c.registry) return "registry mismatch";
+    if (a.network !== c.network) return "network mismatch";
+    if (a.ticker !== c.ticker) return "ticker mismatch";
+    if (a.amount < 1) return "amount missing";
+    if (a.priceSats < 1) return "price missing";
+    if (!a.sellerAddress) return "seller missing";
+    if (!a.sellerPublicKey || a.sellerPublicKey.startsWith("<")) return "seller public key missing";
+    if (!a.nonce) return "nonce missing";
+    if (a.anchorType !== TICKET_TYPE) return "anchor type mismatch";
+    if (a.anchorVout < 0) return "anchor vout invalid";
+    if (a.anchorValueSats < TICKET_VALUE) return "anchor value too small";
+    if (!a.anchorScriptPubKey || a.anchorScriptPubKey.startsWith("<")) return "anchor script missing";
+    if (a.anchorSigHashType !== SIGHASH_SINGLE_ANYONECANPAY) return "anchor sighash mismatch";
+    return "";
+  }
+  function ticketPresent(tx, auth) {
+    const out = (tx.vout || [])[auth.anchorVout];
+    return !!out && out.value === auth.anchorValueSats && String(out.scriptpubkey || "").toLowerCase() === auth.anchorScriptPubKey;
+  }
+  function spentOutpoints(tx) {
+    return (tx.vin || []).map(v => ({ txid: String(v.txid || "").toLowerCase(), vout: int(v.vout) }));
+  }
+  function spendsTicket(tx, listing) {
+    return spentOutpoints(tx).some(o => o.txid === listing.id && o.vout === listing.saleAuthorization.anchorVout);
+  }
+  function sellerPaymentRequired(listing) {
+    return listing.price + listing.saleAuthorization.anchorValueSats;
+  }
+  function parseMsg(msg) {
+    if (!msg.startsWith("pwt1:")) return null;
+    const p = msg.split(":");
+    const action = p[1];
+    if (action === "mint" && p.length === 4) return { action, ticker: p[2], amount: int(p[3]) };
+    if (action === "send" && p.length === 5) return { action, ticker: p[2], amount: int(p[3]), to: p[4] };
+    if (action === "list5" && p.length === 3) return { action, saleAuthorization: parseAuth(p[2]) };
+    if (action === "seal5" && p.length === 4) return { action, listingId: p[2], saleAuthorization: parseAuth(p[3]) };
+    if (action === "delist5" && p.length === 3) return { action, listingId: p[2] };
+    if (action === "buy5" && p.length === 4) return { action, listingId: p[2], buyerAddress: p[3] };
+    return null;
+  }
+  function applyTx(tx) {
+    const c = cfg();
+    for (const msg of opReturns(tx)) {
+      const a = parseMsg(msg);
+      if (!a) continue;
+      const who = actor(tx, c.registry), pay = paidTo(tx, c.registry);
+      if (!confirmed(tx)) { state.events.push(event(tx, msg, false, "pending ignored")); continue; }
+      if ((a.ticker && a.ticker !== c.ticker)) { state.events.push(event(tx, msg, false, "wrong ticker")); continue; }
+      if (a.action === "mint") {
+        const supply = [...state.balances.values()].reduce((x, y) => x + y, 0);
+        if (pay < c.mintFee) state.events.push(event(tx, msg, false, "mint fee below " + c.mintFee));
+        else if (a.amount < 1 || a.amount > c.mintLimit) state.events.push(event(tx, msg, false, "mint limit exceeded"));
+        else if (supply + a.amount > c.maxSupply) state.events.push(event(tx, msg, false, "max supply exceeded"));
+        else { credit(who, a.amount); state.events.push(event(tx, msg, true, "minted " + a.amount)); }
+      } else if (a.action === "send") {
+        if (pay < c.actionFee) state.events.push(event(tx, msg, false, "action fee below " + c.actionFee));
+        else if (a.amount < 1 || spendable(who) < a.amount) state.events.push(event(tx, msg, false, "insufficient spendable balance"));
+        else { debit(who, a.amount); credit(a.to, a.amount); state.events.push(event(tx, msg, true, "sent " + a.amount, { to: a.to })); }
+      } else if (a.action === "list5") {
+        const auth = a.saleAuthorization, err = authError(auth);
+        if (pay < c.actionFee) state.events.push(event(tx, msg, false, "listing fee below " + c.actionFee));
+        else if (err) state.events.push(event(tx, msg, false, err));
+        else if (auth.sellerAddress !== who) state.events.push(event(tx, msg, false, "seller must fund listing"));
+        else if (spendable(who) < auth.amount) state.events.push(event(tx, msg, false, "cannot reserve listing"));
+        else if (!ticketPresent(tx, auth)) state.events.push(event(tx, msg, false, "sale-ticket output missing"));
+        else {
+          state.listings.set(tx.txid, { id: tx.txid, seller: who, amount: auth.amount, price: auth.priceSats, saleAuthorization: auth, status: "unsealed" });
+          state.events.push(event(tx, msg, true, "list5 created sale ticket"));
+        }
+      } else if (a.action === "seal5") {
+        const l = state.listings.get(a.listingId), auth = a.saleAuthorization, err = authError(auth);
+        if (pay < c.actionFee) state.events.push(event(tx, msg, false, "seal fee below " + c.actionFee));
+        else if (!l || !activeListing(l)) state.events.push(event(tx, msg, false, "listing not active"));
+        else if (l.seller !== who) state.events.push(event(tx, msg, false, "only seller can seal"));
+        else if (err) state.events.push(event(tx, msg, false, err));
+        else if (!authTermsMatch(l.saleAuthorization, auth)) state.events.push(event(tx, msg, false, "seal terms do not match list5"));
+        else if (auth.anchorTxid !== l.id) state.events.push(event(tx, msg, false, "seal anchor txid mismatch"));
+        else if (!auth.anchorSignature) state.events.push(event(tx, msg, false, "seal signature missing"));
+        else { l.saleAuthorization = auth; l.status = "open"; l.sealTxid = tx.txid; state.events.push(event(tx, msg, true, "seal5 published")); }
+      } else if (a.action === "delist5") {
+        const l = state.listings.get(a.listingId);
+        if (pay < c.actionFee) state.events.push(event(tx, msg, false, "delist fee below " + c.actionFee));
+        else if (!l || !activeListing(l)) state.events.push(event(tx, msg, false, "listing not active"));
+        else if (l.seller !== who) state.events.push(event(tx, msg, false, "only seller can delist"));
+        else if (!spendsTicket(tx, l)) state.events.push(event(tx, msg, false, "sale ticket not spent"));
+        else { l.status = "delisted"; l.closedTxid = tx.txid; state.events.push(event(tx, msg, true, "delist5 closed sale ticket")); }
+      } else if (a.action === "buy5") {
+        const l = state.listings.get(a.listingId);
+        if (pay < c.actionFee) state.events.push(event(tx, msg, false, "buy fee below " + c.actionFee));
+        else if (!l || l.status !== "open") state.events.push(event(tx, msg, false, "listing not sealed/open"));
+        else if (l.saleAuthorization.buyerAddress && l.saleAuthorization.buyerAddress !== a.buyerAddress) state.events.push(event(tx, msg, false, "buyer lock mismatch"));
+        else if (!spendsTicket(tx, l)) state.events.push(event(tx, msg, false, "sale ticket not spent"));
+        else if (paidTo(tx, l.seller) < sellerPaymentRequired(l)) state.events.push(event(tx, msg, false, "seller payment missing"));
+        else {
+          debit(l.seller, l.amount); credit(a.buyerAddress, l.amount); l.status = "sold"; l.buyer = a.buyerAddress; l.closedTxid = tx.txid;
+          state.events.push(event(tx, msg, true, "buy5 settled sealed listing"));
+        }
+      }
+    }
+  }
+  async function loadRegistry() {
+    const c = cfg();
+    if (!c.registry) return setStatus("Enter a registry address first.", "bad");
+    setStatus("Loading registry history...", "warn");
+    const r = await fetch(mempoolBase(c.network) + "/api/address/" + encodeURIComponent(c.registry) + "/txs", { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error("mempool.space returned " + r.status);
+    state.txs = await r.json();
+    rebuild();
+    setStatus("Loaded " + state.txs.length + " recent registry txs.", "ok");
+  }
+  function rebuild() {
+    state.events = []; state.balances = new Map(); state.listings = new Map();
+    state.txs.slice().sort((a,b)=>(txHeight(a)-txHeight(b))||(txTime(a)-txTime(b))||String(a.txid).localeCompare(String(b.txid))).forEach(applyTx);
+    render();
+  }
+  function hexMsg(msg) { return [...new TextEncoder().encode(msg)].map(b=>b.toString(16).padStart(2,"0")).join(""); }
+  function demoTx(msg, who, pay, txid, extras, vinExtras) {
+    return { txid, status: { confirmed: true, block_height: 1, block_time: 1 }, vin: [{ prevout: { scriptpubkey_address: who } }, ...(vinExtras || [])], vout: [
+      { scriptpubkey_address: cfg().registry || "registry-demo-address", value: pay },
+      ...(extras || []),
+      { scriptpubkey_type: "op_return", scriptpubkey_asm: "OP_RETURN " + hexMsg(msg) }
+    ] };
+  }
+  function demoAuth(seller, buyerLock) {
+    const c = cfg();
+    return normalizeAuth({
+      version: SALE_VERSION, tokenHtmlTxid: c.tokenHtmlTxid, registry: c.registry || "registry-demo-address", network: c.network, ticker: c.ticker,
+      amount: 250, priceSats: 5000, sellerAddress: seller, sellerPublicKey: "02" + "1".repeat(64), buyerAddress: buyerLock || "",
+      nonce: "demo-" + Date.now().toString(36), expiresAt: "", anchorType: TICKET_TYPE, anchorVout: TICKET_VOUT,
+      anchorValueSats: TICKET_VALUE, anchorScriptPubKey: "demo-ticket-script", anchorSigHashType: SIGHASH_SINGLE_ANYONECANPAY
+    }, true);
+  }
+  function loadDemo() {
+    const c = cfg();
+    if (!c.registry) $("registry").value = "registry-demo-address";
+    const seller = "seller-demo-address", buyer = "buyer-demo-address", listId = "c".repeat(64);
+    const auth = demoAuth(seller), sealed = normalizeAuth({ ...auth, anchorTxid: listId, anchorSignature: "30" + "2".repeat(140) + "83" }, true);
+    const ticket = { scriptpubkey_address: seller, scriptpubkey: auth.anchorScriptPubKey, value: TICKET_VALUE };
+    state.txs = [
+      demoTx("pwt1:mint:" + c.ticker + ":1000", seller, c.mintFee, "a".repeat(64)),
+      demoTx("pwt1:send:" + c.ticker + ":100:" + buyer, seller, c.actionFee, "b".repeat(64)),
+      demoTx("pwt1:list5:" + b64u(JSON.stringify(auth)), seller, c.actionFee, listId, [{ scriptpubkey_address: seller, value: 1 }, ticket]),
+      demoTx("pwt1:seal5:" + listId + ":" + b64u(JSON.stringify(sealed)), seller, c.actionFee, "d".repeat(64)),
+      demoTx("pwt1:buy5:" + listId + ":" + buyer, buyer, c.actionFee, "e".repeat(64), [{ scriptpubkey_address: seller, value: 5546 }], [{ txid: listId, vout: TICKET_VOUT, prevout: { scriptpubkey_address: seller } }])
+    ];
+    rebuild(); setStatus("Demo list5/seal5/buy5 events loaded.", "ok");
+  }
+  function rows(id, html) { $(id).innerHTML = html || '<tr><td colspan="6" class="small">Nothing yet.</td></tr>'; }
+  function render() {
+    const supply = [...state.balances.values()].reduce((a,b)=>a+b,0);
+    $("supply").textContent = supply.toLocaleString();
+    $("holders").textContent = [...state.balances.values()].filter(v=>v>0).length;
+    $("openListings").textContent = [...state.listings.values()].filter(l=>l.status==="open").length;
+    $("validEvents").textContent = state.events.filter(e=>e.ok).length;
+    rows("balances", [...state.balances.entries()].filter(([,b])=>b!==0).sort((a,b)=>b[1]-a[1]).map(([a,b])=>'<tr><td class="mono">'+a+'</td><td>'+b+'</td><td>'+reserveOf(a)+'</td><td>'+spendable(a)+'</td></tr>').join(""));
+    const listingOptions = ['<option value="">No active listing selected</option>'];
+    rows("listings", [...state.listings.values()].map(l => {
+      if (activeListing(l)) listingOptions.push('<option value="'+l.id+'">'+short(l.id)+" - "+l.status+" - "+l.amount+" for "+l.price+" sats</option>");
+      return '<tr><td class="mono">'+short(l.id)+'</td><td class="mono">'+short(l.seller)+'</td><td>'+l.amount+'</td><td>'+l.price+'</td><td>'+l.status+'</td><td class="mono">'+l.saleAuthorization.anchorVout+":"+l.saleAuthorization.anchorValueSats+'</td></tr>';
+    }).join(""));
+    $("listingSelect").innerHTML = listingOptions.join("");
+    rows("events", state.events.map(e=>'<tr><td class="'+(e.ok?'ok':'bad')+'">'+(e.ok?'valid':'invalid')+'</td><td class="mono">'+short(e.txid)+'</td><td class="mono">'+short(e.actor)+'</td><td class="mono">'+e.msg+'</td><td>'+e.note+'</td></tr>').join(""));
+  }
+  function makeIntent(action, msg, registryFeeSats, extra) {
+    const c = cfg();
+    const intent = Object.assign({ protocol: "pwt1", action, network: c.network, registry: c.registry, registryFeeSats, opReturn: msg, payments: [{ address: c.registry, amountSats: registryFeeSats, role: "registry" }] }, extra || {});
+    state.lastIntent = intent;
+    $("intent").textContent = JSON.stringify(intent, null, 2);
+  }
+  function requireActor() { const a = $("actor").value.trim(); if (!a) throw new Error("Enter your signing address."); return a; }
+  function requireListing() { const id = $("listingSelect").value; const l = state.listings.get(id); if (!l) throw new Error("Select an active listing."); return l; }
+  function formAuth(seller) {
+    const c = cfg();
+    return normalizeAuth({
+      version: SALE_VERSION, tokenHtmlTxid: c.tokenHtmlTxid, registry: c.registry, network: c.network, ticker: c.ticker,
+      amount: int($("amount").value), priceSats: int($("price").value), sellerAddress: seller,
+      sellerPublicKey: $("sellerPublicKey").value.trim().toLowerCase() || "<computer-fills-seller-public-key>",
+      buyerAddress: $("buyerLock").value.trim(), nonce: Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10),
+      expiresAt: $("expiresAt").value.trim(), anchorType: TICKET_TYPE, anchorVout: TICKET_VOUT,
+      anchorValueSats: TICKET_VALUE, anchorScriptPubKey: $("anchorScriptPubKey").value.trim().toLowerCase() || "<computer-fills-sale-ticket-scriptpubkey>",
+      anchorSigHashType: SIGHASH_SINGLE_ANYONECANPAY
+    }, true);
+  }
+  $("load").onclick = () => loadRegistry().catch(e => setStatus(e.message, "bad"));
+  $("demo").onclick = loadDemo;
+  $("clear").onclick = () => { state.txs = []; rebuild(); setStatus("Cleared local state."); };
+  $("mint").onclick = () => { try { requireActor(); const c=cfg(), n=int($("amount").value); makeIntent("mint","pwt1:mint:"+c.ticker+":"+n,c.mintFee); } catch(e) { setStatus(e.message,"bad"); } };
+  $("send").onclick = () => { try { requireActor(); const c=cfg(), n=int($("amount").value), to=$("recipient").value.trim(); if(!to) throw new Error("Enter recipient."); makeIntent("send","pwt1:send:"+c.ticker+":"+n+":"+to,c.actionFee); } catch(e) { setStatus(e.message,"bad"); } };
+  $("list").onclick = () => { try { const seller=requireActor(), c=cfg(), auth=formAuth(seller); makeIntent("list5","pwt1:list5:"+b64u(JSON.stringify(auth)),c.actionFee,{ saleAuthorization: auth, payments: [{ address: c.registry, amountSats: c.actionFee, role: "registry" }, { address: seller, amountSats: TICKET_VALUE, role: "sale-ticket", vout: TICKET_VOUT }], requiresComputer: ["sellerPublicKey", "anchorScriptPubKey", "saleTicketOutput"] }); } catch(e) { setStatus(e.message,"bad"); } };
+  $("seal").onclick = () => { try { requireActor(); const c=cfg(), l=requireListing(), sig=$("anchorSignature").value.trim().toLowerCase() || "<computer-signs-sale-ticket>"; const sealed=normalizeAuth({ ...l.saleAuthorization, anchorTxid: l.id, anchorSignature: sig }, true); makeIntent("seal5","pwt1:seal5:"+l.id+":"+b64u(JSON.stringify(sealed)),c.actionFee,{ saleAuthorization: sealed, signSaleTicket: { listingId: l.id, anchorVout: l.saleAuthorization.anchorVout, sellerPaymentSats: sellerPaymentRequired(l), sighashType: SIGHASH_SINGLE_ANYONECANPAY } }); } catch(e) { setStatus(e.message,"bad"); } };
+  $("delist").onclick = () => { try { requireActor(); const c=cfg(), l=requireListing(); makeIntent("delist5","pwt1:delist5:"+l.id,c.actionFee,{ spendSaleTicket: { txid: l.id, vout: l.saleAuthorization.anchorVout } }); } catch(e) { setStatus(e.message,"bad"); } };
+  $("buy").onclick = () => { try { const buyer=requireActor(), c=cfg(), l=requireListing(); makeIntent("buy5","pwt1:buy5:"+l.id+":"+buyer,c.actionFee,{ payments: [{ address: c.registry, amountSats: c.actionFee, role: "registry" }, { address: l.seller, amountSats: sellerPaymentRequired(l), role: "seller" }], spendSaleTicket: { txid: l.id, vout: l.saleAuthorization.anchorVout } }); } catch(e) { setStatus(e.message,"bad"); } };
+  $("copyIntent").onclick = () => navigator.clipboard.writeText($("intent").textContent).then(()=>setStatus("Intent copied.","ok")).catch(()=>setStatus("Copy failed.","bad"));
+  $("postIntent").onclick = () => { if (!state.lastIntent) return setStatus("No intent yet.","bad"); parent.postMessage({ type: "pow:intent", payload: state.lastIntent }, "*"); setStatus("Intent posted to parent window.","ok"); };
+  render();
+})();
+</script>
+</html>

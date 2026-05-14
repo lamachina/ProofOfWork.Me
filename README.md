@@ -42,7 +42,7 @@ Production app roles:
 - `id.proofofwork.me` is the focused Phase 1 ID registry onboarding app.
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
-- `browser.proofofwork.me` is the standalone public HTML viewer for ProofOfWork message bodies or verified file attachments by txid.
+- `browser.proofofwork.me` is the standalone public HTML renderer and confirmed-page wallet-intent surface for ProofOfWork message bodies or verified file attachments by txid.
 - `marketplace.proofofwork.me` is the standalone ProofOfWork ID listing and buyer-funded transfer app.
 - `pay2speak.proofofwork.me` is the standalone mainnet Pay2Speak app for X Space crowdfunding records and funded questions.
 - `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
@@ -120,6 +120,7 @@ Launch invariants for future developers/agents:
 - Previews images, PDFs, audio, video, text, Markdown, JSON, and code files directly in the app, with copy support for text/code content.
 - Adds a standalone public Desktop app that searches any Bitcoin address or confirmed ProofOfWork ID and displays/previews confirmed public attachments without a wallet connection.
 - Adds a standalone public Browser app that loads a txid, renders HTML from a message body or verified `text/html` attachment in a sandbox, and exposes a Computer-native HTML template.
+- Lets confirmed Browser pages request local wallet signing through validated `pow:intent` messages; the parent app prompts the user and signs/broadcasts with UniSat.
 - Exposes Browser as a first-class Computer sidebar workspace, so HTML pages are part of the Bitcoin Computer and not only a standalone subdomain.
 - Pins the canonical `Welcome to ProofOfWork.Me.html` Bitcoin Computer page as a default system file in Files/Desktop, opening through Browser by txid.
 - Projects Browser-readable HTML message bodies into Files/Desktop as virtual `.html` files, so users can send HTML as a message body without needing an attachment.
@@ -180,7 +181,8 @@ Current production behavior:
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
 - Marketplace ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public marketplace stats.
 - The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, and attachments discovered from the ProofOfWork address graph. Address, confirmed ID, or txid search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across all `pwm1:` and `pwid1:` OP_RETURN records.
-- Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside protocol; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
+- Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside carrier; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
+- Confirmed Browser pages may run scripts in an opaque sandbox and ask the parent app to execute validated `pow:intent` wallet actions. The first supported intent path is `pwt1`: registry payment plus OP_RETURN, built by the parent and signed locally with UniSat. Pending Browser pages cannot request wallet signing.
 - Files/Desktop treat Browser-readable `pwm1:m` HTML bodies as derived `.html` files for navigation and opening, while the original transaction remains a message-body record on-chain.
 - The canonical welcome page is pinned by txid `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` as the default Bitcoin Computer file. It appears in Files/Desktop as a system artifact and opens in Browser so the transaction remains the source of truth.
 - Growth reads the same registry and log endpoints, then auto-refreshes real confirmed network value against the canonical `output/bitcoin-computer-agent-adoption-model.md` sats/USD assumptions. New products should enter the model with real inputs, a usage rate, a value assumption, a fee elasticity, and blockspace accounting.

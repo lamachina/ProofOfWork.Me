@@ -21,7 +21,7 @@ main{width:min(1180px,100%);margin:0 auto;padding:24px}.top{display:grid;gap:10p
   <section class="top">
     <p class="pill">PWT-1 autonomous token prototype</p>
     <h1>ProofOfWork Token Test</h1>
-    <p>One HTML page defines token rules. One registry address stores confirmed mint, transfer, list5, seal5, delist5, and buy5 events. Computer signs; Bitcoin history is the database.</p>
+    <p>One HTML page defines token rules. One registry address stores confirmed mint, transfer, list5, seal5, delist5, and buy5 events. UniSat signs locally; Bitcoin history is the database.</p>
   </section>
 
   <section class="grid">
@@ -36,9 +36,11 @@ main{width:min(1180px,100%);margin:0 auto;padding:24px}.top{display:grid;gap:10p
         <label>Mint limit<input id="mintLimit" type="number" value="1000" min="1"></label>
         <label>Mint output sats<input id="mintFee" type="number" value="1000" min="546"></label>
         <label>Action output sats<input id="actionFee" type="number" value="546" min="546"></label>
+        <label>Fee rate sat/vB<input id="feeRate" type="number" value="1" min="0.1" step="0.1"></label>
       </div>
       <div class="row" style="margin-top:12px">
         <button class="primary" id="load">Load Registry</button>
+        <button class="ghost" id="connectWallet">Connect UniSat</button>
         <button class="ghost" id="demo">Load Demo Events</button>
         <button class="ghost" id="clear">Clear</button>
       </div>
@@ -87,8 +89,8 @@ main{width:min(1180px,100%);margin:0 auto;padding:24px}.top{display:grid;gap:10p
       <h2>Computer Intent</h2>
       <pre id="intent" class="intent small">No intent yet.</pre>
       <div class="row">
-        <button class="primary" id="copyIntent">Copy Intent</button>
-        <button class="ghost" id="postIntent">Send to Parent</button>
+        <button class="primary" id="postIntent">Broadcast Intent</button>
+        <button class="ghost" id="copyIntent">Copy Intent</button>
       </div>
     </div>
   </section>
@@ -126,9 +128,11 @@ main{width:min(1180px,100%);margin:0 auto;padding:24px}.top{display:grid;gap:10p
     maxSupply: int($("maxSupply").value),
     mintLimit: int($("mintLimit").value),
     mintFee: int($("mintFee").value),
-    actionFee: int($("actionFee").value)
+    actionFee: int($("actionFee").value),
+    feeRate: num($("feeRate").value, 1)
   });
   function int(v) { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0; }
+  function num(v, fallback) { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : fallback; }
   function mempoolBase(n) { return n === "testnet4" ? "https://mempool.space/testnet4" : n === "testnet" ? "https://mempool.space/testnet" : "https://mempool.space"; }
   function short(s) { return s && s.length > 18 ? s.slice(0, 8) + "..." + s.slice(-8) : s || ""; }
   function setStatus(text, cls) { $("status").textContent = text; $("status").className = "small " + (cls || ""); }
@@ -385,11 +389,67 @@ main{width:min(1180px,100%);margin:0 auto;padding:24px}.top{display:grid;gap:10p
   }
   function makeIntent(action, msg, registryFeeSats, extra) {
     const c = cfg();
-    const intent = Object.assign({ protocol: "pwt1", action, network: c.network, registry: c.registry, registryFeeSats, opReturn: msg, payments: [{ address: c.registry, amountSats: registryFeeSats, role: "registry" }] }, extra || {});
+    const intent = Object.assign({ protocol: "pwt1", action, network: c.network, registry: c.registry, registryFeeSats, feeRate: c.feeRate, opReturn: msg, payments: [{ address: c.registry, amountSats: registryFeeSats, role: "registry" }] }, extra || {});
     state.lastIntent = intent;
     $("intent").textContent = JSON.stringify(intent, null, 2);
+    return intent;
+  }
+  async function connectWallet() {
+    const wallet = window.unisat;
+    if (!wallet) throw new Error("UniSat is not available in this window.");
+    const accounts = wallet.requestAccounts ? await wallet.requestAccounts() : await wallet.getAccounts?.();
+    const address = accounts && accounts[0];
+    if (!address) throw new Error("No UniSat account returned.");
+    $("actor").value = address;
+    return address;
+  }
+  function chainFor(network) {
+    return network === "mainnet" ? "BITCOIN_MAINNET" : network === "testnet4" ? "BITCOIN_TESTNET4" : "BITCOIN_TESTNET";
+  }
+  async function switchWalletNetwork(wallet, network) {
+    const chain = await wallet.getChain?.().catch(() => null);
+    if (chain && chain.enum === chainFor(network)) return;
+    if (wallet.switchChain) { await wallet.switchChain(chainFor(network)); return; }
+    if (wallet.switchNetwork) {
+      if (network === "testnet4") throw new Error("Update UniSat for Testnet4 switching support.");
+      await wallet.switchNetwork(network === "mainnet" ? "livenet" : "testnet");
+    }
+  }
+  function parentAvailable() { return parent && parent !== window; }
+  async function directUnisatBroadcast(intent) {
+    const wallet = window.unisat;
+    if (!wallet || !wallet.sendBitcoin) return false;
+    if (!intent.payments || intent.payments.length !== 1) return false;
+    const payment = intent.payments[0];
+    await connectWallet();
+    await switchWalletNetwork(wallet, intent.network);
+    setStatus("Opening UniSat signature request...", "warn");
+    const txid = await wallet.sendBitcoin(payment.address, payment.amountSats, { feeRate: intent.feeRate || cfg().feeRate, memo: intent.opReturn });
+    handleBroadcastResult({ action: intent.action, txid, network: intent.network, fromAddress: $("actor").value.trim() });
+    return true;
+  }
+  function postToParent(intent) {
+    if (!parentAvailable()) return false;
+    parent.postMessage({ type: "pow:intent", payload: intent }, "*");
+    setStatus("Intent sent to Browser for wallet signing.", "warn");
+    return true;
+  }
+  function handleBroadcastResult(result) {
+    setStatus("Broadcast " + result.action + ": " + result.txid, "ok");
+    loadRegistry().catch(() => {});
+  }
+  async function broadcastIntent() {
+    if (!state.lastIntent) { setStatus("No intent yet.", "bad"); return; }
+    try {
+      if (await directUnisatBroadcast(state.lastIntent)) return;
+      if (postToParent(state.lastIntent)) return;
+      throw new Error("Open this page in ProofOfWork Browser or install UniSat.");
+    } catch (e) {
+      setStatus(e.message || "Wallet signing failed.", "bad");
+    }
   }
   function requireActor() { const a = $("actor").value.trim(); if (!a) throw new Error("Enter your signing address."); return a; }
+  function walletOrPlaceholder() { return $("actor").value.trim() || "<wallet-address>"; }
   function requireListing() { const id = $("listingSelect").value; const l = state.listings.get(id); if (!l) throw new Error("Select an active listing."); return l; }
   function formAuth(seller) {
     const c = cfg();
@@ -404,16 +464,25 @@ main{width:min(1180px,100%);margin:0 auto;padding:24px}.top{display:grid;gap:10p
     }, true);
   }
   $("load").onclick = () => loadRegistry().catch(e => setStatus(e.message, "bad"));
+  $("connectWallet").onclick = () => connectWallet().then(a => setStatus("Connected " + short(a) + ".", "ok")).catch(e => setStatus(e.message, "bad"));
   $("demo").onclick = loadDemo;
   $("clear").onclick = () => { state.txs = []; rebuild(); setStatus("Cleared local state."); };
-  $("mint").onclick = () => { try { requireActor(); const c=cfg(), n=int($("amount").value); makeIntent("mint","pwt1:mint:"+c.ticker+":"+n,c.mintFee); } catch(e) { setStatus(e.message,"bad"); } };
-  $("send").onclick = () => { try { requireActor(); const c=cfg(), n=int($("amount").value), to=$("recipient").value.trim(); if(!to) throw new Error("Enter recipient."); makeIntent("send","pwt1:send:"+c.ticker+":"+n+":"+to,c.actionFee); } catch(e) { setStatus(e.message,"bad"); } };
-  $("list").onclick = () => { try { const seller=requireActor(), c=cfg(), auth=formAuth(seller); makeIntent("list5","pwt1:list5:"+b64u(JSON.stringify(auth)),c.actionFee,{ saleAuthorization: auth, payments: [{ address: c.registry, amountSats: c.actionFee, role: "registry" }, { address: seller, amountSats: TICKET_VALUE, role: "sale-ticket", vout: TICKET_VOUT }], requiresComputer: ["sellerPublicKey", "anchorScriptPubKey", "saleTicketOutput"] }); } catch(e) { setStatus(e.message,"bad"); } };
-  $("seal").onclick = () => { try { requireActor(); const c=cfg(), l=requireListing(), sig=$("anchorSignature").value.trim().toLowerCase() || "<computer-signs-sale-ticket>"; const sealed=normalizeAuth({ ...l.saleAuthorization, anchorTxid: l.id, anchorSignature: sig }, true); makeIntent("seal5","pwt1:seal5:"+l.id+":"+b64u(JSON.stringify(sealed)),c.actionFee,{ saleAuthorization: sealed, signSaleTicket: { listingId: l.id, anchorVout: l.saleAuthorization.anchorVout, sellerPaymentSats: sellerPaymentRequired(l), sighashType: SIGHASH_SINGLE_ANYONECANPAY } }); } catch(e) { setStatus(e.message,"bad"); } };
-  $("delist").onclick = () => { try { requireActor(); const c=cfg(), l=requireListing(); makeIntent("delist5","pwt1:delist5:"+l.id,c.actionFee,{ spendSaleTicket: { txid: l.id, vout: l.saleAuthorization.anchorVout } }); } catch(e) { setStatus(e.message,"bad"); } };
-  $("buy").onclick = () => { try { const buyer=requireActor(), c=cfg(), l=requireListing(); makeIntent("buy5","pwt1:buy5:"+l.id+":"+buyer,c.actionFee,{ payments: [{ address: c.registry, amountSats: c.actionFee, role: "registry" }, { address: l.seller, amountSats: sellerPaymentRequired(l), role: "seller" }], spendSaleTicket: { txid: l.id, vout: l.saleAuthorization.anchorVout } }); } catch(e) { setStatus(e.message,"bad"); } };
+  $("mint").onclick = () => { try { const c=cfg(), n=int($("amount").value); makeIntent("mint","pwt1:mint:"+c.ticker+":"+n,c.mintFee); broadcastIntent(); } catch(e) { setStatus(e.message,"bad"); } };
+  $("send").onclick = () => { try { const c=cfg(), n=int($("amount").value), to=$("recipient").value.trim(); if(!to) throw new Error("Enter recipient."); makeIntent("send","pwt1:send:"+c.ticker+":"+n+":"+to,c.actionFee); broadcastIntent(); } catch(e) { setStatus(e.message,"bad"); } };
+  $("list").onclick = () => { try { const seller=walletOrPlaceholder(), c=cfg(), auth=formAuth(seller); makeIntent("list5","pwt1:list5:"+b64u(JSON.stringify(auth)),c.actionFee,{ saleAuthorization: auth, payments: [{ address: c.registry, amountSats: c.actionFee, role: "registry" }, { address: seller, amountSats: TICKET_VALUE, role: "sale-ticket", vout: TICKET_VOUT }], requiresComputer: ["sellerPublicKey", "anchorScriptPubKey", "saleTicketOutput"] }); broadcastIntent(); } catch(e) { setStatus(e.message,"bad"); } };
+  $("seal").onclick = () => { try { const c=cfg(), l=requireListing(), sig=$("anchorSignature").value.trim().toLowerCase() || "<computer-signs-sale-ticket>"; const sealed=normalizeAuth({ ...l.saleAuthorization, anchorTxid: l.id, anchorSignature: sig }, true); makeIntent("seal5","pwt1:seal5:"+l.id+":"+b64u(JSON.stringify(sealed)),c.actionFee,{ saleAuthorization: sealed, signSaleTicket: { listingId: l.id, anchorVout: l.saleAuthorization.anchorVout, sellerPaymentSats: sellerPaymentRequired(l), sighashType: SIGHASH_SINGLE_ANYONECANPAY } }); broadcastIntent(); } catch(e) { setStatus(e.message,"bad"); } };
+  $("delist").onclick = () => { try { const c=cfg(), l=requireListing(); makeIntent("delist5","pwt1:delist5:"+l.id,c.actionFee,{ saleAuthorization: l.saleAuthorization, payments: [{ address: l.seller, amountSats: l.saleAuthorization.anchorValueSats, role: "sale-ticket-refund" }, { address: c.registry, amountSats: c.actionFee, role: "registry" }], spendSaleTicket: { txid: l.id, vout: l.saleAuthorization.anchorVout } }); broadcastIntent(); } catch(e) { setStatus(e.message,"bad"); } };
+  $("buy").onclick = () => { try { const buyer=walletOrPlaceholder(), c=cfg(), l=requireListing(); makeIntent("buy5","pwt1:buy5:"+l.id+":"+buyer,c.actionFee,{ saleAuthorization: l.saleAuthorization, payments: [{ address: l.seller, amountSats: sellerPaymentRequired(l), role: "seller" }, { address: c.registry, amountSats: c.actionFee, role: "registry" }], spendSaleTicket: { txid: l.id, vout: l.saleAuthorization.anchorVout } }); broadcastIntent(); } catch(e) { setStatus(e.message,"bad"); } };
   $("copyIntent").onclick = () => navigator.clipboard.writeText($("intent").textContent).then(()=>setStatus("Intent copied.","ok")).catch(()=>setStatus("Copy failed.","bad"));
-  $("postIntent").onclick = () => { if (!state.lastIntent) return setStatus("No intent yet.","bad"); parent.postMessage({ type: "pow:intent", payload: state.lastIntent }, "*"); setStatus("Intent posted to parent window.","ok"); };
+  $("postIntent").onclick = broadcastIntent;
+  window.addEventListener("message", event => {
+    const data = event.data || {};
+    if (data.type === "pow:intent-result") {
+      handleBroadcastResult(data.payload);
+    } else if (data.type === "pow:intent-error") {
+      setStatus(data.payload && data.payload.error || "Wallet signing failed.", "bad");
+    }
+  });
   render();
 })();
 </script>

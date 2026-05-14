@@ -104,7 +104,7 @@ proofofwork.me              permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           focused ID registry app
 computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
-browser.proofofwork.me      public read-only HTML browser by txid
+browser.proofofwork.me      public HTML browser and confirmed-page wallet-intent surface by txid
 marketplace.proofofwork.me  standalone ID marketplace
 pay2speak.proofofwork.me    standalone X Space crowdfunding app
 log.proofofwork.me          public Bitcoin Computer log

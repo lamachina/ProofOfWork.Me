@@ -2914,6 +2914,39 @@ function listingAnchorOutpoint(listing: PowIdListing) {
   };
 }
 
+function activeListingAnchorOutpointsForAddress(
+  listings: PowIdListing[],
+  address: string,
+  {
+    exceptListingId,
+    network,
+  }: {
+    exceptListingId?: string;
+    network?: BitcoinNetwork;
+  } = {},
+): PowIdSpentOutpoint[] {
+  if (!address) {
+    return [];
+  }
+
+  return listings.flatMap((listing) => {
+    if (network && listing.network !== network) {
+      return [];
+    }
+
+    if (exceptListingId && listing.listingId === exceptListingId) {
+      return [];
+    }
+
+    if (listing.sellerAddress !== address) {
+      return [];
+    }
+
+    const anchor = listingAnchorOutpoint(listing);
+    return anchor ? [anchor] : [];
+  });
+}
+
 function spendsListingAnchor(spentOutpoints: PowIdSpentOutpoint[], listing: PowIdListing) {
   const anchor = listingAnchorOutpoint(listing);
   return Boolean(anchor && spentOutpoints.some((outpoint) => outpoint.txid === anchor.txid && outpoint.vout === anchor.vout));
@@ -6422,6 +6455,7 @@ async function assertListingAnchorUnspent(listing: PowIdListing, network: Bitcoi
 
 async function buildAnchoredMarketplacePsbt({
   anchorSpendMode = "preSigned",
+  excludeOutpoints,
   feeRate,
   fromAddress,
   listing,
@@ -6431,6 +6465,7 @@ async function buildAnchoredMarketplacePsbt({
   requireConfirmedUtxos = true,
 }: {
   anchorSpendMode?: "preSigned" | "wallet";
+  excludeOutpoints?: PowIdSpentOutpoint[];
   feeRate: number;
   fromAddress: string;
   listing: PowIdListing;
@@ -6467,7 +6502,11 @@ async function buildAnchoredMarketplacePsbt({
   const changeOutputVbytes = outputVbytesForScript(changeScript);
   const walletUtxos = await fetchUtxos(fromAddress, network);
   const anchorOutpointKey = `${anchor.txid}:${anchor.vout}`;
-  const spendableWalletUtxos = walletUtxos.filter((utxo) => `${utxo.txid}:${utxo.vout}` !== anchorOutpointKey);
+  const excluded = new Set([
+    anchorOutpointKey,
+    ...(excludeOutpoints ?? []).map((outpoint) => `${outpoint.txid}:${outpoint.vout}`),
+  ]);
+  const spendableWalletUtxos = walletUtxos.filter((utxo) => !excluded.has(`${utxo.txid}:${utxo.vout}`));
   const utxos = requireConfirmedUtxos ? spendableWalletUtxos.filter((utxo) => utxo.status?.confirmed) : spendableWalletUtxos;
 
   if (walletUtxos.length === 0) {
@@ -8257,10 +8296,13 @@ export default function App() {
     setStatus({ tone: "idle", text: `Checking ${normalizedIdName}@proofofwork.me against the full registry...` });
 
     try {
-      const latestRegistry = await fetchIdRegistry(network);
-      setIdRegistry(latestRegistry);
+      const latestState = await fetchIdRegistryState(network);
+      setIdRegistry(latestState.records);
+      setIdListings(latestState.listings);
+      setIdPendingEvents(latestState.pendingEvents);
+      setIdSales(latestState.sales);
 
-      const existingRecord = latestRegistry.find((record) => record.network === network && record.id === normalizedIdName);
+      const existingRecord = latestState.records.find((record) => record.network === network && record.id === normalizedIdName);
       if (existingRecord?.confirmed) {
         setStatus({ tone: "bad", text: `${normalizedIdName}@proofofwork.me is already registered.` });
         return;
@@ -8272,6 +8314,7 @@ export default function App() {
       }
 
       setStatus({ tone: "idle", text: `Registering ${normalizedIdName}@proofofwork.me...` });
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, { network });
 
       const currentNetwork = await getWalletNetwork(window.unisat);
       if (currentNetwork !== network) {
@@ -8280,6 +8323,7 @@ export default function App() {
 
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: ID_REGISTRATION_PRICE_SATS,
+        excludeOutpoints: reservedOutpoints,
         feeRate,
         fromAddress: address,
         network,
@@ -8364,9 +8408,12 @@ export default function App() {
     setStatus({ tone: "idle", text: `Checking current owner for ${id}@proofofwork.me...` });
 
     try {
-      const latestRegistry = await fetchIdRegistry(network);
-      setIdRegistry(latestRegistry);
-      const latestRecord = latestRegistry.find((record) => record.network === network && record.id === id && record.confirmed);
+      const latestState = await fetchIdRegistryState(network);
+      setIdRegistry(latestState.records);
+      setIdListings(latestState.listings);
+      setIdPendingEvents(latestState.pendingEvents);
+      setIdSales(latestState.sales);
+      const latestRecord = latestState.records.find((record) => record.network === network && record.id === id && record.confirmed);
 
       if (!latestRecord) {
         setStatus({ tone: "bad", text: `${id}@proofofwork.me is not confirmed yet.` });
@@ -8384,8 +8431,10 @@ export default function App() {
       }
 
       setStatus({ tone: "idle", text: `${successText}...` });
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, { network });
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: ID_MUTATION_PRICE_SATS,
+        excludeOutpoints: reservedOutpoints,
         feeRate,
         fromAddress: address,
         network,
@@ -8481,7 +8530,10 @@ export default function App() {
       version: ID_SALE_AUTH_VERSION_TICKET,
     });
 
-    return { ...draft, signature: "" };
+    return {
+      authorization: { ...draft, signature: "" },
+      reservedOutpoints: activeListingAnchorOutpointsForAddress(latestState.listings, address, { network }),
+    };
   }
 
   async function publishIdListing() {
@@ -8499,7 +8551,7 @@ export default function App() {
     setStatus({ tone: "idle", text: `Checking current owner for ${managedIdRecord?.id ?? "ID"}...` });
 
     try {
-      const authorization = await prepareIdSaleAuthorization();
+      const { authorization, reservedOutpoints } = await prepareIdSaleAuthorization();
       setStatus({ tone: "idle", text: `Listing ticket ready. Approve the on-chain listing transaction in UniSat...` });
       const payload = buildIdListingPayload(authorization);
       if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
@@ -8510,6 +8562,7 @@ export default function App() {
       setStatus({ tone: "idle", text: `Publishing listing for ${authorization.id}@proofofwork.me...` });
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: ID_MUTATION_PRICE_SATS,
+        excludeOutpoints: reservedOutpoints,
         feeRate,
         fromAddress: address,
         network,
@@ -8622,9 +8675,13 @@ export default function App() {
 
       setStatus({ tone: "idle", text: `Publishing sale-ticket seal for ${listing.id}@proofofwork.me...` });
       const anchor = listingAnchorOutpoint(latestListing);
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, {
+        exceptListingId: latestListing.listingId,
+        network,
+      });
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: ID_MUTATION_PRICE_SATS,
-        excludeOutpoints: anchor ? [anchor] : undefined,
+        excludeOutpoints: [...reservedOutpoints, ...(anchor ? [anchor] : [])],
         feeRate,
         fromAddress: address,
         network,
@@ -8709,8 +8766,13 @@ export default function App() {
           await switchWalletNetwork(window.unisat, network);
         }
 
+        const reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, {
+          exceptListingId: latestListing.listingId,
+          network,
+        });
         const paymentPsbt = await buildAnchoredMarketplacePsbt({
           anchorSpendMode: listing.listingVersion === "list5" ? "wallet" : "preSigned",
+          excludeOutpoints: reservedOutpoints,
           feeRate,
           fromAddress: address,
           listing: latestListing,
@@ -8876,7 +8938,12 @@ export default function App() {
       ];
 
       setStatus({ tone: "idle", text: `Buying ${authorization.id}@proofofwork.me...` });
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, {
+        exceptListingId: latestListing.listingId,
+        network,
+      });
       const paymentPsbt = await buildAnchoredMarketplacePsbt({
+        excludeOutpoints: reservedOutpoints,
         feeRate,
         fromAddress: address,
         listing: latestListing,
@@ -9076,6 +9143,16 @@ export default function App() {
         await switchWalletNetwork(window.unisat, network);
       }
 
+      let reservedOutpoints: PowIdSpentOutpoint[] = [];
+      if (registryAddress) {
+        const latestState = await fetchIdRegistryState(network);
+        setIdRegistry(latestState.records);
+        setIdListings(latestState.listings);
+        setIdPendingEvents(latestState.pendingEvents);
+        setIdSales(latestState.sales);
+        reservedOutpoints = activeListingAnchorOutpointsForAddress(latestState.listings, address, { network });
+      }
+
       const satoshis = Math.floor(amountSats);
       const toRecipients: MailRecipient[] = resolvedRecipients.recipients.map((resolved) => ({
         address: resolved.paymentAddress,
@@ -9101,6 +9178,7 @@ export default function App() {
       });
       const mailRecipients = [...toRecipients, ...ccRecipients];
       const paymentPsbt = await buildPaymentPsbt({
+        excludeOutpoints: reservedOutpoints,
         feeRate,
         fromAddress: address,
         network,

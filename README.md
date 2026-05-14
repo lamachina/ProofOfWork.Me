@@ -46,7 +46,7 @@ Production app roles:
 - `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled Bitcoin Computer network value with real confirmed chain value in sats and USD.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
-- The landing page links to the current public PowerPoint deck at `/proofofwork-general-deck.pptx`.
+- The landing page links to the current public YouTube overview video.
 
 Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
 

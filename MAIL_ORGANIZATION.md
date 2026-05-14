@@ -34,7 +34,7 @@ Mail organization features that are already implemented in the full app:
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Browser view for HTML message bodies or verified `text/html` attachments by txid, rendered in a sandboxed iframe.
-- Browser wallet-intent bridge for confirmed on-chain HTML pages that post validated `pow:intent` messages to the parent app for local UniSat signing.
+- Browser-rendered HTML stays separate from wallet signing.
 - Canonical `Welcome to ProofOfWork.Me.html` system file pinned by txid and shown by default in Files/Desktop.
 - Browser-readable HTML message bodies appear in Files/Desktop as derived `.html` files, even when no attachment exists.
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
@@ -169,8 +169,7 @@ Behavior:
 - Render only HTML-like content: message bodies that look like HTML, or attachments marked `text/html`, `application/xhtml+xml`, `.html`, or `.xhtml`.
 - Render pending pages inside a sandboxed iframe with scripts disabled.
 - Render confirmed pages inside a sandboxed iframe that may run page scripts, but without same-origin privileges.
-- Accept `pow:intent` messages from the current confirmed iframe, validate the `pwt1` registry payment and OP_RETURN, prompt the user, and then build/sign/broadcast through local UniSat from the parent app.
-- Return `pow:intent-result` or `pow:intent-error` to the iframe so on-chain applications can update their own UI after signing.
+- Keep wallet signing outside Browser iframes. Browser renders verified HTML, but iframe scripts do not get a parent signing bridge.
 - Show proof metadata: txid, status, network, sender, sats, protocol bytes, size, and SHA-256.
 - Expose a simple Computer-native HTML template users can copy before publishing as a message body or download before publishing as a normal ProofOfWork file attachment.
 - Treat pending pages as pending visibility, not final truth.

@@ -175,41 +175,6 @@ type BrowserPage = {
   txid: string;
 };
 
-type PowIntentPayment = {
-  address: string;
-  amountSats: number;
-  role?: string;
-  vout?: number;
-};
-
-type PowIntentSaleAuthorization = Record<string, unknown>;
-
-type PowIntentSpend = {
-  txid: string;
-  vout: number;
-};
-
-type PowIntentPayload = {
-  action: string;
-  feeRate?: number;
-  network: BitcoinNetwork;
-  opReturn: string;
-  payments: PowIntentPayment[];
-  saleAuthorization?: PowIntentSaleAuthorization;
-  signSaleTicket?: Record<string, unknown>;
-  spendSaleTicket?: PowIntentSpend;
-  protocol: "pwt1";
-  registry: string;
-  registryFeeSats: number;
-};
-
-type PowIntentResult = {
-  action: string;
-  fromAddress: string;
-  network: BitcoinNetwork;
-  txid: string;
-};
-
 type LocalBackupPayload = {
   app: "ProofOfWork.Me";
   version: 1;
@@ -8629,212 +8594,6 @@ async function buildAnchoredMarketplacePsbt({
   };
 }
 
-async function buildPwtTicketSpendPsbt({
-  anchorSpendMode = "preSigned",
-  excludeOutpoints,
-  feeRate,
-  fromAddress,
-  network,
-  payments,
-  protocolPayloads,
-  requireConfirmedUtxos = true,
-  saleAuthorization,
-  spendSaleTicket,
-}: {
-  anchorSpendMode?: "preSigned" | "wallet";
-  excludeOutpoints?: PowIdSpentOutpoint[];
-  feeRate: number;
-  fromAddress: string;
-  network: BitcoinNetwork;
-  payments: PaymentOutputSpec[];
-  protocolPayloads: string[];
-  requireConfirmedUtxos?: boolean;
-  saleAuthorization?: Record<string, unknown>;
-  spendSaleTicket: PowIntentSpend;
-}) {
-  const selectedNetwork = bitcoinNetwork(network);
-  const ticketTxHex = await fetchTransactionHex(spendSaleTicket.txid, network);
-  const ticketTx = bitcoin.Transaction.fromHex(ticketTxHex);
-  const previousOutput = ticketTx.outs[spendSaleTicket.vout];
-  if (!previousOutput) {
-    throw new Error("PWT sale-ticket output could not be read.");
-  }
-
-  const anchorValueSats = Number(previousOutput.value);
-  const anchorScriptPubKey = bytesToHex(previousOutput.script).toLowerCase();
-  if (!Number.isSafeInteger(anchorValueSats) || anchorValueSats < DUST_SATS) {
-    throw new Error("PWT sale-ticket output value is invalid.");
-  }
-
-  if (saleAuthorization) {
-    const expectedVout = requiredSafeInteger(saleAuthorization.anchorVout, "PWT sale-ticket vout");
-    const expectedValueSats = requiredSafeInteger(saleAuthorization.anchorValueSats, "PWT sale-ticket value");
-    const expectedScriptPubKey = requiredString(saleAuthorization.anchorScriptPubKey, "PWT sale-ticket script").toLowerCase();
-    if (
-      expectedVout !== spendSaleTicket.vout ||
-      expectedValueSats !== anchorValueSats ||
-      expectedScriptPubKey !== anchorScriptPubKey
-    ) {
-      throw new Error("PWT sale-ticket output does not match the sale authorization.");
-    }
-  }
-
-  const normalizedPayments = payments.map((payment, index) => {
-    const satoshis = Math.floor(payment.amountSats);
-    if (satoshis <= 0) {
-      throw new Error("Recipient amount must be greater than zero.");
-    }
-
-    if (!payment.address) {
-      throw new Error(`Recipient ${index + 1} is missing an address.`);
-    }
-
-    return {
-      address: payment.address,
-      amountSats: satoshis,
-      script: scriptForAddress(payment.address, network, `Recipient ${index + 1}`),
-    };
-  });
-
-  const positiveOutputSats = normalizedPayments.reduce((total, payment) => total + payment.amountSats, 0);
-  const walletFundedSats = Math.max(0, positiveOutputSats - anchorValueSats);
-  const changeScript = scriptForAddress(fromAddress, network, "Connected wallet");
-  const opReturnScripts = protocolOutputScripts(protocolPayloads);
-  const fixedOutputVbytes =
-    normalizedPayments.reduce((total, payment) => total + outputVbytesForScript(payment.script), 0) +
-    opReturnScripts.reduce((total, script) => total + outputVbytesForScript(script), 0);
-  const changeOutputVbytes = outputVbytesForScript(changeScript);
-  const walletUtxos = await fetchUtxos(fromAddress, network);
-  const anchorOutpointKey = `${spendSaleTicket.txid}:${spendSaleTicket.vout}`;
-  const excluded = new Set([
-    anchorOutpointKey,
-    ...(excludeOutpoints ?? []).map((outpoint) => `${outpoint.txid}:${outpoint.vout}`),
-  ]);
-  const spendableWalletUtxos = walletUtxos.filter((utxo) => !excluded.has(`${utxo.txid}:${utxo.vout}`));
-  const utxos = requireConfirmedUtxos ? spendableWalletUtxos.filter((utxo) => utxo.status?.confirmed) : spendableWalletUtxos;
-
-  if (walletUtxos.length === 0) {
-    throw new Error(`No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`);
-  }
-
-  if (requireConfirmedUtxos && utxos.length === 0) {
-    throw new Error(
-      `No confirmed UTXOs found for ${shortAddress(fromAddress)}. Wait for wallet funds to confirm before broadcasting.`,
-    );
-  }
-
-  let selection: UtxoSelection;
-  try {
-    selection = selectUtxos(utxos, walletFundedSats, feeRate, fixedOutputVbytes, changeOutputVbytes, 1);
-  } catch (error) {
-    if (requireConfirmedUtxos && walletUtxos.length > utxos.length) {
-      throw new Error(
-        `${errorMessage(error, "Insufficient confirmed funds.")} Only confirmed UTXOs are used for ProofOfWork.Me broadcasts so effective fees do not get dragged down by unconfirmed ancestors.`,
-      );
-    }
-
-    throw error;
-  }
-
-  const selectedWithPreviousTx = await Promise.all(selection.selected.map((utxo) => loadUtxoPreviousOutput(utxo, network)));
-  const psbt = new bitcoin.Psbt({ network: selectedNetwork });
-  const anchorInput = {
-    hash: spendSaleTicket.txid,
-    index: spendSaleTicket.vout,
-    ...utxoInputData({
-      txid: spendSaleTicket.txid,
-      value: anchorValueSats,
-      vout: spendSaleTicket.vout,
-      previousOutput,
-      previousTxHex: ticketTxHex,
-    }),
-  };
-  const anchorIsTaproot = isTaprootScriptPubKey(previousOutput.script);
-
-  if (anchorSpendMode === "preSigned") {
-    if (!saleAuthorization) {
-      throw new Error("PWT purchase needs a sealed sale authorization.");
-    }
-
-    const signature = requiredString(saleAuthorization.anchorSignature, "PWT sale-ticket signature").toLowerCase();
-    const publicKey = requiredString(saleAuthorization.sellerPublicKey, "PWT seller public key").toLowerCase();
-    const sighashType = requiredSafeInteger(saleAuthorization.anchorSigHashType, "PWT sale-ticket sighash");
-    if (sighashType !== ID_LISTING_ANCHOR_SIGHASH_TYPE || !validSignatureHex(signature)) {
-      throw new Error("PWT sale-ticket signature is invalid.");
-    }
-
-    if (anchorIsTaproot) {
-      psbt.addInput({
-        ...anchorInput,
-        sighashType,
-        tapKeySig: Buffer.from(signature, "hex"),
-      });
-    } else {
-      if (!validPublicKeyHex(publicKey)) {
-        throw new Error("PWT seller public key is malformed.");
-      }
-
-      psbt.addInput({
-        ...anchorInput,
-        partialSig: [
-          {
-            pubkey: Buffer.from(publicKey, "hex"),
-            signature: Buffer.from(signature, "hex"),
-          },
-        ],
-        sighashType,
-      });
-    }
-  } else {
-    psbt.addInput(anchorInput);
-  }
-
-  for (const utxo of selectedWithPreviousTx) {
-    psbt.addInput({
-      hash: utxo.txid,
-      index: utxo.vout,
-      ...utxoInputData(utxo),
-    });
-  }
-
-  for (const payment of normalizedPayments) {
-    psbt.addOutput({
-      address: payment.address,
-      value: BigInt(payment.amountSats),
-    });
-  }
-
-  for (const script of opReturnScripts) {
-    psbt.addOutput({
-      script,
-      value: 0n,
-    });
-  }
-
-  if (selection.changeSats >= DUST_SATS) {
-    psbt.addOutput({
-      address: fromAddress,
-      value: BigInt(selection.changeSats),
-    });
-  }
-
-  if (anchorSpendMode === "preSigned") {
-    psbt.finalizeInput(0);
-  }
-
-  return {
-    anchorInputCount: 1,
-    changeSats: selection.changeSats,
-    dustFeeSats: selection.dustFeeSats,
-    feeSats: selection.feeSats,
-    inputCount: selection.selected.length + 1,
-    outputCount: normalizedPayments.length + opReturnScripts.length + (selection.changeSats >= DUST_SATS ? 1 : 0),
-    psbtHex: psbt.toHex(),
-    walletInputIndexes:
-      anchorSpendMode === "wallet" ? [0, ...selection.selected.map((_, index) => index + 1)] : selection.selected.map((_, index) => index + 1),
-  };
-}
-
 async function broadcastRawTransaction(rawTx: string, ownerNetwork: BitcoinNetwork) {
   const response = await fetch(`${mempoolBase(ownerNetwork)}/api/tx`, {
     body: rawTx,
@@ -14134,18 +13893,6 @@ function networkFromBrowserLocation(): BitcoinNetwork {
     : "livenet";
 }
 
-function normalizeBrowserIntentNetwork(value: unknown, fallback: BitcoinNetwork): BitcoinNetwork {
-  if (value === "mainnet" || value === "livenet") {
-    return "livenet";
-  }
-
-  if (value === "testnet4" || value === "testnet") {
-    return value;
-  }
-
-  return fallback;
-}
-
 function browserPageWithContext(page: BrowserPage) {
   const context = JSON.stringify({
     amountSats: page.amountSats,
@@ -14162,628 +13909,6 @@ function browserPageWithContext(page: BrowserPage) {
     : `${contextScript}${page.html}`;
 }
 
-function clonedRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-
-  return { ...(value as Record<string, unknown>) };
-}
-
-function requiredString(value: unknown, fieldName: string) {
-  const text = typeof value === "string" ? value.trim() : "";
-  if (!text) {
-    throw new Error(`${fieldName} is missing.`);
-  }
-
-  return text;
-}
-
-function optionalString(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function requiredSafeInteger(value: unknown, fieldName: string) {
-  const number = Math.floor(Number(value));
-  if (!Number.isSafeInteger(number)) {
-    throw new Error(`${fieldName} is invalid.`);
-  }
-
-  return number;
-}
-
-function placeholderString(value: unknown) {
-  const text = optionalString(value);
-  return !text || /^<.*>$/u.test(text);
-}
-
-function pwtPageNetworkValue(value: unknown, fallback: BitcoinNetwork) {
-  if (value === "mainnet" || value === "livenet") {
-    return "mainnet";
-  }
-
-  if (value === "testnet4" || value === "testnet") {
-    return value;
-  }
-
-  return fallback === "livenet" ? "mainnet" : fallback;
-}
-
-function pwtParts(payload: string, action: string, expectedParts: number) {
-  const parts = payload.split(":");
-  if (parts.length !== expectedParts || parts[0] !== "pwt1" || parts[1] !== action) {
-    throw new Error(`On-chain intent ${action} payload is malformed.`);
-  }
-
-  return parts;
-}
-
-function parsePwtSaleAuthorization(encoded: string) {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(decodeTextBase64Url(encoded));
-  } catch {
-    throw new Error("On-chain intent sale ticket JSON is invalid.");
-  }
-
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("On-chain intent sale ticket is invalid.");
-  }
-
-  return { ...(parsed as Record<string, unknown>) };
-}
-
-function encodePwtSaleAuthorization(authorization: Record<string, unknown>) {
-  return encodeTextBase64Url(JSON.stringify(authorization));
-}
-
-function normalizePwtSaleAuthorization({
-  authorization,
-  fromAddress,
-  network,
-  page,
-  rawNetwork,
-  registry,
-  role,
-  sellerAddress,
-  walletPublicKey,
-}: {
-  authorization: Record<string, unknown>;
-  fromAddress: string;
-  network: BitcoinNetwork;
-  page: BrowserPage;
-  rawNetwork: unknown;
-  registry: string;
-  role: "buyer" | "seller";
-  sellerAddress?: string;
-  walletPublicKey?: string;
-}) {
-  const normalized = { ...authorization };
-  const resolvedSeller = sellerAddress ?? optionalString(normalized.sellerAddress) ?? "";
-
-  normalized.tokenHtmlTxid = page.txid;
-  normalized.registry = registry;
-  normalized.network = pwtPageNetworkValue(rawNetwork, network);
-  normalized.anchorType = ID_LISTING_TICKET_ANCHOR_TYPE;
-  normalized.anchorVout = ID_LISTING_ANCHOR_VOUT;
-  normalized.anchorValueSats = ID_LISTING_ANCHOR_VALUE_SATS;
-  normalized.anchorSigHashType = ID_LISTING_ANCHOR_SIGHASH_TYPE;
-
-  if (role === "seller") {
-    normalized.sellerAddress = fromAddress;
-    if (walletPublicKey) {
-      normalized.sellerPublicKey = walletPublicKey;
-    }
-
-    normalized.anchorScriptPubKey = bytesToHex(scriptForAddress(fromAddress, network, "PWT sale-ticket output"));
-  } else if (resolvedSeller) {
-    normalized.sellerAddress = resolvedSeller;
-  }
-
-  const seller = requiredString(normalized.sellerAddress, "PWT sale-ticket seller");
-  if (!isValidBitcoinAddress(seller, network)) {
-    throw new Error("PWT sale-ticket seller address is invalid for this network.");
-  }
-
-  if (role === "seller" && seller !== fromAddress) {
-    throw new Error("Connected wallet must be the sale-ticket seller.");
-  }
-
-  const sellerPublicKey = optionalString(normalized.sellerPublicKey).toLowerCase();
-  if (role === "seller" && !validPublicKeyHex(sellerPublicKey)) {
-    throw new Error("Could not read a seller public key from UniSat for the sale ticket.");
-  }
-
-  if (sellerPublicKey) {
-    normalized.sellerPublicKey = sellerPublicKey;
-  }
-
-  const anchorScriptPubKey = optionalString(normalized.anchorScriptPubKey).toLowerCase();
-  if (!anchorScriptPubKey || placeholderString(anchorScriptPubKey)) {
-    throw new Error("PWT sale-ticket script is missing.");
-  }
-
-  normalized.anchorScriptPubKey = anchorScriptPubKey;
-  return normalized;
-}
-
-function sellerPaymentRequiredForPwt(authorization: Record<string, unknown>) {
-  const priceSats = requiredSafeInteger(authorization.priceSats, "PWT sale price");
-  const anchorValueSats = requiredSafeInteger(authorization.anchorValueSats, "PWT sale-ticket value");
-  if (priceSats < 0 || anchorValueSats < DUST_SATS) {
-    throw new Error("PWT sale-ticket price is invalid.");
-  }
-
-  return priceSats + anchorValueSats;
-}
-
-async function signPwtSaleTicketAuthorization({
-  authorization,
-  listingId,
-  network,
-  wallet,
-}: {
-  authorization: Record<string, unknown>;
-  listingId: string;
-  network: BitcoinNetwork;
-  wallet: UnisatWallet;
-}) {
-  if (!wallet.signPsbt) {
-    throw new Error("UniSat signPsbt is not available. Update UniSat and try again.");
-  }
-
-  if (!/^[0-9a-fA-F]{64}$/u.test(listingId)) {
-    throw new Error("PWT listing txid is invalid.");
-  }
-
-  const anchorVout = requiredSafeInteger(authorization.anchorVout, "PWT sale-ticket vout");
-  const anchorValueSats = requiredSafeInteger(authorization.anchorValueSats, "PWT sale-ticket value");
-  const anchorScriptPubKey = requiredString(authorization.anchorScriptPubKey, "PWT sale-ticket script").toLowerCase();
-  const sellerAddress = requiredString(authorization.sellerAddress, "PWT seller address");
-  const sellerPublicKey = requiredString(authorization.sellerPublicKey, "PWT seller public key").toLowerCase();
-  const sellerOutputSats = sellerPaymentRequiredForPwt(authorization);
-
-  if (!validPublicKeyHex(sellerPublicKey)) {
-    throw new Error("PWT seller public key is malformed.");
-  }
-
-  const listingTxHex = await fetchTransactionHex(listingId.toLowerCase(), network);
-  const listingTx = bitcoin.Transaction.fromHex(listingTxHex);
-  const previousOutput = listingTx.outs[anchorVout];
-  if (!previousOutput) {
-    throw new Error("PWT sale-ticket output could not be read.");
-  }
-
-  if (Number(previousOutput.value) !== anchorValueSats || bytesToHex(previousOutput.script).toLowerCase() !== anchorScriptPubKey) {
-    throw new Error("PWT sale-ticket output no longer matches the listing.");
-  }
-
-  const psbt = new bitcoin.Psbt({ network: bitcoinNetwork(network) });
-  psbt.addInput({
-    hash: listingId.toLowerCase(),
-    index: anchorVout,
-    sighashType: ID_LISTING_ANCHOR_SIGHASH_TYPE,
-    ...utxoInputData({
-      txid: listingId.toLowerCase(),
-      value: anchorValueSats,
-      vout: anchorVout,
-      previousOutput,
-      previousTxHex: listingTxHex,
-    }),
-  });
-  psbt.addOutput({
-    address: sellerAddress,
-    value: BigInt(sellerOutputSats),
-  });
-
-  let signedPsbtHex = "";
-  try {
-    signedPsbtHex = await wallet.signPsbt(psbt.toHex(), {
-      autoFinalized: false,
-      toSignInputs: [
-        {
-          address: sellerAddress,
-          index: 0,
-          sighashTypes: [ID_LISTING_ANCHOR_SIGHASH_TYPE],
-        },
-      ],
-    });
-  } catch (addressError) {
-    try {
-      signedPsbtHex = await wallet.signPsbt(psbt.toHex(), {
-        autoFinalized: false,
-        toSignInputs: [
-          {
-            index: 0,
-            publicKey: sellerPublicKey,
-            sighashTypes: [ID_LISTING_ANCHOR_SIGHASH_TYPE],
-          },
-        ],
-      });
-    } catch {
-      throw addressError;
-    }
-  }
-
-  const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, { network: bitcoinNetwork(network) });
-  const signature = signedInputSignature(signedPsbt, 0, sellerPublicKey)?.signature;
-  if (!signature || signature[signature.length - 1] !== ID_LISTING_ANCHOR_SIGHASH_TYPE) {
-    throw new Error("Wallet did not return a PWT sale-ticket signature with the required sighash type.");
-  }
-
-  const signatureHex = bytesToHex(signature);
-  if (!validSignatureHex(signatureHex)) {
-    throw new Error("Wallet returned a malformed PWT sale-ticket signature.");
-  }
-
-  return signatureHex;
-}
-
-async function hydratePowIntentForWallet({
-  fromAddress,
-  page,
-  rawIntent,
-  signSaleTicket = false,
-  wallet,
-}: {
-  fromAddress: string;
-  page: BrowserPage;
-  rawIntent: unknown;
-  signSaleTicket?: boolean;
-  wallet: UnisatWallet;
-}) {
-  if (!rawIntent || typeof rawIntent !== "object" || Array.isArray(rawIntent)) {
-    throw new Error("On-chain intent is missing.");
-  }
-
-  const raw = { ...(rawIntent as Record<string, unknown>) };
-  const action = requiredString(raw.action, "On-chain intent action");
-  const network = normalizeBrowserIntentNetwork(raw.network, page.network);
-  const rawNetwork = raw.network;
-  const registry = requiredString(raw.registry, "On-chain intent registry");
-  const registryFeeSats = requiredSafeInteger(raw.registryFeeSats, "On-chain intent registry fee");
-  const walletPublicKey =
-    action === "list5" || action === "seal5"
-      ? ((await wallet.getPublicKey?.().catch(() => "")) ?? "").trim().toLowerCase()
-      : "";
-
-  if (action === "list5") {
-    const parts = pwtParts(requiredString(raw.opReturn, "On-chain intent OP_RETURN"), "list5", 3);
-    const authorization = normalizePwtSaleAuthorization({
-      authorization: parsePwtSaleAuthorization(parts[2]),
-      fromAddress,
-      network,
-      page,
-      rawNetwork,
-      registry,
-      role: "seller",
-      walletPublicKey,
-    });
-    raw.saleAuthorization = authorization;
-    raw.opReturn = `pwt1:list5:${encodePwtSaleAuthorization(authorization)}`;
-    raw.payments = [
-      { address: registry, amountSats: registryFeeSats, role: "registry" },
-      {
-        address: fromAddress,
-        amountSats: requiredSafeInteger(authorization.anchorValueSats, "PWT sale-ticket value"),
-        role: "sale-ticket",
-        vout: requiredSafeInteger(authorization.anchorVout, "PWT sale-ticket vout"),
-      },
-    ];
-  } else if (action === "seal5") {
-    const parts = pwtParts(requiredString(raw.opReturn, "On-chain intent OP_RETURN"), "seal5", 4);
-    const listingId = parts[2].toLowerCase();
-    const authorization = normalizePwtSaleAuthorization({
-      authorization: parsePwtSaleAuthorization(parts[3]),
-      fromAddress,
-      network,
-      page,
-      rawNetwork,
-      registry,
-      role: "seller",
-      walletPublicKey,
-    });
-    authorization.anchorTxid = listingId;
-    if (signSaleTicket && (placeholderString(authorization.anchorSignature) || !validSignatureHex(optionalString(authorization.anchorSignature)))) {
-      authorization.anchorSignature = await signPwtSaleTicketAuthorization({
-        authorization,
-        listingId,
-        network,
-        wallet,
-      });
-    }
-
-    raw.saleAuthorization = authorization;
-    raw.opReturn = `pwt1:seal5:${listingId}:${encodePwtSaleAuthorization(authorization)}`;
-    raw.payments = [{ address: registry, amountSats: registryFeeSats, role: "registry" }];
-  } else if (action === "delist5") {
-    const parts = pwtParts(requiredString(raw.opReturn, "On-chain intent OP_RETURN"), "delist5", 3);
-    const authorization = normalizePwtSaleAuthorization({
-      authorization: clonedRecord(raw.saleAuthorization),
-      fromAddress,
-      network,
-      page,
-      rawNetwork,
-      registry,
-      role: "seller",
-      walletPublicKey,
-    });
-    const listingId = parts[2].toLowerCase();
-    raw.saleAuthorization = authorization;
-    raw.spendSaleTicket = {
-      txid: listingId,
-      vout: requiredSafeInteger(authorization.anchorVout, "PWT sale-ticket vout"),
-    };
-    raw.payments = [
-      {
-        address: fromAddress,
-        amountSats: requiredSafeInteger(authorization.anchorValueSats, "PWT sale-ticket value"),
-        role: "sale-ticket-refund",
-      },
-      { address: registry, amountSats: registryFeeSats, role: "registry" },
-    ];
-  } else if (action === "buy5") {
-    const parts = pwtParts(requiredString(raw.opReturn, "On-chain intent OP_RETURN"), "buy5", 4);
-    const listingId = parts[2].toLowerCase();
-    const authorization = normalizePwtSaleAuthorization({
-      authorization: clonedRecord(raw.saleAuthorization),
-      fromAddress,
-      network,
-      page,
-      rawNetwork,
-      registry,
-      role: "buyer",
-    });
-    const lockedBuyer = optionalString(authorization.buyerAddress);
-    if (lockedBuyer && lockedBuyer !== fromAddress) {
-      throw new Error("This PWT listing is locked to a different buyer.");
-    }
-
-    const sealedListingId = optionalString(authorization.anchorTxid).toLowerCase();
-    if (sealedListingId && sealedListingId !== listingId) {
-      throw new Error("PWT sale-ticket seal points at a different listing.");
-    }
-
-    raw.saleAuthorization = authorization;
-    raw.spendSaleTicket = {
-      txid: listingId,
-      vout: requiredSafeInteger(authorization.anchorVout, "PWT sale-ticket vout"),
-    };
-    raw.opReturn = `pwt1:buy5:${listingId}:${fromAddress}`;
-    raw.payments = [
-      {
-        address: requiredString(authorization.sellerAddress, "PWT seller address"),
-        amountSats: sellerPaymentRequiredForPwt(authorization),
-        role: "seller",
-      },
-      { address: registry, amountSats: registryFeeSats, role: "registry" },
-    ];
-  }
-
-  return raw;
-}
-
-function normalizePowIntent(raw: unknown, page: BrowserPage): PowIntentPayload {
-  if (!raw || typeof raw !== "object") {
-    throw new Error("On-chain intent is missing.");
-  }
-
-  const input = raw as Record<string, unknown>;
-  if (input.protocol !== "pwt1") {
-    throw new Error("Only pwt1 on-chain intents are supported right now.");
-  }
-
-  const action = typeof input.action === "string" ? input.action.trim() : "";
-  const opReturn = typeof input.opReturn === "string" ? input.opReturn.trim() : "";
-  const registry = typeof input.registry === "string" ? input.registry.trim() : "";
-  const network = normalizeBrowserIntentNetwork(input.network, page.network);
-  const registryFeeSats = Math.floor(Number(input.registryFeeSats));
-  const feeRate = input.feeRate === undefined ? undefined : Number(input.feeRate);
-
-  if (!action) {
-    throw new Error("On-chain intent is missing an action.");
-  }
-
-  if (!opReturn.startsWith("pwt1:")) {
-    throw new Error("On-chain intent is missing a pwt1 OP_RETURN.");
-  }
-
-  if (!registry || !isValidBitcoinAddress(registry, network)) {
-    throw new Error("On-chain intent registry address is invalid for this network.");
-  }
-
-  if (!Number.isSafeInteger(registryFeeSats) || registryFeeSats < DUST_SATS) {
-    throw new Error("On-chain intent registry fee is invalid.");
-  }
-
-  if (feeRate !== undefined && (!Number.isFinite(feeRate) || feeRate <= 0)) {
-    throw new Error("On-chain intent fee rate is invalid.");
-  }
-
-  const payments = Array.isArray(input.payments)
-    ? input.payments.flatMap((item): PowIntentPayment[] => {
-        if (!item || typeof item !== "object") {
-          return [];
-        }
-
-        const payment = item as Record<string, unknown>;
-        const address = typeof payment.address === "string" ? payment.address.trim() : "";
-        const amountSats = Math.floor(Number(payment.amountSats));
-        if (!address || !isValidBitcoinAddress(address, network) || !Number.isSafeInteger(amountSats) || amountSats < DUST_SATS) {
-          return [];
-        }
-
-        return [
-          {
-            address,
-            amountSats,
-            role: typeof payment.role === "string" ? payment.role : undefined,
-            vout:
-              Number.isSafeInteger(Math.floor(Number(payment.vout))) && Number(payment.vout) >= 0
-                ? Math.floor(Number(payment.vout))
-                : undefined,
-          },
-        ];
-      })
-    : [];
-
-  if (payments.length === 0) {
-    payments.push({ address: registry, amountSats: registryFeeSats, role: "registry" });
-  }
-
-  const registryPayment = payments.find((payment) => payment.address === registry && payment.amountSats >= registryFeeSats);
-  if (!registryPayment) {
-    throw new Error("On-chain intent must include the registry payment.");
-  }
-
-  const saleAuthorization =
-    input.saleAuthorization && typeof input.saleAuthorization === "object" && !Array.isArray(input.saleAuthorization)
-      ? { ...(input.saleAuthorization as Record<string, unknown>) }
-      : undefined;
-  const signSaleTicket =
-    input.signSaleTicket && typeof input.signSaleTicket === "object" && !Array.isArray(input.signSaleTicket)
-      ? { ...(input.signSaleTicket as Record<string, unknown>) }
-      : undefined;
-  const spendSaleTicketInput =
-    input.spendSaleTicket && typeof input.spendSaleTicket === "object" && !Array.isArray(input.spendSaleTicket)
-      ? (input.spendSaleTicket as Record<string, unknown>)
-      : undefined;
-  const spendSaleTicketTxid = typeof spendSaleTicketInput?.txid === "string" ? spendSaleTicketInput.txid.trim().toLowerCase() : "";
-  const spendSaleTicketVout = Math.floor(Number(spendSaleTicketInput?.vout));
-  const spendSaleTicket =
-    spendSaleTicketTxid && /^[0-9a-f]{64}$/u.test(spendSaleTicketTxid) && Number.isSafeInteger(spendSaleTicketVout) && spendSaleTicketVout >= 0
-      ? { txid: spendSaleTicketTxid, vout: spendSaleTicketVout }
-      : undefined;
-
-  return {
-    action,
-    feeRate,
-    network,
-    opReturn,
-    payments,
-    protocol: "pwt1",
-    registry,
-    registryFeeSats,
-    saleAuthorization,
-    signSaleTicket,
-    spendSaleTicket,
-  };
-}
-
-function isPowIntentMessage(value: unknown): value is { payload: unknown; type: "pow:intent" } {
-  return Boolean(value && typeof value === "object" && (value as Record<string, unknown>).type === "pow:intent");
-}
-
-async function executePowIntent(rawIntent: unknown, page: BrowserPage): Promise<PowIntentResult> {
-  if (!page.confirmed) {
-    throw new Error("Only confirmed on-chain pages can request wallet signing.");
-  }
-
-  if (!window.unisat) {
-    throw new Error("Install or unlock UniSat to sign this on-chain intent.");
-  }
-
-  if (!window.unisat.signPsbt) {
-    throw new Error("UniSat signPsbt is not available. Update UniSat and try again.");
-  }
-
-  const wallet = window.unisat;
-  const rawRecord = clonedRecord(rawIntent);
-  const targetNetwork = normalizeBrowserIntentNetwork(rawRecord.network, page.network);
-  const accounts = wallet.requestAccounts ? await wallet.requestAccounts() : await wallet.getAccounts?.();
-  const fromAddress = accounts?.[0] ?? "";
-  if (!fromAddress || !isValidBitcoinAddress(fromAddress, targetNetwork)) {
-    throw new Error(`Connected wallet address is not valid for ${networkLabel(targetNetwork)}.`);
-  }
-
-  const currentNetwork = await getWalletNetwork(wallet);
-  if (currentNetwork !== targetNetwork) {
-    await switchWalletNetwork(wallet, targetNetwork);
-  }
-
-  let hydratedIntent = await hydratePowIntentForWallet({
-    fromAddress,
-    page,
-    rawIntent,
-    wallet,
-  });
-  let intent = normalizePowIntent(hydratedIntent, page);
-  const paymentSummary = intent.payments
-    .map((payment) => `${payment.amountSats.toLocaleString()} sats to ${shortAddress(payment.address)}${payment.role ? ` (${payment.role})` : ""}`)
-    .join("\n");
-  const shouldContinue = window.confirm(
-    [
-      "On-chain page requests a wallet signature.",
-      "",
-      `Action: ${intent.action}`,
-      `Network: ${networkLabel(intent.network)}`,
-      `OP_RETURN: ${intent.opReturn}`,
-      "",
-      paymentSummary,
-      intent.spendSaleTicket ? `Spends sale ticket: ${shortAddress(intent.spendSaleTicket.txid)}:${intent.spendSaleTicket.vout}` : "",
-      "",
-      "Only sign if this matches what you intended.",
-    ].filter(Boolean).join("\n"),
-  );
-
-  if (!shouldContinue) {
-    throw new Error("On-chain intent canceled.");
-  }
-
-  if (intent.action === "seal5") {
-    hydratedIntent = await hydratePowIntentForWallet({
-      fromAddress,
-      page,
-      rawIntent: hydratedIntent,
-      signSaleTicket: true,
-      wallet,
-    });
-    intent = normalizePowIntent(hydratedIntent, page);
-  }
-
-  const postProtocolPayments = intent.payments.filter((payment) => payment.role === "sale-ticket");
-  const payments = intent.payments.filter((payment) => payment.role !== "sale-ticket");
-  const paymentPsbt = intent.spendSaleTicket
-    ? await buildPwtTicketSpendPsbt({
-        anchorSpendMode: intent.action === "buy5" ? "preSigned" : "wallet",
-        feeRate: intent.feeRate ?? DEFAULT_BROWSER_INTENT_FEE_RATE,
-        fromAddress,
-        network: intent.network,
-        payments,
-        protocolPayloads: [intent.opReturn],
-        requireConfirmedUtxos: true,
-        saleAuthorization: intent.saleAuthorization,
-        spendSaleTicket: intent.spendSaleTicket,
-      })
-    : await buildPaymentPsbt({
-        feeRate: intent.feeRate ?? DEFAULT_BROWSER_INTENT_FEE_RATE,
-        fromAddress,
-        network: intent.network,
-        payments,
-        postProtocolPayments,
-        protocolPayloads: [intent.opReturn],
-      });
-  const signInputIndexes =
-    "walletInputIndexes" in paymentPsbt && Array.isArray(paymentPsbt.walletInputIndexes)
-      ? (paymentPsbt.walletInputIndexes as number[])
-      : undefined;
-  const txid = await signAndBroadcastPsbt({
-    inputCount: paymentPsbt.inputCount,
-    network: intent.network,
-    psbtHex: paymentPsbt.psbtHex,
-    signInputIndexes,
-    signingAddress: fromAddress,
-    wallet,
-  });
-
-  return {
-    action: intent.action,
-    fromAddress,
-    network: intent.network,
-    txid,
-  };
-}
-
 function BrowserApp({
   setTheme,
   theme,
@@ -14797,7 +13922,6 @@ function BrowserApp({
   const [query, setQuery] = useState(() => txidFromBrowserLocation());
   const [page, setPage] = useState<BrowserPage | undefined>();
   const [loading, setLoading] = useState(false);
-  const [intentBusy, setIntentBusy] = useState(false);
   const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({ tone: "idle", text: "Ready" });
   const [templateTitle, setTemplateTitle] = useState("My Bitcoin Page");
   const [templateKicker, setTemplateKicker] = useState(
@@ -14808,7 +13932,6 @@ function BrowserApp({
   );
   const [templateCopied, setTemplateCopied] = useState(false);
   const initialLoadRef = useRef(false);
-  const previewFrameRef = useRef<HTMLIFrameElement>(null);
   const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
   const templateBytes = useMemo(() => byteLength(template), [template]);
   const templateSha256 = useMemo(
@@ -14864,39 +13987,6 @@ function BrowserApp({
       void loadPage(initialTxid);
     }
   }, [loadPage]);
-
-  const handlePowIntentMessage = useCallback(
-    (event: MessageEvent) => {
-      if (!isPowIntentMessage(event.data)) {
-        return;
-      }
-
-      const previewWindow = previewFrameRef.current?.contentWindow;
-      if (!page || !previewWindow || event.source !== previewWindow) {
-        return;
-      }
-
-      setIntentBusy(true);
-      setStatus({ tone: "idle", text: "On-chain page requested wallet signing..." });
-      void executePowIntent(event.data.payload, page)
-        .then((result) => {
-          setStatus({ tone: "good", text: `Broadcast ${result.action}: ${shortAddress(result.txid)}.` });
-          previewWindow.postMessage({ payload: result, type: "pow:intent-result" }, "*");
-        })
-        .catch((error) => {
-          const text = errorMessage(error, "Could not execute on-chain intent.");
-          setStatus({ tone: "bad", text });
-          previewWindow.postMessage({ payload: { error: text }, type: "pow:intent-error" }, "*");
-        })
-        .finally(() => setIntentBusy(false));
-    },
-    [page],
-  );
-
-  useEffect(() => {
-    window.addEventListener("message", handlePowIntentMessage);
-    return () => window.removeEventListener("message", handlePowIntentMessage);
-  }, [handlePowIntentMessage]);
 
   async function copyTemplate() {
     await copyTextToClipboard(template);
@@ -14970,10 +14060,10 @@ function BrowserApp({
             </label>
             <div className="browser-form-row">
               <BrowserNetworkTabs network={network} onChange={setNetwork} />
-              <button className="primary" disabled={loading || intentBusy} type="submit">
+              <button className="primary" disabled={loading} type="submit">
                 <span className="button-content">
                   <Search size={16} />
-                  <span>{intentBusy ? "Signing" : loading ? "Loading" : "View Page"}</span>
+                  <span>{loading ? "Loading" : "View Page"}</span>
                 </span>
               </button>
             </div>
@@ -15002,7 +14092,6 @@ function BrowserApp({
               </div>
               <iframe
                 allow="clipboard-write"
-                ref={previewFrameRef}
                 referrerPolicy="no-referrer"
                 sandbox={page.confirmed ? "allow-scripts" : ""}
                 srcDoc={browserPageWithContext(page)}
@@ -15181,7 +14270,6 @@ function BrowserWorkspace({
   const [query, setQuery] = useState("");
   const [page, setPage] = useState<BrowserPage | undefined>();
   const [loading, setLoading] = useState(false);
-  const [intentBusy, setIntentBusy] = useState(false);
   const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({
     tone: "idle",
     text: "Ready. Paste a txid to render verified HTML from the Bitcoin Computer.",
@@ -15204,7 +14292,6 @@ function BrowserWorkspace({
     [template],
   );
   const templateHref = `data:text/html;charset=utf-8,${encodeURIComponent(template)}`;
-  const previewFrameRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     setNetwork(activeNetwork);
@@ -15252,39 +14339,6 @@ function BrowserWorkspace({
     window.setTimeout(() => setTemplateCopied(false), 1600);
   }
 
-  const handlePowIntentMessage = useCallback(
-    (event: MessageEvent) => {
-      if (!isPowIntentMessage(event.data)) {
-        return;
-      }
-
-      const previewWindow = previewFrameRef.current?.contentWindow;
-      if (!page || !previewWindow || event.source !== previewWindow) {
-        return;
-      }
-
-      setIntentBusy(true);
-      setStatus({ tone: "idle", text: "On-chain page requested wallet signing..." });
-      void executePowIntent(event.data.payload, page)
-        .then((result) => {
-          setStatus({ tone: "good", text: `Broadcast ${result.action}: ${shortAddress(result.txid)}.` });
-          previewWindow.postMessage({ payload: result, type: "pow:intent-result" }, "*");
-        })
-        .catch((error) => {
-          const text = errorMessage(error, "Could not execute on-chain intent.");
-          setStatus({ tone: "bad", text });
-          previewWindow.postMessage({ payload: { error: text }, type: "pow:intent-error" }, "*");
-        })
-        .finally(() => setIntentBusy(false));
-    },
-    [page],
-  );
-
-  useEffect(() => {
-    window.addEventListener("message", handlePowIntentMessage);
-    return () => window.removeEventListener("message", handlePowIntentMessage);
-  }, [handlePowIntentMessage]);
-
   return (
     <section className="browser-workspace browser-computer-workspace">
       <div className={`status browser-workspace-status ${status.tone}`}>
@@ -15320,10 +14374,10 @@ function BrowserWorkspace({
           </label>
           <div className="browser-form-row">
             <BrowserNetworkTabs network={network} onChange={setNetwork} />
-            <button className="primary" disabled={loading || intentBusy} type="submit">
+            <button className="primary" disabled={loading} type="submit">
               <span className="button-content">
                 <Search size={16} />
-                <span>{intentBusy ? "Signing" : loading ? "Loading" : "View Page"}</span>
+                <span>{loading ? "Loading" : "View Page"}</span>
               </span>
             </button>
           </div>
@@ -15352,7 +14406,6 @@ function BrowserWorkspace({
             </div>
             <iframe
               allow="clipboard-write"
-              ref={previewFrameRef}
               referrerPolicy="no-referrer"
               sandbox={page.confirmed ? "allow-scripts" : ""}
               srcDoc={browserPageWithContext(page)}

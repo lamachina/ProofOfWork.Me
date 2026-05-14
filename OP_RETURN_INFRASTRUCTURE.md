@@ -177,8 +177,8 @@ The tx endpoint:
 - Returns a normalized transaction payload from the same local/pending source order.
 - Lets Browser reconstruct HTML from `pwm1:m` message bodies or verified `pwm1:a` attachments by txid without depending on public mempool.space from production browsers.
 - Does not turn pending transactions into canonical history; Browser labels pending pages as pending.
-- Lets confirmed Browser pages run scripts in an opaque sandbox and request local wallet signing by posting `pow:intent` messages to the parent app. The parent validates currently supported `pwt1` registry payments and OP_RETURN payloads, prompts the user, builds the PSBT, and signs/broadcasts through UniSat.
-- Keeps pending Browser pages non-interactive for wallet signing. The API never receives seed phrases, private keys, or wallet authority.
+- Lets confirmed Browser pages run scripts in an opaque sandbox while keeping wallet signing outside Browser pages.
+- Keeps pending Browser pages script-disabled. The API never receives seed phrases, private keys, or wallet authority.
 
 Files/Desktop projection:
 

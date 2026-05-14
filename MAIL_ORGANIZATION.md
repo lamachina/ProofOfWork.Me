@@ -12,7 +12,7 @@ proofofwork.me              permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           focused ProofOfWork ID registry onboarding app
 computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
-browser.proofofwork.me      public read-only HTML browser by txid
+browser.proofofwork.me      public HTML browser and confirmed-page wallet-intent surface by txid
 marketplace.proofofwork.me  standalone ID marketplace
 log.proofofwork.me          public Bitcoin Computer log
 growth.proofofwork.me       public growth model dashboard
@@ -33,6 +33,7 @@ Mail organization features that are already implemented in the full app:
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Browser view for HTML message bodies or verified `text/html` attachments by txid, rendered in a sandboxed iframe.
+- Browser wallet-intent bridge for confirmed on-chain HTML pages that post validated `pow:intent` messages to the parent app for local UniSat signing.
 - Canonical `Welcome to ProofOfWork.Me.html` system file pinned by txid and shown by default in Files/Desktop.
 - Browser-readable HTML message bodies appear in Files/Desktop as derived `.html` files, even when no attachment exists.
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
@@ -47,7 +48,7 @@ Future developers should keep `id.proofofwork.me` narrow. Do not pull the full m
 Marketplace actions should stay outside the mailbox folders. Keep ID trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders.
 Log is not a mailbox folder. It is a read-only Bitcoin Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, and attachments.
 Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical Bitcoin Computer growth model in sats and USD.
-Browser is not a mailbox folder. It is a read-only HTML viewer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. It should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
+Browser is not a mailbox folder. It is an HTML renderer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. Confirmed pages may ask the parent Browser app to sign narrowly validated wallet intents, but wallet authority stays local in UniSat. Browser should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
 
 ## Core Idea
 
@@ -153,7 +154,7 @@ The Computer app may still keep an internal Desktop folder for signed-in users. 
 
 ## Browser
 
-Browser is the public read-only HTML renderer for the Bitcoin Computer. On `browser.proofofwork.me`, users paste a txid and the app renders HTML from the existing `pwm1:m` message body or reconstructs a verified `text/html` attachment from `pwm1:a` chunks.
+Browser is the public HTML renderer for the Bitcoin Computer. On `browser.proofofwork.me`, users paste a txid and the app renders HTML from the existing `pwm1:m` message body or reconstructs a verified `text/html` attachment from `pwm1:a` chunks.
 
 The full Computer app also exposes Browser as a sidebar workspace. New products should follow this pattern: a standalone public surface when useful, a Computer workspace when it belongs inside the full machine, and a matching entry in the growth model.
 
@@ -164,7 +165,10 @@ Behavior:
 - Render HTML-like message bodies directly from `pwm1:m` chunks.
 - Reconstruct HTML attachments through the same size and SHA-256 checks as Files/Desktop.
 - Render only HTML-like content: message bodies that look like HTML, or attachments marked `text/html`, `application/xhtml+xml`, `.html`, or `.xhtml`.
-- Render inside a sandboxed iframe with scripts disabled by default.
+- Render pending pages inside a sandboxed iframe with scripts disabled.
+- Render confirmed pages inside a sandboxed iframe that may run page scripts, but without same-origin privileges.
+- Accept `pow:intent` messages from the current confirmed iframe, validate the `pwt1` registry payment and OP_RETURN, prompt the user, and then build/sign/broadcast through local UniSat from the parent app.
+- Return `pow:intent-result` or `pow:intent-error` to the iframe so on-chain applications can update their own UI after signing.
 - Show proof metadata: txid, status, network, sender, sats, protocol bytes, size, and SHA-256.
 - Expose a simple Computer-native HTML template users can copy before publishing as a message body or download before publishing as a normal ProofOfWork file attachment.
 - Treat pending pages as pending visibility, not final truth.

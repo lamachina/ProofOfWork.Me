@@ -148,6 +148,30 @@ type BrowserPage = {
   txid: string;
 };
 
+type PowIntentPayment = {
+  address: string;
+  amountSats: number;
+  role?: string;
+};
+
+type PowIntentPayload = {
+  action: string;
+  feeRate?: number;
+  network: BitcoinNetwork;
+  opReturn: string;
+  payments: PowIntentPayment[];
+  protocol: "pwt1";
+  registry: string;
+  registryFeeSats: number;
+};
+
+type PowIntentResult = {
+  action: string;
+  fromAddress: string;
+  network: BitcoinNetwork;
+  txid: string;
+};
+
 type LocalBackupPayload = {
   app: "ProofOfWork.Me";
   version: 1;
@@ -692,6 +716,7 @@ const ESTIMATED_INPUT_VBYTES = 160;
 const DUST_SATS = 546;
 const DEFAULT_AMOUNT_SATS = 546;
 const DEFAULT_FEE_RATE = 0.1;
+const DEFAULT_BROWSER_INTENT_FEE_RATE = 1;
 const DEFAULT_MEMO = "";
 const MAX_RECIPIENTS = 10;
 
@@ -10172,6 +10197,173 @@ function networkFromBrowserLocation(): BitcoinNetwork {
   return network === "testnet4" || network === "testnet" || network === "livenet" ? network : "livenet";
 }
 
+function normalizeBrowserIntentNetwork(value: unknown, fallback: BitcoinNetwork): BitcoinNetwork {
+  if (value === "mainnet" || value === "livenet") {
+    return "livenet";
+  }
+
+  if (value === "testnet4" || value === "testnet") {
+    return value;
+  }
+
+  return fallback;
+}
+
+function normalizePowIntent(raw: unknown, page: BrowserPage): PowIntentPayload {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("On-chain intent is missing.");
+  }
+
+  const input = raw as Record<string, unknown>;
+  if (input.protocol !== "pwt1") {
+    throw new Error("Only pwt1 on-chain intents are supported right now.");
+  }
+
+  const action = typeof input.action === "string" ? input.action.trim() : "";
+  const opReturn = typeof input.opReturn === "string" ? input.opReturn.trim() : "";
+  const registry = typeof input.registry === "string" ? input.registry.trim() : "";
+  const network = normalizeBrowserIntentNetwork(input.network, page.network);
+  const registryFeeSats = Math.floor(Number(input.registryFeeSats));
+  const feeRate = input.feeRate === undefined ? undefined : Number(input.feeRate);
+
+  if (!action) {
+    throw new Error("On-chain intent is missing an action.");
+  }
+
+  if (!opReturn.startsWith("pwt1:")) {
+    throw new Error("On-chain intent is missing a pwt1 OP_RETURN.");
+  }
+
+  if (!registry || !isValidBitcoinAddress(registry, network)) {
+    throw new Error("On-chain intent registry address is invalid for this network.");
+  }
+
+  if (!Number.isSafeInteger(registryFeeSats) || registryFeeSats < DUST_SATS) {
+    throw new Error("On-chain intent registry fee is invalid.");
+  }
+
+  if (feeRate !== undefined && (!Number.isFinite(feeRate) || feeRate <= 0)) {
+    throw new Error("On-chain intent fee rate is invalid.");
+  }
+
+  const payments = Array.isArray(input.payments)
+    ? input.payments.flatMap((item): PowIntentPayment[] => {
+        if (!item || typeof item !== "object") {
+          return [];
+        }
+
+        const payment = item as Record<string, unknown>;
+        const address = typeof payment.address === "string" ? payment.address.trim() : "";
+        const amountSats = Math.floor(Number(payment.amountSats));
+        if (!address || !isValidBitcoinAddress(address, network) || !Number.isSafeInteger(amountSats) || amountSats < DUST_SATS) {
+          return [];
+        }
+
+        return [
+          {
+            address,
+            amountSats,
+            role: typeof payment.role === "string" ? payment.role : undefined,
+          },
+        ];
+      })
+    : [];
+
+  if (payments.length === 0) {
+    payments.push({ address: registry, amountSats: registryFeeSats, role: "registry" });
+  }
+
+  const registryPayment = payments.find((payment) => payment.address === registry && payment.amountSats >= registryFeeSats);
+  if (!registryPayment) {
+    throw new Error("On-chain intent must include the registry payment.");
+  }
+
+  return {
+    action,
+    feeRate,
+    network,
+    opReturn,
+    payments,
+    protocol: "pwt1",
+    registry,
+    registryFeeSats,
+  };
+}
+
+function isPowIntentMessage(value: unknown): value is { payload: unknown; type: "pow:intent" } {
+  return Boolean(value && typeof value === "object" && (value as Record<string, unknown>).type === "pow:intent");
+}
+
+async function executePowIntent(rawIntent: unknown, page: BrowserPage): Promise<PowIntentResult> {
+  const intent = normalizePowIntent(rawIntent, page);
+  if (!page.confirmed) {
+    throw new Error("Only confirmed on-chain pages can request wallet signing.");
+  }
+
+  if (!window.unisat) {
+    throw new Error("Install or unlock UniSat to sign this on-chain intent.");
+  }
+
+  if (!window.unisat.signPsbt) {
+    throw new Error("UniSat signPsbt is not available. Update UniSat and try again.");
+  }
+
+  const paymentSummary = intent.payments
+    .map((payment) => `${payment.amountSats.toLocaleString()} sats to ${shortAddress(payment.address)}${payment.role ? ` (${payment.role})` : ""}`)
+    .join("\n");
+  const shouldContinue = window.confirm(
+    [
+      "On-chain page requests a wallet signature.",
+      "",
+      `Action: ${intent.action}`,
+      `Network: ${networkLabel(intent.network)}`,
+      `OP_RETURN: ${intent.opReturn}`,
+      "",
+      paymentSummary,
+      "",
+      "Only sign if this matches what you intended.",
+    ].join("\n"),
+  );
+
+  if (!shouldContinue) {
+    throw new Error("On-chain intent canceled.");
+  }
+
+  const wallet = window.unisat;
+  const accounts = wallet.requestAccounts ? await wallet.requestAccounts() : await wallet.getAccounts?.();
+  const fromAddress = accounts?.[0] ?? "";
+  if (!fromAddress || !isValidBitcoinAddress(fromAddress, intent.network)) {
+    throw new Error(`Connected wallet address is not valid for ${networkLabel(intent.network)}.`);
+  }
+
+  const currentNetwork = await getWalletNetwork(wallet);
+  if (currentNetwork !== intent.network) {
+    await switchWalletNetwork(wallet, intent.network);
+  }
+
+  const paymentPsbt = await buildPaymentPsbt({
+    feeRate: intent.feeRate ?? DEFAULT_BROWSER_INTENT_FEE_RATE,
+    fromAddress,
+    network: intent.network,
+    payments: intent.payments,
+    protocolPayloads: [intent.opReturn],
+  });
+  const txid = await signAndBroadcastPsbt({
+    inputCount: paymentPsbt.inputCount,
+    network: intent.network,
+    psbtHex: paymentPsbt.psbtHex,
+    signingAddress: fromAddress,
+    wallet,
+  });
+
+  return {
+    action: intent.action,
+    fromAddress,
+    network: intent.network,
+    txid,
+  };
+}
+
 function BrowserApp({
   setTheme,
   theme,
@@ -10183,12 +10375,14 @@ function BrowserApp({
   const [query, setQuery] = useState(() => txidFromBrowserLocation());
   const [page, setPage] = useState<BrowserPage | undefined>();
   const [loading, setLoading] = useState(false);
+  const [intentBusy, setIntentBusy] = useState(false);
   const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({ tone: "idle", text: "Ready" });
   const [templateTitle, setTemplateTitle] = useState("My Bitcoin Page");
   const [templateKicker, setTemplateKicker] = useState("ProofOfWork.Me Browser");
   const [templateBody, setTemplateBody] = useState("This page lives as HTML carried by the Bitcoin Computer.");
   const [templateCopied, setTemplateCopied] = useState(false);
   const initialLoadRef = useRef(false);
+  const previewFrameRef = useRef<HTMLIFrameElement>(null);
   const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
   const templateBytes = useMemo(() => byteLength(template), [template]);
   const templateSha256 = useMemo(() => sha256Hex(new TextEncoder().encode(template)), [template]);
@@ -10233,6 +10427,39 @@ function BrowserApp({
       void loadPage(initialTxid);
     }
   }, [loadPage]);
+
+  const handlePowIntentMessage = useCallback(
+    (event: MessageEvent) => {
+      if (!isPowIntentMessage(event.data)) {
+        return;
+      }
+
+      const previewWindow = previewFrameRef.current?.contentWindow;
+      if (!page || !previewWindow || event.source !== previewWindow) {
+        return;
+      }
+
+      setIntentBusy(true);
+      setStatus({ tone: "idle", text: "On-chain page requested wallet signing..." });
+      void executePowIntent(event.data.payload, page)
+        .then((result) => {
+          setStatus({ tone: "good", text: `Broadcast ${result.action}: ${shortAddress(result.txid)}.` });
+          previewWindow.postMessage({ payload: result, type: "pow:intent-result" }, "*");
+        })
+        .catch((error) => {
+          const text = errorMessage(error, "Could not execute on-chain intent.");
+          setStatus({ tone: "bad", text });
+          previewWindow.postMessage({ payload: { error: text }, type: "pow:intent-error" }, "*");
+        })
+        .finally(() => setIntentBusy(false));
+    },
+    [page],
+  );
+
+  useEffect(() => {
+    window.addEventListener("message", handlePowIntentMessage);
+    return () => window.removeEventListener("message", handlePowIntentMessage);
+  }, [handlePowIntentMessage]);
 
   async function copyTemplate() {
     await copyTextToClipboard(template);
@@ -10297,10 +10524,10 @@ function BrowserApp({
             </label>
             <div className="browser-form-row">
               <BrowserNetworkTabs network={network} onChange={setNetwork} />
-              <button className="primary" disabled={loading} type="submit">
+              <button className="primary" disabled={loading || intentBusy} type="submit">
                 <span className="button-content">
                   <Search size={16} />
-                  <span>{loading ? "Loading" : "View Page"}</span>
+                  <span>{intentBusy ? "Signing" : loading ? "Loading" : "View Page"}</span>
                 </span>
               </button>
             </div>
@@ -10322,7 +10549,14 @@ function BrowserApp({
                   </span>
                 </a>
               </div>
-              <iframe referrerPolicy="no-referrer" sandbox="" srcDoc={page.html} title={`${page.attachment.name} rendered from ${page.txid}`} />
+              <iframe
+                allow="clipboard-write"
+                ref={previewFrameRef}
+                referrerPolicy="no-referrer"
+                sandbox={page.confirmed ? "allow-scripts" : ""}
+                srcDoc={page.html}
+                title={`${page.attachment.name} rendered from ${page.txid}`}
+              />
             </article>
 
             <aside className="browser-proof-card">
@@ -10458,6 +10692,7 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
   const [query, setQuery] = useState("");
   const [page, setPage] = useState<BrowserPage | undefined>();
   const [loading, setLoading] = useState(false);
+  const [intentBusy, setIntentBusy] = useState(false);
   const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({
     tone: "idle",
     text: "Ready. Paste a txid to render verified HTML from the Bitcoin Computer.",
@@ -10470,6 +10705,7 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
   const templateBytes = useMemo(() => byteLength(template), [template]);
   const templateSha256 = useMemo(() => sha256Hex(new TextEncoder().encode(template)), [template]);
   const templateHref = `data:text/html;charset=utf-8,${encodeURIComponent(template)}`;
+  const previewFrameRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     setNetwork(activeNetwork);
@@ -10509,6 +10745,39 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
     window.setTimeout(() => setTemplateCopied(false), 1600);
   }
 
+  const handlePowIntentMessage = useCallback(
+    (event: MessageEvent) => {
+      if (!isPowIntentMessage(event.data)) {
+        return;
+      }
+
+      const previewWindow = previewFrameRef.current?.contentWindow;
+      if (!page || !previewWindow || event.source !== previewWindow) {
+        return;
+      }
+
+      setIntentBusy(true);
+      setStatus({ tone: "idle", text: "On-chain page requested wallet signing..." });
+      void executePowIntent(event.data.payload, page)
+        .then((result) => {
+          setStatus({ tone: "good", text: `Broadcast ${result.action}: ${shortAddress(result.txid)}.` });
+          previewWindow.postMessage({ payload: result, type: "pow:intent-result" }, "*");
+        })
+        .catch((error) => {
+          const text = errorMessage(error, "Could not execute on-chain intent.");
+          setStatus({ tone: "bad", text });
+          previewWindow.postMessage({ payload: { error: text }, type: "pow:intent-error" }, "*");
+        })
+        .finally(() => setIntentBusy(false));
+    },
+    [page],
+  );
+
+  useEffect(() => {
+    window.addEventListener("message", handlePowIntentMessage);
+    return () => window.removeEventListener("message", handlePowIntentMessage);
+  }, [handlePowIntentMessage]);
+
   return (
     <section className="browser-workspace browser-computer-workspace">
       <div className={`status browser-workspace-status ${status.tone}`}>
@@ -10541,10 +10810,10 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
           </label>
           <div className="browser-form-row">
             <BrowserNetworkTabs network={network} onChange={setNetwork} />
-            <button className="primary" disabled={loading} type="submit">
+            <button className="primary" disabled={loading || intentBusy} type="submit">
               <span className="button-content">
                 <Search size={16} />
-                <span>{loading ? "Loading" : "View Page"}</span>
+                <span>{intentBusy ? "Signing" : loading ? "Loading" : "View Page"}</span>
               </span>
             </button>
           </div>
@@ -10566,7 +10835,14 @@ function BrowserWorkspace({ activeNetwork }: { activeNetwork: BitcoinNetwork }) 
                 </span>
               </a>
             </div>
-            <iframe referrerPolicy="no-referrer" sandbox="" srcDoc={page.html} title={`${page.attachment.name} rendered from ${page.txid}`} />
+            <iframe
+              allow="clipboard-write"
+              ref={previewFrameRef}
+              referrerPolicy="no-referrer"
+              sandbox={page.confirmed ? "allow-scripts" : ""}
+              srcDoc={page.html}
+              title={`${page.attachment.name} rendered from ${page.txid}`}
+            />
           </article>
 
           <aside className="browser-proof-card">

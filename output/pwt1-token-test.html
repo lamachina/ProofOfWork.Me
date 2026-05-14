@@ -88,7 +88,7 @@ main{width:min(1180px,100%);margin:0 auto;padding:24px}.top{display:grid;gap:10p
       <pre id="intent" class="intent small">No intent yet.</pre>
       <div class="row">
         <button class="primary" id="copyIntent">Copy Intent</button>
-        <button class="ghost" id="postIntent">Send to Parent</button>
+        <button class="ghost" id="postIntent">Broadcast Intent</button>
       </div>
     </div>
   </section>
@@ -389,6 +389,11 @@ main{width:min(1180px,100%);margin:0 auto;padding:24px}.top{display:grid;gap:10p
     state.lastIntent = intent;
     $("intent").textContent = JSON.stringify(intent, null, 2);
   }
+  function postIntent() {
+    if (!state.lastIntent) { setStatus("No intent yet.","bad"); return; }
+    parent.postMessage({ type: "pow:intent", payload: state.lastIntent }, "*");
+    setStatus("Intent sent to Browser for wallet signing.","warn");
+  }
   function requireActor() { const a = $("actor").value.trim(); if (!a) throw new Error("Enter your signing address."); return a; }
   function requireListing() { const id = $("listingSelect").value; const l = state.listings.get(id); if (!l) throw new Error("Select an active listing."); return l; }
   function formAuth(seller) {
@@ -406,14 +411,23 @@ main{width:min(1180px,100%);margin:0 auto;padding:24px}.top{display:grid;gap:10p
   $("load").onclick = () => loadRegistry().catch(e => setStatus(e.message, "bad"));
   $("demo").onclick = loadDemo;
   $("clear").onclick = () => { state.txs = []; rebuild(); setStatus("Cleared local state."); };
-  $("mint").onclick = () => { try { requireActor(); const c=cfg(), n=int($("amount").value); makeIntent("mint","pwt1:mint:"+c.ticker+":"+n,c.mintFee); } catch(e) { setStatus(e.message,"bad"); } };
-  $("send").onclick = () => { try { requireActor(); const c=cfg(), n=int($("amount").value), to=$("recipient").value.trim(); if(!to) throw new Error("Enter recipient."); makeIntent("send","pwt1:send:"+c.ticker+":"+n+":"+to,c.actionFee); } catch(e) { setStatus(e.message,"bad"); } };
+  $("mint").onclick = () => { try { requireActor(); const c=cfg(), n=int($("amount").value); makeIntent("mint","pwt1:mint:"+c.ticker+":"+n,c.mintFee); postIntent(); } catch(e) { setStatus(e.message,"bad"); } };
+  $("send").onclick = () => { try { requireActor(); const c=cfg(), n=int($("amount").value), to=$("recipient").value.trim(); if(!to) throw new Error("Enter recipient."); makeIntent("send","pwt1:send:"+c.ticker+":"+n+":"+to,c.actionFee); postIntent(); } catch(e) { setStatus(e.message,"bad"); } };
   $("list").onclick = () => { try { const seller=requireActor(), c=cfg(), auth=formAuth(seller); makeIntent("list5","pwt1:list5:"+b64u(JSON.stringify(auth)),c.actionFee,{ saleAuthorization: auth, payments: [{ address: c.registry, amountSats: c.actionFee, role: "registry" }, { address: seller, amountSats: TICKET_VALUE, role: "sale-ticket", vout: TICKET_VOUT }], requiresComputer: ["sellerPublicKey", "anchorScriptPubKey", "saleTicketOutput"] }); } catch(e) { setStatus(e.message,"bad"); } };
   $("seal").onclick = () => { try { requireActor(); const c=cfg(), l=requireListing(), sig=$("anchorSignature").value.trim().toLowerCase() || "<computer-signs-sale-ticket>"; const sealed=normalizeAuth({ ...l.saleAuthorization, anchorTxid: l.id, anchorSignature: sig }, true); makeIntent("seal5","pwt1:seal5:"+l.id+":"+b64u(JSON.stringify(sealed)),c.actionFee,{ saleAuthorization: sealed, signSaleTicket: { listingId: l.id, anchorVout: l.saleAuthorization.anchorVout, sellerPaymentSats: sellerPaymentRequired(l), sighashType: SIGHASH_SINGLE_ANYONECANPAY } }); } catch(e) { setStatus(e.message,"bad"); } };
   $("delist").onclick = () => { try { requireActor(); const c=cfg(), l=requireListing(); makeIntent("delist5","pwt1:delist5:"+l.id,c.actionFee,{ spendSaleTicket: { txid: l.id, vout: l.saleAuthorization.anchorVout } }); } catch(e) { setStatus(e.message,"bad"); } };
   $("buy").onclick = () => { try { const buyer=requireActor(), c=cfg(), l=requireListing(); makeIntent("buy5","pwt1:buy5:"+l.id+":"+buyer,c.actionFee,{ payments: [{ address: c.registry, amountSats: c.actionFee, role: "registry" }, { address: l.seller, amountSats: sellerPaymentRequired(l), role: "seller" }], spendSaleTicket: { txid: l.id, vout: l.saleAuthorization.anchorVout } }); } catch(e) { setStatus(e.message,"bad"); } };
   $("copyIntent").onclick = () => navigator.clipboard.writeText($("intent").textContent).then(()=>setStatus("Intent copied.","ok")).catch(()=>setStatus("Copy failed.","bad"));
-  $("postIntent").onclick = () => { if (!state.lastIntent) return setStatus("No intent yet.","bad"); parent.postMessage({ type: "pow:intent", payload: state.lastIntent }, "*"); setStatus("Intent posted to parent window.","ok"); };
+  $("postIntent").onclick = postIntent;
+  window.addEventListener("message", event => {
+    const data = event.data || {};
+    if (data.type === "pow:intent-result") {
+      setStatus("Broadcast " + data.payload.action + ": " + data.payload.txid, "ok");
+      loadRegistry().catch(() => {});
+    } else if (data.type === "pow:intent-error") {
+      setStatus(data.payload && data.payload.error || "Wallet signing failed.", "bad");
+    }
+  });
   render();
 })();
 </script>

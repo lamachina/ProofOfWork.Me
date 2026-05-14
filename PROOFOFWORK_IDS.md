@@ -106,6 +106,7 @@ computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser and confirmed-page wallet-intent surface by txid
 marketplace.proofofwork.me  standalone ID marketplace
+pay2speak.proofofwork.me    standalone X Space crowdfunding app
 log.proofofwork.me          public Bitcoin Computer log
 growth.proofofwork.me       public growth model dashboard
 ```
@@ -134,6 +135,12 @@ Marketplace-only build:
 
 ```bash
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
+```
+
+Pay2Speak-only build:
+
+```bash
+VITE_PAY2SPEAK_ONLY=1 VITE_POW_API_BASE=https://pay2speak.proofofwork.me npm run build
 ```
 
 Log-only build:
@@ -341,6 +348,7 @@ https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
+https://pay2speak.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*
 ```

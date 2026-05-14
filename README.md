@@ -30,6 +30,7 @@ computer.proofofwork.me
 desktop.proofofwork.me
 browser.proofofwork.me
 marketplace.proofofwork.me
+pay2speak.proofofwork.me
 log.proofofwork.me
 growth.proofofwork.me
 ```
@@ -43,12 +44,13 @@ Production app roles:
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `browser.proofofwork.me` is the standalone public HTML renderer and confirmed-page wallet-intent surface for ProofOfWork message bodies or verified file attachments by txid.
 - `marketplace.proofofwork.me` is the standalone ProofOfWork ID listing and buyer-funded transfer app.
+- `pay2speak.proofofwork.me` is the standalone mainnet Pay2Speak app for X Space crowdfunding records and funded questions.
 - `log.proofofwork.me` is the standalone public Bitcoin Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled Bitcoin Computer network value with real confirmed chain value in sats and USD.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
 
 Official YouTube:
 
@@ -132,6 +134,7 @@ Launch invariants for future developers/agents:
 - Lets current ID owners publish on-chain marketplace listings, delist them, and execute buyer-funded ID transfers.
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
+- Exposes Pay2Speak as a mainnet-only X Space crowdfunding surface with campaign creation, funding splits, optional questions, and a Computer workspace.
 - Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, and marketplace value metrics.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
@@ -162,6 +165,7 @@ https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
+https://pay2speak.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*
 ```
@@ -295,6 +299,18 @@ To preview the standalone ID Marketplace locally:
 http://localhost:5173/?marketplace=1
 ```
 
+To preview Pay2Speak locally:
+
+```text
+http://localhost:5173/?pay2speak=1
+```
+
+To preview a Pay2Speak creator page locally:
+
+```text
+http://localhost:5173/?pay2speak=1&creator=<creator-address>
+```
+
 To preview the public Log locally:
 
 ```text
@@ -316,6 +332,7 @@ Computer -> /
 Desktop -> /?desktop=1
 Browser -> /?browser=1
 Marketplace -> /?marketplace=1
+Pay2Speak -> /?pay2speak=1
 Log -> /?log=1
 Growth -> /?growth=1
 ```
@@ -354,6 +371,12 @@ To build the standalone ID Marketplace app for production:
 
 ```bash
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
+```
+
+To build the standalone Pay2Speak app for production:
+
+```bash
+VITE_PAY2SPEAK_ONLY=1 VITE_POW_API_BASE=https://pay2speak.proofofwork.me npm run build
 ```
 
 To build the standalone Log app for production:
@@ -423,10 +446,12 @@ Important implementation points:
 - Public Desktop route switch: `isDesktopRoute()` in `src/App.tsx`.
 - Public Browser route switch: `isBrowserRoute()` in `src/App.tsx`.
 - Standalone Marketplace route switch: `isMarketplaceRoute()` in `src/App.tsx`.
+- Standalone Pay2Speak route switch: `isPay2SpeakRoute()` in `src/App.tsx`.
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
 - Marketplace-only deploy switch: `VITE_MARKETPLACE_ONLY=1`.
+- Pay2Speak-only deploy switch: `VITE_PAY2SPEAK_ONLY=1`.
 - Growth-only deploy switch: `VITE_GROWTH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, `ID_MUTATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.

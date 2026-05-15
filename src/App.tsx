@@ -16875,6 +16875,61 @@ function TokenWorkspace({
     detailToken?.registryAddress === WORK_TOKEN_REGISTRY_ADDRESS
       ? `${WORK_TOKEN_DEFAULT_REGISTRY_ID} / ${shortAddress(WORK_TOKEN_REGISTRY_ADDRESS)}`
       : (detailToken?.registryAddress ?? "");
+  const selectedProgress = tokenProgressPercent(
+    confirmedSupply,
+    selectedToken?.maxSupply ?? 0,
+  );
+  const selectedRemainingSupply = Math.max(
+    0,
+    (selectedToken?.maxSupply ?? 0) - confirmedSupply - pendingSupply,
+  );
+  const selectedRegistryLabel =
+    selectedToken?.registryAddress === WORK_TOKEN_REGISTRY_ADDRESS
+      ? `${WORK_TOKEN_DEFAULT_REGISTRY_ID} / ${shortAddress(WORK_TOKEN_REGISTRY_ADDRESS)}`
+      : selectedToken
+        ? shortAddress(selectedToken.registryAddress)
+        : "No token selected";
+  const tokenStatsById = useMemo(() => {
+    const stats = new Map<
+      string,
+      {
+        confirmedMints: number;
+        confirmedSupply: number;
+        pendingMints: number;
+        pendingSupply: number;
+      }
+    >();
+
+    for (const token of tokens) {
+      stats.set(token.tokenId, {
+        confirmedMints: 0,
+        confirmedSupply: 0,
+        pendingMints: 0,
+        pendingSupply: 0,
+      });
+    }
+
+    for (const mint of mints) {
+      const current =
+        stats.get(mint.tokenId) ??
+        {
+          confirmedMints: 0,
+          confirmedSupply: 0,
+          pendingMints: 0,
+          pendingSupply: 0,
+        };
+      if (mint.confirmed) {
+        current.confirmedMints += 1;
+        current.confirmedSupply += mint.amount;
+      } else {
+        current.pendingMints += 1;
+        current.pendingSupply += mint.amount;
+      }
+      stats.set(mint.tokenId, current);
+    }
+
+    return stats;
+  }, [mints, tokens]);
 
   if (detailMode) {
     return (
@@ -16907,6 +16962,17 @@ function TokenWorkspace({
                 <div>
                   <p className="eyebrow">Token dashboard</p>
                   <h2>{detailToken.ticker}</h2>
+                  <div className="token-chip-row" aria-label="Token summary">
+                    <span>{detailToken.maxSupply.toLocaleString()} max</span>
+                    <span>
+                      {detailToken.mintAmount.toLocaleString()} per mint
+                    </span>
+                    <span>
+                      {tokenSatsPerUnit(detailPricePerToken)} sat /{" "}
+                      {detailToken.ticker}
+                    </span>
+                    <span>{detailConfirmedMintCount.toLocaleString()} mints</span>
+                  </div>
                   <p>
                     Minted by confirmed Bitcoin history. Mints pay the token
                     registry directly.
@@ -17022,6 +17088,19 @@ function TokenWorkspace({
                     {tokenUsd(detailMintUsd)} per mint at the current BTC/USD
                     estimate. Paid to {shortAddress(detailToken.registryAddress)}.
                   </p>
+                  <div className="token-payment-lane">
+                    <div>
+                      <span>Registry paid</span>
+                      <strong>{shortAddress(detailToken.registryAddress)}</strong>
+                    </div>
+                    <div>
+                      <span>Remaining</span>
+                      <strong>
+                        {detailRemainingSupply.toLocaleString()}{" "}
+                        {detailToken.ticker}
+                      </strong>
+                    </div>
+                  </div>
                   <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
                   <button className="primary" disabled={!canMint} type="submit">
                     <span className="button-content">
@@ -17200,8 +17279,29 @@ function TokenWorkspace({
 
   return (
     <section className="id-launch-main">
+      <div className="token-registry-strip">
+        <div>
+          <span>Token index</span>
+          <strong>{TOKEN_INDEX_ID}</strong>
+          <p>Creation records and token ids.</p>
+        </div>
+        <div>
+          <span>Selected registry</span>
+          <strong>{selectedRegistryLabel}</strong>
+          <p>Mint payments go to the creator registry.</p>
+        </div>
+        <div>
+          <span>Mint rule</span>
+          <strong>
+            {selectedToken
+              ? `${selectedToken.mintAmount.toLocaleString()} ${selectedToken.ticker}`
+              : "Owner priced"}
+          </strong>
+          <p>Every token keeps its own mint lane.</p>
+        </div>
+      </div>
       <div className="id-launch-hero">
-        <section className="id-launch-card id-claim-card">
+        <section className="id-launch-card id-claim-card token-create-card">
           <div className="id-card-head">
             <div className="empty-icon" aria-hidden="true">
               <FilePenLine size={24} />
@@ -17209,8 +17309,8 @@ function TokenWorkspace({
             <div>
               <h2>Create token</h2>
               <p>
-                Pay the creation fee to <code>{TOKEN_INDEX_ID}</code>. The token
-                gets its own registry for mints.
+                Pay the creation fee to <code>{TOKEN_INDEX_ID}</code>. Mints
+                route to the token registry you choose.
               </p>
             </div>
           </div>
@@ -17312,13 +17412,13 @@ function TokenWorkspace({
                 <strong>{TOKEN_CREATION_PRICE_SATS.toLocaleString()} sats</strong>
               </div>
               <div>
-                <span>Minimum price</span>
+                <span>Minimum mint</span>
                 <strong>
                   {TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} sats
                 </strong>
               </div>
               <div>
-                <span>Starting price</span>
+                <span>Launch price</span>
                 <strong>
                   {tokenSatsPerUnit(createPricePerToken)} sat /{" "}
                   {createTickerLabel}
@@ -17366,7 +17466,7 @@ function TokenWorkspace({
           </form>
         </section>
 
-        <section className="id-launch-card id-claim-card">
+        <section className="id-launch-card id-claim-card token-mint-card">
           <div className="id-card-head">
             <div className="empty-icon" aria-hidden="true">
               <Wallet size={24} />
@@ -17434,6 +17534,25 @@ function TokenWorkspace({
                 <strong>{tokenUsd(selectedUnitUsd)}</strong>
               </div>
             </div>
+            {selectedToken ? (
+              <div className="token-progress-mini">
+                <div>
+                  <span>Selected progress</span>
+                  <strong>
+                    {tokenProgressLabel(confirmedSupply, selectedToken.maxSupply)}
+                  </strong>
+                </div>
+                <Pay2SpeakProgressBar
+                  label={`${selectedToken.ticker} selected mint progress`}
+                  progress={selectedProgress}
+                />
+                <p className="field-note">
+                  {confirmedSupply.toLocaleString()} confirmed,{" "}
+                  {pendingSupply.toLocaleString()} pending,{" "}
+                  {selectedRemainingSupply.toLocaleString()} remaining.
+                </p>
+              </div>
+            ) : null}
             <p className="field-note">
               {(selectedToken?.mintAmount ?? 0).toLocaleString()}{" "}
               {selectedToken?.ticker ?? "TOKEN"} for{" "}
@@ -17583,38 +17702,70 @@ function TokenWorkspace({
                 <p>Create WORK first, then mint against its token id.</p>
               </div>
             ) : (
-              tokens.slice(0, 12).map((token) => (
-                <article className="id-record" key={token.tokenId}>
-                  <div>
-                    <strong>
-                      {token.ticker} - {token.mintAmount.toLocaleString()} for{" "}
-                      {token.mintPriceSats.toLocaleString()} sats
-                    </strong>
-                    <code>{shortAddress(token.tokenId)}</code>
-                    <p className="field-note">
-                      {token.confirmed ? "Confirmed" : "Pending"} registry{" "}
-                      {shortAddress(token.registryAddress)} -{" "}
-                      {formatDate(token.createdAt)}
-                    </p>
-                  </div>
-                  <div className="id-record-actions">
-                    <button
-                      className="secondary small"
-                      onClick={() => setSelectedTokenId(token.tokenId)}
-                      type="button"
-                    >
-                      Select
-                    </button>
-                    <button
-                      className="secondary small"
-                      onClick={() => openTokenDetail(token)}
-                      type="button"
-                    >
-                      Details
-                    </button>
-                  </div>
-                </article>
-              ))
+              tokens.slice(0, 12).map((token) => {
+                const stats = tokenStatsById.get(token.tokenId) ?? {
+                  confirmedMints: 0,
+                  confirmedSupply: 0,
+                  pendingMints: 0,
+                  pendingSupply: 0,
+                };
+                const rowProgress = tokenProgressPercent(
+                  stats.confirmedSupply,
+                  token.maxSupply,
+                );
+                const rowPrice =
+                  token.mintAmount > 0
+                    ? token.mintPriceSats / token.mintAmount
+                    : 0;
+
+                return (
+                  <article
+                    className="id-record token-record"
+                    key={token.tokenId}
+                  >
+                    <div>
+                      <div className="token-record-top">
+                        <strong>{token.ticker}</strong>
+                        <span>{token.confirmed ? "Confirmed" : "Pending"}</span>
+                      </div>
+                      <p className="token-record-price">
+                        {token.mintAmount.toLocaleString()} for{" "}
+                        {token.mintPriceSats.toLocaleString()} sats -{" "}
+                        {tokenSatsPerUnit(rowPrice)} sat / {token.ticker}
+                      </p>
+                      <code>{shortAddress(token.tokenId)}</code>
+                      <div className="token-record-meter">
+                        <Pay2SpeakProgressBar
+                          label={`${token.ticker} row mint progress`}
+                          progress={rowProgress}
+                        />
+                      </div>
+                      <p className="field-note">
+                        {stats.confirmedSupply.toLocaleString()} /{" "}
+                        {token.maxSupply.toLocaleString()} minted - registry{" "}
+                        {shortAddress(token.registryAddress)} -{" "}
+                        {formatDate(token.createdAt)}
+                      </p>
+                    </div>
+                    <div className="id-record-actions">
+                      <button
+                        className="secondary small"
+                        onClick={() => setSelectedTokenId(token.tokenId)}
+                        type="button"
+                      >
+                        Select
+                      </button>
+                      <button
+                        className="secondary small"
+                        onClick={() => openTokenDetail(token)}
+                        type="button"
+                      >
+                        Details
+                      </button>
+                    </div>
+                  </article>
+                );
+              })
             )}
           </div>
         </section>

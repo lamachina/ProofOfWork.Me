@@ -10274,6 +10274,22 @@ export default function App() {
       tokenMintPayload ? dataCarrierBytesForPayload(tokenMintPayload) : 0,
     [tokenMintPayload],
   );
+  const selectedTokenAvailableSupply = selectedToken
+    ? Math.max(
+        0,
+        selectedToken.maxSupply -
+          selectedTokenLedger.confirmedSupply -
+          selectedTokenLedger.pendingSupply,
+      )
+    : 0;
+  const selectedTokenMintedOut = Boolean(
+    selectedToken &&
+      selectedToken.maxSupply > 0 &&
+      selectedTokenLedger.confirmedSupply >= selectedToken.maxSupply,
+  );
+  const selectedTokenMintWouldOverfill = Boolean(
+    selectedToken && selectedToken.mintAmount > selectedTokenAvailableSupply,
+  );
   const tokenPrepareMintCountValue = Number.isFinite(tokenPrepareMintCount)
     ? Math.floor(tokenPrepareMintCount)
     : 0;
@@ -10321,10 +10337,8 @@ export default function App() {
       tokenMintPayload &&
       selectedToken.registryAddress,
     ) &&
-    selectedTokenLedger.confirmedSupply +
-      selectedTokenLedger.pendingSupply +
-      (selectedToken?.mintAmount ?? 0) <=
-      (selectedToken?.maxSupply ?? 0) &&
+    !selectedTokenMintedOut &&
+    !selectedTokenMintWouldOverfill &&
     tokenMintBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
   const canPrepareTokenMintUtxos =
@@ -10332,6 +10346,8 @@ export default function App() {
       address &&
       network === "livenet" &&
       selectedToken &&
+      !selectedTokenMintedOut &&
+      !selectedTokenMintWouldOverfill &&
       tokenPrepareMintCountValue >= 1 &&
       tokenPrepareMintCountValue <= TOKEN_PREPARE_MAX_MINT_COUNT &&
       tokenPrepareFeeReserveValue >= 0 &&
@@ -14117,6 +14133,14 @@ export default function App() {
         selectedToken;
       const latestLedger = tokenLedgerFor(latestToken, latestState.mints);
 
+      if (latestLedger.confirmedSupply >= latestToken.maxSupply) {
+        setStatus({
+          tone: "bad",
+          text: `${latestToken.ticker} is minted out.`,
+        });
+        return;
+      }
+
       if (
         latestLedger.confirmedSupply +
           latestLedger.pendingSupply +
@@ -14125,7 +14149,7 @@ export default function App() {
       ) {
         setStatus({
           tone: "bad",
-          text: "Mint would exceed token max supply.",
+          text: "Next mint would exceed remaining token supply.",
         });
         return;
       }
@@ -17079,6 +17103,26 @@ function TokenWorkspace({
     0,
     (detailToken?.maxSupply ?? 0) - detailConfirmedSupply - detailPendingSupply,
   );
+  const detailMintedOut = Boolean(
+    detailToken &&
+      detailToken.maxSupply > 0 &&
+      detailConfirmedSupply >= detailToken.maxSupply,
+  );
+  const detailMintWouldOverfill = Boolean(
+    detailToken && detailToken.mintAmount > detailRemainingSupply,
+  );
+  const detailMintButtonLabel = mintingToken
+    ? "Minting"
+    : detailMintedOut
+      ? "Minted out"
+      : detailMintWouldOverfill
+        ? "Exceeds remaining"
+        : "Mint";
+  const detailMintBlockedNote = detailMintedOut
+    ? `${detailToken?.ticker ?? "This token"} is minted out.`
+    : detailMintWouldOverfill
+      ? `Next mint needs ${detailToken?.mintAmount.toLocaleString()} ${detailToken?.ticker}, but only ${detailRemainingSupply.toLocaleString()} remain after pending mints.`
+      : "";
   const detailProgress = tokenProgressPercent(
     detailConfirmedSupply,
     detailToken?.maxSupply ?? 0,
@@ -17117,6 +17161,26 @@ function TokenWorkspace({
     0,
     (selectedToken?.maxSupply ?? 0) - confirmedSupply - pendingSupply,
   );
+  const selectedMintedOut = Boolean(
+    selectedToken &&
+      selectedToken.maxSupply > 0 &&
+      confirmedSupply >= selectedToken.maxSupply,
+  );
+  const selectedMintWouldOverfill = Boolean(
+    selectedToken && selectedToken.mintAmount > selectedRemainingSupply,
+  );
+  const selectedMintButtonLabel = mintingToken
+    ? "Minting"
+    : selectedMintedOut
+      ? "Minted out"
+      : selectedMintWouldOverfill
+        ? "Exceeds remaining"
+        : "Mint";
+  const selectedMintBlockedNote = selectedMintedOut
+    ? `${selectedToken?.ticker ?? "This token"} is minted out.`
+    : selectedMintWouldOverfill
+      ? `Next mint needs ${selectedToken?.mintAmount.toLocaleString()} ${selectedToken?.ticker}, but only ${selectedRemainingSupply.toLocaleString()} remain after pending mints.`
+      : "";
   const selectedRegistryLabel =
     selectedToken?.registryAddress === WORK_TOKEN_REGISTRY_ADDRESS
       ? `${WORK_TOKEN_DEFAULT_REGISTRY_ID} / ${shortAddress(WORK_TOKEN_REGISTRY_ADDRESS)}`
@@ -17581,9 +17645,12 @@ function TokenWorkspace({
                   <button className="primary" disabled={!canMint} type="submit">
                     <span className="button-content">
                       <Send size={16} />
-                      <span>{mintingToken ? "Minting" : "Mint"}</span>
+                      <span>{detailMintButtonLabel}</span>
                     </span>
                   </button>
+                  {detailMintBlockedNote ? (
+                    <p className="field-note bad">{detailMintBlockedNote}</p>
+                  ) : null}
                 </form>
                 {renderMintUtxoPrep(detailToken)}
               </section>
@@ -17991,11 +18058,13 @@ function TokenWorkspace({
             <button className="primary" disabled={!canMint} type="submit">
               <span className="button-content">
                 <Send size={16} />
-                <span>{mintingToken ? "Minting" : "Mint"}</span>
+                <span>{selectedMintButtonLabel}</span>
               </span>
             </button>
             {!selectedToken ? (
               <p className="field-note">Create or load a token before minting.</p>
+            ) : selectedMintBlockedNote ? (
+              <p className="field-note bad">{selectedMintBlockedNote}</p>
             ) : null}
           </form>
           {renderMintUtxoPrep(selectedToken)}

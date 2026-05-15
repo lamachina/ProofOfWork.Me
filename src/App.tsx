@@ -17022,6 +17022,7 @@ function TokenWorkspace({
                     {tokenUsd(detailMintUsd)} per mint at the current BTC/USD
                     estimate. Paid to {shortAddress(detailToken.registryAddress)}.
                   </p>
+                  <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
                   <button className="primary" disabled={!canMint} type="submit">
                     <span className="button-content">
                       <Send size={16} />
@@ -17446,6 +17447,7 @@ function TokenWorkspace({
               on each mint. Your confirmed balance is {holderBalance.toLocaleString()}{" "}
               {selectedToken?.ticker ?? ""}.
             </p>
+            <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
             <div
               className={
                 mintBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"

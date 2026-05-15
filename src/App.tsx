@@ -78,6 +78,8 @@ type Folder =
   | "ids"
   | "marketplace"
   | "pay2speak"
+  | "token"
+  | "work"
   | "log"
   | "contacts"
   | "custom";
@@ -774,6 +776,7 @@ const BROWSER_APP_URL = "https://browser.proofofwork.me";
 const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 const PAY2SPEAK_APP_URL = "https://pay2speak.proofofwork.me";
 const TOKEN_APP_URL = "https://token.proofofwork.me";
+const WORK_TOKEN_APP_URL = "https://work.proofofwork.me";
 const LOG_APP_URL = "https://log.proofofwork.me";
 const GROWTH_APP_URL = "https://growth.proofofwork.me";
 const LOCAL_HOME_APP_URL = HOME_APP_URL;
@@ -784,6 +787,7 @@ const LOCAL_BROWSER_APP_URL = "/?browser=1";
 const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
 const LOCAL_PAY2SPEAK_APP_URL = "/?pay2speak=1";
 const LOCAL_TOKEN_APP_URL = "/?token=1";
+const LOCAL_WORK_TOKEN_APP_URL = "/?work=1";
 const LOCAL_LOG_APP_URL = "/?log=1";
 const LOCAL_GROWTH_APP_URL = "/?growth=1";
 const LANDING_TESTIMONIAL_TXID = "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
@@ -895,6 +899,11 @@ const APP_LINKS = [
     label: "Token",
     localHref: LOCAL_TOKEN_APP_URL,
   },
+  {
+    href: WORK_TOKEN_APP_URL,
+    label: "WORK",
+    localHref: LOCAL_WORK_TOKEN_APP_URL,
+  },
   { href: LOG_APP_URL, label: "Log", localHref: LOCAL_LOG_APP_URL },
   { href: GROWTH_APP_URL, label: "Growth", localHref: LOCAL_GROWTH_APP_URL },
 ];
@@ -917,6 +926,8 @@ type GrowthModelRow = {
   pay2SpeakSats: number;
   pay2SpeakWrites: number;
   powids: number;
+  tokenSats: number;
+  tokenWrites: number;
   totalSats: number;
   totalUsdBase: number;
   totalWrites: number;
@@ -942,6 +953,9 @@ type GrowthActualNetworkValue = {
   pay2SpeakFlowSats: number;
   pay2SpeakSats: number;
   powids: number;
+  tokenCreationFlowSats: number;
+  tokenMintFlowSats: number;
+  tokenSats: number;
   totalSats: number;
   totalUsd: number;
 };
@@ -973,11 +987,13 @@ const GROWTH_MODEL_INPUTS = {
   baselineMarketplaceVolumeSats: 1_000,
   baselineBrowserFlowSats: 0,
   baselinePay2SpeakFlowSats: 0,
+  baselineTokenFlowSats: 0,
   mailEdgeDensity: 0.012307692307692308,
   mailSatsPerDelivery: 680.1333333333333,
   marketplaceAverageSaleSats: 1000,
   browserAveragePageSats: 1000,
   pay2SpeakAverageCampaignSats: 5460,
+  tokenAverageMintSats: 1000,
   satsPerFile: 1000,
   canonicalFee: 0.00001,
   blockspaceVbytesPerYear: 52_560_000_000,
@@ -987,11 +1003,13 @@ const GROWTH_MODEL_INPUTS = {
   marketplaceVbytesPerSale: 1_500,
   browserVbytesPerPage: 15_000,
   pay2SpeakVbytesPerWrite: 700,
+  tokenVbytesPerWrite: 700,
   mailMessagesPerPairPerYear: 4,
   driveFilesPerIdPerYear: 6,
   marketplaceSalesPerIdPerYear: 0.2,
   browserPagesPerIdPerYear: 1,
   pay2SpeakCampaignsPerIdPerYear: 0.15,
+  tokenMintsPerIdPerYear: 0.25,
   valueMultiple: 5,
   elasticities: {
     id: 0.25,
@@ -1000,6 +1018,7 @@ const GROWTH_MODEL_INPUTS = {
     marketplace: 0.5,
     browser: 0.75,
     pay2speak: 0.6,
+    token: 0.6,
   },
   horizons: [
     { label: "6 months", years: 0.5, adoption: 0.1 },
@@ -1063,6 +1082,10 @@ function growthModelRow(horizon: {
     GROWTH_MODEL_INPUTS.canonicalFee,
     GROWTH_MODEL_INPUTS.elasticities.pay2speak,
   );
+  const tokenMultiplier = growthFeeMultiplier(
+    GROWTH_MODEL_INPUTS.canonicalFee,
+    GROWTH_MODEL_INPUTS.elasticities.token,
+  );
   const rawIdSats =
     powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 * idMultiplier;
   const rawMailSats =
@@ -1096,6 +1119,12 @@ function growthModelRow(horizon: {
     GROWTH_MODEL_INPUTS.pay2SpeakAverageCampaignSats *
     GROWTH_MODEL_INPUTS.valueMultiple *
     pay2SpeakMultiplier;
+  const rawTokenSats =
+    powids *
+    GROWTH_MODEL_INPUTS.tokenMintsPerIdPerYear *
+    GROWTH_MODEL_INPUTS.tokenAverageMintSats *
+    GROWTH_MODEL_INPUTS.valueMultiple *
+    tokenMultiplier;
   const idWrites = powids * idMultiplier;
   const mailWrites =
     directedPairs *
@@ -1114,13 +1143,18 @@ function growthModelRow(horizon: {
     powids *
     GROWTH_MODEL_INPUTS.pay2SpeakCampaignsPerIdPerYear *
     pay2SpeakMultiplier;
+  const tokenWrites =
+    powids *
+    GROWTH_MODEL_INPUTS.tokenMintsPerIdPerYear *
+    tokenMultiplier;
   const rawBlockspaceVbytes =
     idWrites * GROWTH_MODEL_INPUTS.idVbytesPerWrite +
     mailWrites * GROWTH_MODEL_INPUTS.mailVbytesPerWrite +
     driveWrites * GROWTH_MODEL_INPUTS.driveVbytesPerWrite +
     marketplaceWrites * GROWTH_MODEL_INPUTS.marketplaceVbytesPerSale +
     browserWrites * GROWTH_MODEL_INPUTS.browserVbytesPerPage +
-    pay2SpeakWrites * GROWTH_MODEL_INPUTS.pay2SpeakVbytesPerWrite;
+    pay2SpeakWrites * GROWTH_MODEL_INPUTS.pay2SpeakVbytesPerWrite +
+    tokenWrites * GROWTH_MODEL_INPUTS.tokenVbytesPerWrite;
   const blockspaceUsageRatio =
     rawBlockspaceVbytes > 0
       ? Math.min(
@@ -1134,13 +1168,15 @@ function growthModelRow(horizon: {
   const marketplaceSats = rawMarketplaceSats * blockspaceUsageRatio;
   const browserSats = rawBrowserSats * blockspaceUsageRatio;
   const pay2SpeakSats = rawPay2SpeakSats * blockspaceUsageRatio;
+  const tokenSats = rawTokenSats * blockspaceUsageRatio;
   const totalSats =
     idSats +
     mailSats +
     driveSats +
     marketplaceSats +
     browserSats +
-    pay2SpeakSats;
+    pay2SpeakSats +
+    tokenSats;
   const btcUsdBase = growthBtcUsdAtYears(horizon.years);
 
   return {
@@ -1160,6 +1196,8 @@ function growthModelRow(horizon: {
     pay2SpeakSats,
     pay2SpeakWrites: pay2SpeakWrites * blockspaceUsageRatio,
     powids,
+    tokenSats,
+    tokenWrites: tokenWrites * blockspaceUsageRatio,
     totalSats,
     totalUsdBase: (totalSats / 100_000_000) * btcUsdBase,
     totalWrites:
@@ -1169,7 +1207,8 @@ function growthModelRow(horizon: {
         driveWrites +
         marketplaceWrites +
         browserWrites +
-        pay2SpeakWrites
+        pay2SpeakWrites +
+        tokenWrites
       ) *
         blockspaceUsageRatio,
   };
@@ -1194,13 +1233,17 @@ function growthModelStartRow(): GrowthModelRow {
   const pay2SpeakSats =
     GROWTH_MODEL_INPUTS.baselinePay2SpeakFlowSats *
     GROWTH_MODEL_INPUTS.valueMultiple;
+  const tokenSats =
+    GROWTH_MODEL_INPUTS.baselineTokenFlowSats *
+    GROWTH_MODEL_INPUTS.valueMultiple;
   const totalSats =
     idSats +
     mailSats +
     driveSats +
     marketplaceSats +
     browserSats +
-    pay2SpeakSats;
+    pay2SpeakSats +
+    tokenSats;
   const btcUsdBase = growthBtcUsdAtYears(0);
   return {
     adoption: 0,
@@ -1220,6 +1263,8 @@ function growthModelStartRow(): GrowthModelRow {
     pay2SpeakSats,
     pay2SpeakWrites: 0,
     powids: GROWTH_MODEL_INPUTS.currentPowids,
+    tokenSats,
+    tokenWrites: 0,
     totalSats,
     totalUsdBase: (totalSats / 100_000_000) * btcUsdBase,
     totalWrites: GROWTH_MODEL_INPUTS.currentPowids,
@@ -1331,7 +1376,20 @@ function isTokenRoute() {
   const hostname = window.location.hostname.toLowerCase();
   return (
     hostname === "token.proofofwork.me" ||
+    hostname === "tokens.proofofwork.me" ||
     window.location.search.includes("token=1")
+  );
+}
+
+function isWorkTokenRoute() {
+  if (import.meta.env.VITE_WORK_TOKEN_ONLY === "1") {
+    return true;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  return (
+    hostname === "work.proofofwork.me" ||
+    window.location.search.includes("work=1")
   );
 }
 
@@ -2745,6 +2803,18 @@ function folderLabel(folder: Folder) {
     return "Marketplace";
   }
 
+  if (folder === "pay2speak") {
+    return "Pay2Speak";
+  }
+
+  if (folder === "token") {
+    return "Token";
+  }
+
+  if (folder === "work") {
+    return "WORK";
+  }
+
   if (folder === "log") {
     return "Log";
   }
@@ -2795,6 +2865,18 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "marketplace") {
     return "ID listings and transfers";
+  }
+
+  if (folder === "pay2speak") {
+    return "X Space funding";
+  }
+
+  if (folder === "token") {
+    return "Token creation and minting";
+  }
+
+  if (folder === "work") {
+    return "WORK token dashboard";
   }
 
   if (folder === "log") {
@@ -5425,6 +5507,10 @@ function compareTokensByConfirmation(
 }
 
 function tokenDetailHref(token: PowTokenDefinition) {
+  if (token.ticker === WORK_TOKEN_TICKER) {
+    return appHref(WORK_TOKEN_APP_URL, LOCAL_WORK_TOKEN_APP_URL);
+  }
+
   return appHref(
     `${TOKEN_APP_URL}/?asset=${encodeURIComponent(token.tokenId)}`,
     `/?token=1&asset=${encodeURIComponent(token.tokenId)}`,
@@ -9395,6 +9481,7 @@ export default function App() {
   const marketplaceMode = isMarketplaceRoute();
   const pay2SpeakMode = isPay2SpeakRoute();
   const tokenMode = isTokenRoute();
+  const workTokenMode = isWorkTokenRoute();
   const pay2SpeakCreatorAddress = pay2SpeakCreatorRouteAddress();
   const activityMode = isActivityRoute();
   const growthMode = isGrowthRoute();
@@ -9403,6 +9490,7 @@ export default function App() {
     marketplaceMode ||
     pay2SpeakMode ||
     tokenMode ||
+    workTokenMode ||
     activityMode ||
     growthMode;
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
@@ -9467,10 +9555,10 @@ export default function App() {
   const [tokenMints, setTokenMints] = useState<PowTokenMint[]>([]);
   const [tokenCreationSats, setTokenCreationSats] = useState(0);
   const [tokenSelectedId, setTokenSelectedId] = useState(() =>
-    tokenRouteTarget(),
+    workTokenMode ? WORK_TOKEN_TICKER : tokenRouteTarget(),
   );
   const [tokenDetailTarget, setTokenDetailTarget] = useState(() =>
-    tokenRouteTarget(),
+    workTokenMode ? WORK_TOKEN_TICKER : tokenRouteTarget(),
   );
   const [tokenCreateTicker, setTokenCreateTicker] = useState("");
   const [tokenCreateMaxSupply, setTokenCreateMaxSupply] = useState(0);
@@ -10072,13 +10160,21 @@ export default function App() {
     () => tokenDefinitions.slice().sort(compareTokensByConfirmation),
     [tokenDefinitions],
   );
+  const effectiveTokenDetailTarget =
+    workTokenMode || activeFolder === "work"
+      ? WORK_TOKEN_TICKER
+      : tokenDetailTarget;
   const selectedToken = useMemo(
     () => {
-      const selectedTicker = normalizeTokenTicker(tokenSelectedId);
+      const effectiveTokenSelection =
+        workTokenMode || activeFolder === "work"
+          ? WORK_TOKEN_TICKER
+          : tokenSelectedId;
+      const selectedTicker = normalizeTokenTicker(effectiveTokenSelection);
       return (
         orderedTokenDefinitions.find(
           (token) =>
-            token.tokenId === tokenSelectedId ||
+            token.tokenId === effectiveTokenSelection ||
             (selectedTicker && token.ticker === selectedTicker),
         ) ??
         orderedTokenDefinitions.find(
@@ -10087,21 +10183,32 @@ export default function App() {
         orderedTokenDefinitions[0]
       );
     },
-    [orderedTokenDefinitions, tokenSelectedId],
+    [activeFolder, orderedTokenDefinitions, tokenSelectedId, workTokenMode],
   );
   const tokenDetailToken = useMemo(() => {
-    const detailTicker = normalizeTokenTicker(tokenDetailTarget);
+    const detailTicker = normalizeTokenTicker(effectiveTokenDetailTarget);
     return (
       orderedTokenDefinitions.find(
         (token) =>
-          token.tokenId === tokenDetailTarget ||
+          token.tokenId === effectiveTokenDetailTarget ||
           (detailTicker && token.ticker === detailTicker),
       ) ?? undefined
     );
-  }, [orderedTokenDefinitions, tokenDetailTarget]);
+  }, [effectiveTokenDetailTarget, orderedTokenDefinitions]);
   const tokenDetailLedger = useMemo(
     () => tokenLedgerFor(tokenDetailToken, tokenMints),
     [tokenDetailToken, tokenMints],
+  );
+  const workTokenDefinition = useMemo(
+    () =>
+      orderedTokenDefinitions.find(
+        (token) => token.ticker === WORK_TOKEN_TICKER,
+      ),
+    [orderedTokenDefinitions],
+  );
+  const workTokenLedger = useMemo(
+    () => tokenLedgerFor(workTokenDefinition, tokenMints),
+    [tokenMints, workTokenDefinition],
   );
   const selectedTokenLedger = useMemo(
     () => tokenLedgerFor(selectedToken, tokenMints),
@@ -10290,6 +10397,8 @@ export default function App() {
           : activeFolder === "ids" ||
               activeFolder === "marketplace" ||
               activeFolder === "pay2speak" ||
+              activeFolder === "token" ||
+              activeFolder === "work" ||
               activeFolder === "log"
             ? busy || refreshInProgress || !registryAddress
             : !address || busy || refreshInProgress;
@@ -10449,7 +10558,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (activityMode || growthMode || tokenMode) {
+    if (activityMode || growthMode || tokenMode || workTokenMode) {
       return;
     }
 
@@ -10457,6 +10566,8 @@ export default function App() {
       activeFolder === "ids" ||
       activeFolder === "marketplace" ||
       activeFolder === "pay2speak" ||
+      activeFolder === "token" ||
+      activeFolder === "work" ||
       activeFolder === "log" ||
       activeFolder === "contacts"
     ) {
@@ -10464,9 +10575,17 @@ export default function App() {
         void refreshPay2Speak(true);
         return;
       }
+      if (activeFolder === "token" || activeFolder === "work") {
+        if (network !== "livenet") {
+          setNetwork("livenet");
+          return;
+        }
+        void refreshToken(true);
+        return;
+      }
       void refreshIds(true);
     }
-  }, [activeFolder, activityMode, growthMode, network, tokenMode]);
+  }, [activeFolder, activityMode, growthMode, network, tokenMode, workTokenMode]);
 
   useEffect(() => {
     if (!mainnetRegistryMode) {
@@ -10478,13 +10597,13 @@ export default function App() {
       return;
     }
 
-    if (pay2SpeakMode || tokenMode) {
+    if (pay2SpeakMode || tokenMode || workTokenMode) {
       return;
     }
 
     setActiveFolder("ids");
     void refreshIds(true);
-  }, [mainnetRegistryMode, network, pay2SpeakMode, tokenMode]);
+  }, [mainnetRegistryMode, network, pay2SpeakMode, tokenMode, workTokenMode]);
 
   useEffect(() => {
     if (!pay2SpeakMode || network !== "livenet") {
@@ -10496,15 +10615,15 @@ export default function App() {
   }, [pay2SpeakMode, network]);
 
   useEffect(() => {
-    if (!tokenMode || network !== "livenet") {
+    if ((!tokenMode && !workTokenMode) || network !== "livenet") {
       return;
     }
 
     void refreshToken(true);
-  }, [network, tokenMode]);
+  }, [network, tokenMode, workTokenMode]);
 
   useEffect(() => {
-    if (!tokenMode) {
+    if (!tokenMode && !workTokenMode && activeFolder !== "token" && activeFolder !== "work") {
       return;
     }
 
@@ -10524,7 +10643,7 @@ export default function App() {
     return () => {
       canceled = true;
     };
-  }, [tokenMode]);
+  }, [activeFolder, tokenMode, workTokenMode]);
 
   useEffect(() => {
     if (!growthMode || network !== "livenet") {
@@ -10563,7 +10682,13 @@ export default function App() {
     if (
       (!needsRegistryResolution(recipient, network) &&
         !needsRegistryResolution(ccRecipient, network) &&
-        !(tokenMode && needsRegistryResolution(tokenCreateRegistryAddress, network))) ||
+        !(
+          (tokenMode ||
+            workTokenMode ||
+            activeFolder === "token" ||
+            activeFolder === "work") &&
+          needsRegistryResolution(tokenCreateRegistryAddress, network)
+        )) ||
       !registryAddress
     ) {
       return undefined;
@@ -10584,7 +10709,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [ccRecipient, network, recipient, registryAddress, tokenCreateRegistryAddress, tokenMode]);
+  }, [activeFolder, ccRecipient, network, recipient, registryAddress, tokenCreateRegistryAddress, tokenMode, workTokenMode]);
 
   useEffect(() => {
     if (
@@ -10651,7 +10776,15 @@ export default function App() {
       setChainSent([]);
       setSelectedKey("");
       setActiveFolder(
-        pay2SpeakMode ? "pay2speak" : mainnetRegistryMode ? "ids" : "inbox",
+        pay2SpeakMode
+          ? "pay2speak"
+          : workTokenMode
+            ? "work"
+            : tokenMode
+              ? "token"
+              : mainnetRegistryMode
+                ? "ids"
+                : "inbox",
       );
       setComposeOpen(false);
 
@@ -10674,7 +10807,7 @@ export default function App() {
           return;
         }
 
-        if (tokenMode) {
+        if (tokenMode || workTokenMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
           const state = await fetchTokenState("livenet");
           setTokenDefinitions(state.tokens);
@@ -10751,6 +10884,7 @@ export default function App() {
     network,
     pay2SpeakMode,
     tokenMode,
+    workTokenMode,
   ]);
 
   function applyDraft(draft: DraftMessage) {
@@ -11563,9 +11697,10 @@ export default function App() {
     }
 
     try {
-      const [registryState, pay2SpeakState] = await Promise.all([
+      const [registryState, pay2SpeakState, tokenState] = await Promise.all([
         fetchIdRegistryState("livenet"),
         fetchPay2SpeakState("livenet"),
+        fetchTokenState("livenet"),
       ]);
       setIdRegistry(registryState.records);
       setIdListings(registryState.listings);
@@ -11575,10 +11710,13 @@ export default function App() {
       setPay2SpeakCampaigns(pay2SpeakState.campaigns);
       setPay2SpeakFunding(pay2SpeakState.funding);
       setPay2SpeakQuestions(pay2SpeakState.questions);
+      setTokenDefinitions(tokenState.tokens);
+      setTokenMints(tokenState.mints);
+      setTokenCreationSats(tokenState.creationSats);
       if (!silent) {
         setStatus({
           tone: "good",
-          text: `Growth metrics loaded. ${registryState.records.filter((record) => record.confirmed).length.toLocaleString()} IDs, ${pay2SpeakState.campaigns.length.toLocaleString()} Pay2Speak campaign${pay2SpeakState.campaigns.length === 1 ? "" : "s"}.`,
+          text: `Growth metrics loaded. ${registryState.records.filter((record) => record.confirmed).length.toLocaleString()} IDs, ${pay2SpeakState.campaigns.length.toLocaleString()} Pay2Speak campaign${pay2SpeakState.campaigns.length === 1 ? "" : "s"}, ${tokenState.tokens.length.toLocaleString()} token${tokenState.tokens.length === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -11730,7 +11868,7 @@ export default function App() {
           return;
         }
 
-        if (tokenMode) {
+        if (tokenMode || workTokenMode) {
           const state = await fetchTokenState("livenet");
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
@@ -14147,7 +14285,7 @@ export default function App() {
     );
   }
 
-  if (tokenMode) {
+  if (tokenMode || workTokenMode) {
     return (
       <TokenApp
         address={address}
@@ -14192,11 +14330,12 @@ export default function App() {
         setTokenDetailTarget={setTokenDetailTarget}
         setTheme={setTheme}
         status={status}
-        tokenDetailTarget={tokenDetailTarget}
+        tokenDetailTarget={effectiveTokenDetailTarget}
         tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
         tokens={orderedTokenDefinitions}
         submitMint={mintToken}
         theme={theme}
+        workTokenOnly={workTokenMode}
         onRefresh={() => void refreshToken()}
       />
     );
@@ -14283,6 +14422,10 @@ export default function App() {
         setTheme={setTheme}
         status={status}
         theme={theme}
+        tokenDefinitions={tokenDefinitions.filter(
+          (token) => token.network === "livenet",
+        )}
+        tokenMints={tokenMints.filter((mint) => mint.network === "livenet")}
         onRefresh={() => void refreshGrowth()}
       />
     );
@@ -14322,6 +14465,11 @@ export default function App() {
             onClick={() => {
               if (activeFolder === "pay2speak") {
                 void refreshPay2Speak();
+                return;
+              }
+
+              if (activeFolder === "token" || activeFolder === "work") {
+                void refreshToken();
                 return;
               }
 
@@ -14627,6 +14775,28 @@ export default function App() {
               <strong>{pay2SpeakCampaigns.length}</strong>
             </button>
             <button
+              aria-current={activeFolder === "token"}
+              onClick={() => openFolder("token")}
+              type="button"
+            >
+              <span className="folder-label">
+                <FilePenLine size={17} />
+                <span>Token</span>
+              </span>
+              <strong>{tokenDefinitions.length}</strong>
+            </button>
+            <button
+              aria-current={activeFolder === "work"}
+              onClick={() => openFolder("work")}
+              type="button"
+            >
+              <span className="folder-label">
+                <TrendingUp size={17} />
+                <span>WORK</span>
+              </span>
+              <strong>{workTokenLedger.confirmedSupply.toLocaleString()}</strong>
+            </button>
+            <button
               aria-current={activeFolder === "log"}
               onClick={() => openFolder("log")}
               type="button"
@@ -14828,6 +14998,54 @@ export default function App() {
             split={pay2SpeakSplit}
             targetSats={pay2SpeakTargetSats}
             onRefresh={() => void refreshPay2Speak()}
+          />
+        ) : activeFolder === "token" || activeFolder === "work" ? (
+          <TokenWorkspace
+            address={address}
+            busy={busy}
+            canCreate={canCreateToken}
+            canMint={canMintToken}
+            confirmedSupply={selectedTokenLedger.confirmedSupply}
+            createBytes={tokenCreateBytes}
+            creatingToken={tokenAction === "create"}
+            createMaxSupply={tokenCreateMaxSupply}
+            createMintAmount={tokenCreateMintAmount}
+            createMintPriceSats={tokenCreateMintPriceSats}
+            createRegistryAddress={tokenCreateRegistryAddress}
+            createRegistryResolution={tokenRegistryResolution}
+            createTicker={tokenCreateTicker}
+            creationSats={tokenCreationSats}
+            createToken={createToken}
+            detailConfirmedSupply={tokenDetailLedger.confirmedSupply}
+            detailHolders={tokenDetailLedger.holders}
+            detailMints={tokenDetailLedger.mints}
+            detailPendingSupply={tokenDetailLedger.pendingSupply}
+            detailToken={tokenDetailToken}
+            feeRate={feeRate}
+            btcUsd={tokenBtcUsd}
+            holders={selectedTokenLedger.holders}
+            mintBytes={tokenMintBytes}
+            mintingToken={tokenAction === "mint"}
+            mints={selectedTokenLedger.mints}
+            pendingSupply={selectedTokenLedger.pendingSupply}
+            selectedToken={selectedToken}
+            selectedTokenId={selectedToken?.tokenId ?? ""}
+            setFeeRate={setFeeRate}
+            setCreateMaxSupply={setTokenCreateMaxSupply}
+            setCreateMintAmount={setTokenCreateMintAmount}
+            setCreateMintPriceSats={setTokenCreateMintPriceSats}
+            setCreateRegistryAddress={setTokenCreateRegistryAddress}
+            setCreateTicker={setTokenCreateTicker}
+            setSelectedTokenId={setTokenSelectedId}
+            setTokenDetailTarget={setTokenDetailTarget}
+            submitMint={mintToken}
+            tokenDetailTarget={
+              activeFolder === "work" ? WORK_TOKEN_TICKER : ""
+            }
+            tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
+            tokens={orderedTokenDefinitions}
+            workTokenOnly={activeFolder === "work"}
+            onRefresh={() => void refreshToken()}
           />
         ) : activeFolder === "contacts" ? (
           <ContactsWorkspace
@@ -16431,6 +16649,7 @@ type TokenAppProps = {
   tokens: PowTokenDefinition[];
   submitMint: (event: FormEvent<HTMLFormElement>) => void;
   theme: ThemeMode;
+  workTokenOnly?: boolean;
   onRefresh: () => void;
 };
 
@@ -16443,6 +16662,7 @@ function TokenApp({
   setTheme,
   status,
   theme,
+  workTokenOnly,
   ...workspaceProps
 }: TokenAppProps) {
   return (
@@ -16457,8 +16677,12 @@ function TokenApp({
             PoW
           </div>
           <div>
-            <h1>Tokens</h1>
-            <span>ProofOfWork token factory</span>
+            <h1>{workTokenOnly ? "WORK" : "Tokens"}</h1>
+            <span>
+              {workTokenOnly
+                ? "ProofOfWork token dashboard"
+                : "ProofOfWork token factory"}
+            </span>
           </div>
         </a>
 
@@ -16523,7 +16747,12 @@ function TokenApp({
         </div>
       ) : null}
 
-      <TokenWorkspace address={address} busy={busy} {...workspaceProps} />
+      <TokenWorkspace
+        address={address}
+        busy={busy}
+        workTokenOnly={workTokenOnly}
+        {...workspaceProps}
+      />
       <SocialFooter />
     </main>
   );
@@ -16571,6 +16800,7 @@ function TokenWorkspace({
   tokenDetailTarget,
   tokenIndexAddress,
   tokens,
+  workTokenOnly,
   onRefresh,
 }: Omit<
   TokenAppProps,
@@ -16620,7 +16850,7 @@ function TokenWorkspace({
     setTokenDetailTarget(token.tokenId);
     window.history.pushState(null, "", tokenDetailHref(token));
   };
-  const detailMode = Boolean(tokenDetailTarget.trim());
+  const detailMode = workTokenOnly || Boolean(tokenDetailTarget.trim());
   const detailPricePerToken =
     detailToken && detailToken.mintAmount > 0
       ? detailToken.mintPriceSats / detailToken.mintAmount
@@ -17324,10 +17554,7 @@ function TokenWorkspace({
             </a>
             <a
               className="secondary small"
-              href={appHref(
-                `${TOKEN_APP_URL}/?asset=${WORK_TOKEN_TICKER}`,
-                `/?token=1&asset=${WORK_TOKEN_TICKER}`,
-              )}
+              href={appHref(WORK_TOKEN_APP_URL, LOCAL_WORK_TOKEN_APP_URL)}
             >
               <span className="button-content">
                 <TrendingUp size={15} />
@@ -18555,6 +18782,8 @@ function growthActualNetworkValue(
   sales: PowIdMarketplaceSale[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  tokenDefinitions: PowTokenDefinition[],
+  tokenMints: PowTokenMint[],
   cutoffMs = Date.now(),
 ): GrowthActualNetworkValue {
   const confirmedRecords = records.filter(
@@ -18573,6 +18802,12 @@ function growthActualNetworkValue(
   const confirmedPay2SpeakFunding = pay2SpeakFunding.filter(
     (funding) =>
       funding.confirmed && Date.parse(funding.createdAt) <= cutoffMs,
+  );
+  const confirmedTokens = tokenDefinitions.filter(
+    (token) => token.confirmed && Date.parse(token.createdAt) <= cutoffMs,
+  );
+  const confirmedTokenMints = tokenMints.filter(
+    (mint) => mint.confirmed && Date.parse(mint.createdAt) <= cutoffMs,
   );
   const powids = confirmedRecords.length;
   const mailFlowSats = confirmedActivity
@@ -18601,6 +18836,14 @@ function growthActualNetworkValue(
       (total, funding) => total + funding.grossSats,
       0,
     );
+  const tokenCreationFlowSats = confirmedTokens.reduce(
+    (total, token) => total + token.creationFeeSats,
+    0,
+  );
+  const tokenMintFlowSats = confirmedTokenMints.reduce(
+    (total, mint) => total + mint.paidSats,
+    0,
+  );
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -18608,13 +18851,17 @@ function growthActualNetworkValue(
     marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const pay2SpeakSats = pay2SpeakFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const tokenSats =
+    (tokenCreationFlowSats + tokenMintFlowSats) *
+    GROWTH_MODEL_INPUTS.valueMultiple;
   const totalSats =
     idSats +
     mailSats +
     driveSats +
     marketplaceSats +
     browserSats +
-    pay2SpeakSats;
+    pay2SpeakSats +
+    tokenSats;
   const years = Math.max(
     0,
     (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) /
@@ -18633,6 +18880,9 @@ function growthActualNetworkValue(
     pay2SpeakFlowSats,
     pay2SpeakSats,
     powids,
+    tokenCreationFlowSats,
+    tokenMintFlowSats,
+    tokenSats,
     totalSats,
     totalUsd: growthSatsToUsdAtYears(totalSats, years),
   };
@@ -18644,6 +18894,8 @@ function growthActualValuePoints(
   sales: PowIdMarketplaceSale[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  tokenDefinitions: PowTokenDefinition[],
+  tokenMints: PowTokenMint[],
 ): GrowthValuePoint[] {
   const eventTimes: Array<{ createdMs: number; label: string }> = [];
   const addEventTime = (createdAt: string, label: string) => {
@@ -18686,6 +18938,18 @@ function growthActualValuePoints(
     }
   }
 
+  for (const token of tokenDefinitions) {
+    if (token.confirmed) {
+      addEventTime(token.createdAt, `${token.ticker} token created`);
+    }
+  }
+
+  for (const mint of tokenMints) {
+    if (mint.confirmed) {
+      addEventTime(mint.createdAt, `${mint.ticker} token mint`);
+    }
+  }
+
   const points: GrowthValuePoint[] = [];
   const startValue = growthActualNetworkValue(
     records,
@@ -18693,6 +18957,8 @@ function growthActualValuePoints(
     sales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    tokenDefinitions,
+    tokenMints,
     GROWTH_MODEL_START_MS,
   );
   points.push({
@@ -18711,6 +18977,8 @@ function growthActualValuePoints(
       sales,
       pay2SpeakCampaigns,
       pay2SpeakFunding,
+      tokenDefinitions,
+      tokenMints,
       createdMs,
     );
     points.push({
@@ -18734,6 +19002,8 @@ function growthActualValuePoints(
     sales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    tokenDefinitions,
+    tokenMints,
   );
   const lastPoint = points[points.length - 1];
   if (
@@ -18824,6 +19094,8 @@ function growthRealEventItems(
   sales: PowIdMarketplaceSale[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  tokenDefinitions: PowTokenDefinition[],
+  tokenMints: PowTokenMint[],
 ): GrowthRealEvent[] {
   const events = new Map<string, GrowthRealEvent>();
   const setEvent = (event: GrowthRealEvent) => {
@@ -18916,6 +19188,40 @@ function growthRealEventItems(
       network: funding.network,
       title: funding.question ? "Funded question" : "Campaign funding",
       txid: funding.txid,
+    });
+  }
+
+  for (const token of tokenDefinitions) {
+    if (!token.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${token.creationFeeSats.toLocaleString()} creation sats`,
+      createdAt: token.createdAt,
+      detail: `${token.ticker} created with ${token.maxSupply.toLocaleString()} max supply and registry ${shortAddress(token.registryAddress)}.`,
+      key: token.txid,
+      kind: "Token",
+      network: token.network,
+      title: "Token created",
+      txid: token.txid,
+    });
+  }
+
+  for (const mint of tokenMints) {
+    if (!mint.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${mint.paidSats.toLocaleString()} mint sats`,
+      createdAt: mint.createdAt,
+      detail: `${mint.amount.toLocaleString()} ${mint.ticker} minted by ${shortAddress(mint.minterAddress)}.`,
+      key: mint.txid,
+      kind: "Token",
+      network: mint.network,
+      title: "Token mint",
+      txid: mint.txid,
     });
   }
 
@@ -19135,6 +19441,8 @@ function GrowthApp({
   setTheme,
   status,
   theme,
+  tokenDefinitions,
+  tokenMints,
   onRefresh,
 }: {
   busy: boolean;
@@ -19147,6 +19455,8 @@ function GrowthApp({
   setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
   status: { tone: StatusTone; text: string };
   theme: ThemeMode;
+  tokenDefinitions: PowTokenDefinition[];
+  tokenMints: PowTokenMint[];
   onRefresh: () => void;
 }) {
   return (
@@ -19197,6 +19507,8 @@ function GrowthApp({
         registryListings={registryListings}
         registryRecords={registryRecords}
         registrySales={registrySales}
+        tokenDefinitions={tokenDefinitions}
+        tokenMints={tokenMints}
         onRefresh={onRefresh}
       />
 
@@ -19213,6 +19525,8 @@ function GrowthWorkspace({
   registryListings,
   registryRecords,
   registrySales,
+  tokenDefinitions,
+  tokenMints,
   onRefresh,
 }: {
   busy: boolean;
@@ -19222,6 +19536,8 @@ function GrowthWorkspace({
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   registrySales: PowIdMarketplaceSale[];
+  tokenDefinitions: PowTokenDefinition[];
+  tokenMints: PowTokenMint[];
   onRefresh: () => void;
 }) {
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
@@ -19232,6 +19548,8 @@ function GrowthWorkspace({
     registrySales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    tokenDefinitions,
+    tokenMints,
   );
   const actualPoints = growthActualValuePoints(
     registryRecords,
@@ -19239,6 +19557,8 @@ function GrowthWorkspace({
     registrySales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    tokenDefinitions,
+    tokenMints,
   );
   const realEvents = growthRealEventItems(
     registryRecords,
@@ -19246,6 +19566,8 @@ function GrowthWorkspace({
     registrySales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    tokenDefinitions,
+    tokenMints,
   );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
   const oneYear =
@@ -19270,6 +19592,12 @@ function GrowthWorkspace({
   const confirmedPay2SpeakFunding = pay2SpeakFunding.filter(
     (funding) => funding.confirmed,
   ).length;
+  const confirmedTokenDefinitions = tokenDefinitions.filter(
+    (token) => token.confirmed,
+  ).length;
+  const confirmedTokenMints = tokenMints.filter((mint) => mint.confirmed).length;
+  const tokenFlowSats =
+    actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats;
 
   return (
     <section className="growth-workspace">
@@ -19280,7 +19608,7 @@ function GrowthWorkspace({
           <p>
             The blue line is modeled Bitcoin Computer network value. The green
             line is real confirmed mainnet value from IDs, Mail, Drive,
-            Marketplace, Browser, and Pay2Speak.
+            Marketplace, Browser, Pay2Speak, and Tokens.
           </p>
         </div>
         <div className="growth-model-card">
@@ -19388,7 +19716,7 @@ function GrowthWorkspace({
           <h3>Blue is the success case. Green is Bitcoin history.</h3>
           <p>
             The model asks what the Bitcoin Computer can become if IDs, Mail,
-            Drive, Marketplace, Browser, and Pay2Speak compound together. The
+            Drive, Marketplace, Browser, Pay2Speak, and Tokens compound together. The
             real line only counts confirmed mainnet records that already exist.
           </p>
         </article>
@@ -19397,7 +19725,7 @@ function GrowthWorkspace({
           <h3>Everything is valued in sats first.</h3>
           <p>
             IDs use n squared network value. Mail, Drive, Marketplace, Browser,
-            and Pay2Speak use confirmed payment flow multiplied by the same
+            Pay2Speak, and Tokens use confirmed payment flow multiplied by the same
             value multiple, then translated to USD with the Bitcoin benchmark.
           </p>
         </article>
@@ -19407,8 +19735,8 @@ function GrowthWorkspace({
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
             buyer-funded marketplace sales, Pay2Speak campaigns, funded
-            questions are pulled from live endpoints. Pending mempool events
-            wait until they confirm.
+            questions, token creations, and token mints are pulled from live
+            endpoints. Pending mempool events wait until they confirm.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -19633,6 +19961,22 @@ function GrowthWorkspace({
             name="Pay2Speak"
             note="Creator funding, paid questions, and campaign receipts become measurable work value."
           />
+          <GrowthProductCard
+            actual={growthSats(actualValue.tokenSats)}
+            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.tokenSats, elapsedYears))} · ${tokenFlowSats.toLocaleString()} token sats · ${confirmedTokenDefinitions.toLocaleString()} tokens · ${confirmedTokenMints.toLocaleString()} mints`}
+            icon={<TrendingUp size={24} />}
+            modelFiveYear={growthSats(fiveYear.tokenSats)}
+            modelFiveYearLabel={growthUsd(
+              growthSatsToUsdAtYears(fiveYear.tokenSats, fiveYear.years),
+            )}
+            modelLabel="network value"
+            modelOneYear={growthSats(oneYear.tokenSats)}
+            modelOneYearLabel={growthUsd(
+              growthSatsToUsdAtYears(oneYear.tokenSats, oneYear.years),
+            )}
+            name="Tokens"
+            note="Token creation fees and owner-registry mint flow become measurable Bitcoin Computer value."
+          />
         </div>
       </section>
 
@@ -19723,13 +20067,13 @@ function LandingApp({
         <div className="landing-hero-content">
           <span className="landing-kicker">
             Bitcoin-native identity, mail, files, pages, markets, funding,
-            logs, and growth
+            tokens, logs, and growth
           </span>
           <h2>ProofOfWork.Me</h2>
           <p>
             Claim a permanent on-chain ID, then use the Bitcoin Computer for
             mail, files, HTML pages, marketplace actions, Pay2Speak campaigns,
-            and chain-readable proof.
+            token mints, and chain-readable proof.
           </p>
           <div className="landing-actions">
             <a
@@ -19784,6 +20128,24 @@ function LandingApp({
               <span className="button-content">
                 <Mic2 size={17} />
                 <span>Pay2Speak</span>
+              </span>
+            </a>
+            <a
+              className="secondary link-button"
+              href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
+            >
+              <span className="button-content">
+                <FilePenLine size={17} />
+                <span>Tokens</span>
+              </span>
+            </a>
+            <a
+              className="secondary link-button"
+              href={appHref(WORK_TOKEN_APP_URL, LOCAL_WORK_TOKEN_APP_URL)}
+            >
+              <span className="button-content">
+                <TrendingUp size={17} />
+                <span>WORK</span>
               </span>
             </a>
           </div>
@@ -20008,6 +20370,50 @@ function LandingApp({
               <span className="button-content">
                 <Mic2 size={16} />
                 <span>Open Pay2Speak</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <FilePenLine size={24} />
+            </div>
+            <div>
+              <h3>Create Tokens</h3>
+              <p>
+                Launch mint-first <code>pwt1:</code> tokens, set the owner
+                registry, and let mints pay that registry directly.
+              </p>
+            </div>
+            <a
+              className="secondary link-button"
+              href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
+            >
+              <span className="button-content">
+                <FilePenLine size={16} />
+                <span>Open Tokens</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <TrendingUp size={24} />
+            </div>
+            <div>
+              <h3>Track WORK</h3>
+              <p>
+                View the dedicated WORK dashboard, mint progress, holders,
+                confirmed supply, and mint log.
+              </p>
+            </div>
+            <a
+              className="secondary link-button"
+              href={appHref(WORK_TOKEN_APP_URL, LOCAL_WORK_TOKEN_APP_URL)}
+            >
+              <span className="button-content">
+                <TrendingUp size={16} />
+                <span>Open WORK</span>
               </span>
             </a>
           </article>

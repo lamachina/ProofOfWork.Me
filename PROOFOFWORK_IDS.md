@@ -108,6 +108,8 @@ browser.proofofwork.me      public HTML browser by txid
 marketplace.proofofwork.me  standalone ID marketplace
 pay2speak.proofofwork.me    standalone X Space crowdfunding app
 token.proofofwork.me        standalone token creation and mint app
+tokens.proofofwork.me       permanent redirect to https://token.proofofwork.me/
+work.proofofwork.me         standalone WORK token dashboard and mint page
 log.proofofwork.me          public Bitcoin Computer log
 growth.proofofwork.me       public growth model dashboard
 ```
@@ -116,7 +118,8 @@ The ID subdomain is the first onboarding experience and should stay focused on c
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
 The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers.
 The Log subdomain is read-only. It exposes a unified Bitcoin Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, and attachments.
-The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Pay2Speak network-value model with confirmed registry, log, file, marketplace, and Pay2Speak value metrics in sats and USD.
+The Token subdomain creates and mints mint-first `pwt1:` tokens. The `tokens` subdomain redirects to Token. The WORK subdomain is the dedicated WORK token dashboard.
+The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Pay2Speak/Token network-value model with confirmed registry, log, file, marketplace, Pay2Speak, and token value metrics in sats and USD.
 
 Local preview:
 
@@ -148,6 +151,12 @@ Token-only build:
 
 ```bash
 VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
+```
+
+WORK-token-only build:
+
+```bash
+VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
 ```
 
 Log-only build:
@@ -357,6 +366,7 @@ https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
 https://pay2speak.proofofwork.me/api/*
 https://token.proofofwork.me/api/*
+https://work.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
 https://growth.proofofwork.me/api/*
 ```

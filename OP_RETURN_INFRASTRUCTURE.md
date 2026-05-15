@@ -27,11 +27,13 @@ browser.proofofwork.me      -> public HTML browser by txid
 marketplace.proofofwork.me  -> standalone ID marketplace
 pay2speak.proofofwork.me    -> standalone X Space crowdfunding app
 token.proofofwork.me        -> standalone token creation and mint app
+tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
+work.proofofwork.me         -> standalone WORK token dashboard and mint page
 log.proofofwork.me          -> public Bitcoin Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, Token, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, Token, WORK, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -90,6 +92,7 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 /?marketplace=1
 /?pay2speak=1
 /?token=1
+/?work=1
 /?log=1
 /?growth=1
 ```
@@ -105,6 +108,7 @@ VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run bui
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
 VITE_PAY2SPEAK_ONLY=1 VITE_POW_API_BASE=https://pay2speak.proofofwork.me npm run build
 VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
+VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
@@ -144,9 +148,9 @@ The log endpoint:
 
 The Growth app:
 
-- Reads the same registry, log, and Pay2Speak endpoints as the public app surfaces.
+- Reads the same registry, log, Pay2Speak, and Token endpoints as the public app surfaces.
 - Compares modeled Bitcoin Computer network value to confirmed chain-derived value in sats and USD.
-- Auto-refreshes confirmed registry, log, file, marketplace, and Pay2Speak metrics while the page is visible.
+- Auto-refreshes confirmed registry, log, file, marketplace, Pay2Speak, and Token metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
 
 The Pay2Speak endpoint:
@@ -173,6 +177,7 @@ The token endpoint:
 - Credits confirmed mint balances to the first input address.
 - Keeps launch mint-first. Transfers, listings, marketplace actions, and other token mutations are not live yet.
 - Token UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per token and per mint from BTC/USD.
+- `token.proofofwork.me` is the create/mint surface, `tokens.proofofwork.me` redirects to it, and `work.proofofwork.me` is the dedicated WORK dashboard.
 - WORK defaults are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 sat per WORK. These are editable create-form defaults, not hardcoded limits for other tokens.
 - Treats pending token records as visibility only; confirmed records are canonical.
 
@@ -320,7 +325,7 @@ After changing the API or production build, verify:
 - Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Log can load global Bitcoin Computer events and search an address, confirmed ProofOfWork ID, or txid.
-- Growth can load real chain metrics and render the modeled-vs-real sats/USD value graph without layout overlap on desktop and mobile.
+- Growth can load real chain metrics, including token creations and mints, and render the modeled-vs-real sats/USD value graph without layout overlap on desktop and mobile.
 - Known attachment transactions reconstruct with valid size and SHA-256.
 - Known HTML message-body transactions render through Browser from `pwm1:m`.
 - Known pending txs return `pending`.

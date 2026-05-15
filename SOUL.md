@@ -8,7 +8,7 @@ It is distilled from current repository docs and public launch memory captured o
 
 - Public account: `@proofofworkme`
 - Launch memory reviewed: 2026-05-10
-- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `pay2speak.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `marketplace.proofofwork.me`, `pay2speak.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -74,6 +74,9 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `marketplace.proofofwork.me` is the standalone ID marketplace.
 - `pay2speak.proofofwork.me` is the standalone Pay2Speak app for campaign funding and ranked questions.
+- `token.proofofwork.me` is the standalone token creation and mint app.
+- `tokens.proofofwork.me` redirects to `https://token.proofofwork.me/`.
+- `work.proofofwork.me` is the standalone WORK token dashboard.
 - `log.proofofwork.me` is the public read-only Bitcoin Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the public read-only growth dashboard for canonical Bitcoin Computer network value versus confirmed chain-derived value in sats and USD.
 - Canonical mainnet registry address: `bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e`

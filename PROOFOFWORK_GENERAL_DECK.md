@@ -7,7 +7,7 @@ Purpose: public-facing narrative deck for the current Bitcoin Computer.
 Positioning:
 
 ```text
-ProofOfWork.Me is the Bitcoin Computer: local-first, on-chain, agent-readable software for identity, paid communication, files, pages, markets, logs, and growth.
+ProofOfWork.Me is the Bitcoin Computer: local-first, on-chain, agent-readable software for identity, paid communication, files, pages, markets, funding, tokens, logs, and growth.
 ```
 
 ## Slide 1: The Bitcoin Computer
@@ -16,7 +16,7 @@ ProofOfWork.Me
 
 The Bitcoin Computer.
 
-Identity, mail, files, pages, marketplace actions, logs, and growth signals written to Bitcoin.
+Identity, mail, files, pages, marketplace actions, Pay2Speak funding, token mints, logs, and growth signals written to Bitcoin.
 
 ## Slide 2: The Internet Rents Identity
 
@@ -119,11 +119,28 @@ Buyers settle by spending a sale-ticket UTXO, paying the seller, paying the regi
 
 Competing buys conflict at the Bitcoin UTXO layer.
 
-## Slide 10: Log And Growth
+## Slide 10: Tokens
+
+Tokens are mint-first and Bitcoin-readable.
+
+```text
+token.proofofwork.me
+work.proofofwork.me
+```
+
+Creation pays the token index.
+
+Mints pay each token registry directly at the owner-set price.
+
+WORK starts with 21,000,000 max supply, 1,000 WORK per mint, and 1,000 sats per mint.
+
+That is exactly 1 sat per WORK.
+
+## Slide 11: Log And Growth
 
 Log is the public Bitcoin Computer activity feed.
 
-It indexes registrations, receiver updates, transfers, listings, purchases, messages, replies, files, attachments, and Browser-readable pages.
+It indexes registrations, receiver updates, transfers, listings, purchases, messages, replies, files, attachments, Browser-readable pages, Pay2Speak funding, token creations, and token mints.
 
 Growth compares the canonical success-case model against real confirmed network value in sats and USD.
 
@@ -135,7 +152,7 @@ The model adds every new product with consistent inputs:
 - Fee elasticity.
 - Blockspace accounting.
 
-## Slide 11: Agent-Readable By Design
+## Slide 12: Agent-Readable By Design
 
 Agents need identity, memory, money, and verifiable state.
 
@@ -145,12 +162,12 @@ ProofOfWork.Me gives agents:
 - Chain-readable messages.
 - Sats with every interaction.
 - Durable files and instructions.
-- Public ownership and marketplace records.
+- Public ownership, marketplace, funding, and token records.
 - Local wallet authority controlled by humans.
 
 Humans sign. Agents verify.
 
-## Slide 12: The Final Network
+## Slide 13: The Final Network
 
 ProofOfWork.Me is a new interface for Bitcoin.
 
@@ -160,6 +177,9 @@ Files.
 Desktop.
 Browser.
 Marketplace.
+Pay2Speak.
+Tokens.
+WORK.
 Log.
 Growth.
 Agents.

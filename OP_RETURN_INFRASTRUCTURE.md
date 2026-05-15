@@ -1,6 +1,6 @@
 # ProofOfWork OP_RETURN Infrastructure
 
-ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol and `pwid1:` ID registry protocol.
+ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, `pws1:` Pay2Speak protocol, and `pwt1:` token protocol.
 
 The current product direction is OP_RETURN only. Future protocol work should improve this OP_RETURN indexer and API before introducing any new carrier.
 
@@ -23,14 +23,17 @@ proofofwork.me              -> permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           -> ID registry app
 computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
-browser.proofofwork.me      -> public HTML browser and confirmed-page wallet-intent surface by txid
+browser.proofofwork.me      -> public HTML browser by txid
 marketplace.proofofwork.me  -> standalone ID marketplace
 pay2speak.proofofwork.me    -> standalone X Space crowdfunding app
+token.proofofwork.me        -> standalone token creation and mint app
+tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
+work.proofofwork.me         -> standalone WORK token dashboard and mint page
 log.proofofwork.me          -> public Bitcoin Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, Token, WORK, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -88,6 +91,8 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 /?browser=1
 /?marketplace=1
 /?pay2speak=1
+/?token=1
+/?work=1
 /?log=1
 /?growth=1
 ```
@@ -102,6 +107,8 @@ VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run bui
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
 VITE_PAY2SPEAK_ONLY=1 VITE_POW_API_BASE=https://pay2speak.proofofwork.me npm run build
+VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
+VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
@@ -115,6 +122,7 @@ GET /api/v1/log?network=livenet
 GET /api/v1/ids?network=livenet
 GET /api/v1/ids/:id?network=livenet
 GET /api/v1/pay2speak?network=livenet
+GET /api/v1/token?network=livenet
 GET /api/v1/address/:address/mail?network=livenet
 GET /api/v1/tx/:txid?network=livenet
 GET /api/v1/tx/:txid/status?network=livenet
@@ -135,14 +143,14 @@ The log endpoint:
 
 - Starts from the canonical registry and all known ProofOfWork ID owner/receiver addresses.
 - Crawls the ProofOfWork mail/file address graph by reading `pwm1:` transactions, discovering senders and recipients, and expanding until the configured safety cap.
-- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, and attachments.
-- Reports total indexed ProofOfWork protocol data bytes across all discovered `pwm1:` and `pwid1:` OP_RETURN payloads, including marketplace listing/seal/buy/delist records.
+- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, Pay2Speak campaigns/funding, token creations, and token mints.
+- Reports total indexed ProofOfWork protocol data bytes across all discovered `pwm1:`, `pwid1:`, `pws1:`, and `pwt1:` OP_RETURN payloads, including marketplace listing/seal/buy/delist records.
 
 The Growth app:
 
-- Reads the same registry and log endpoints as Log and Marketplace.
+- Reads the same registry, log, Pay2Speak, and Token endpoints as the public app surfaces.
 - Compares modeled Bitcoin Computer network value to confirmed chain-derived value in sats and USD.
-- Auto-refreshes confirmed registry, log, file, and marketplace metrics while the page is visible.
+- Auto-refreshes confirmed registry, log, file, marketplace, Pay2Speak, and Token metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
 
 The Pay2Speak endpoint:
@@ -155,6 +163,23 @@ The Pay2Speak endpoint:
 - Counts valid funding by gross donor spend, using the required split before OP_RETURN: below 5,460 sats, 1,000 sats to registry and the remainder to creator; at or above 5,460 sats, 10% to registry and 90% to creator.
 - Exposes optional questions decoded from base64url and ranked by attached gross sats.
 - Treats pending Pay2Speak records as visibility only; confirmed records are canonical.
+
+The token endpoint:
+
+- Scans `tokens@proofofwork.me` at `1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn` for token creation records.
+- Uses tx `7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19` as the current ID record for the token index.
+- Reads confirmed and pending `pwt1:` records.
+- Reconstructs token definitions from `pwt1:create:<ticker>:<max-supply>:<mint-amount>:<mint-price-sats>:<token-registry-address>` transactions that pay at least 546 sats to `tokens@proofofwork.me` before OP_RETURN.
+- Lets the token creation UI accept either a raw Bitcoin address or a confirmed ProofOfWork ID for the token registry. The chain record stores the resolved Bitcoin address so token indexing does not depend on future ID receiver changes.
+- Defines the token id as the creation txid, allowing repeated tickers while keeping mints unambiguous.
+- Reconstructs mints from `pwt1:mint:<token-create-txid>:<amount>` transactions found on each token's own registry address.
+- Requires mint payments to the token registry before OP_RETURN at the owner-set mint price, with a 546 sat minimum for token mint settings.
+- Credits confirmed mint balances to the first input address.
+- Keeps launch mint-first. Transfers, listings, marketplace actions, and other token mutations are not live yet.
+- Token UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per token and per mint from BTC/USD.
+- `token.proofofwork.me` is the create/mint surface, `tokens.proofofwork.me` redirects to it, and `work.proofofwork.me` is the dedicated WORK dashboard.
+- WORK defaults are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 sat per WORK. These are editable create-form defaults, not hardcoded limits for other tokens.
+- Treats pending token records as visibility only; confirmed records are canonical.
 
 The mail endpoint:
 
@@ -177,8 +202,8 @@ The tx endpoint:
 - Returns a normalized transaction payload from the same local/pending source order.
 - Lets Browser reconstruct HTML from `pwm1:m` message bodies or verified `pwm1:a` attachments by txid without depending on public mempool.space from production browsers.
 - Does not turn pending transactions into canonical history; Browser labels pending pages as pending.
-- Lets confirmed Browser pages run scripts in an opaque sandbox and request local wallet signing by posting `pow:intent` messages to the parent app. The parent validates currently supported `pwt1` registry payments and OP_RETURN payloads, prompts the user, builds the PSBT, and signs/broadcasts through UniSat.
-- Keeps pending Browser pages non-interactive for wallet signing. The API never receives seed phrases, private keys, or wallet authority.
+- Lets confirmed Browser pages run scripts in an opaque sandbox while keeping wallet signing outside Browser pages.
+- Keeps pending Browser pages script-disabled. The API never receives seed phrases, private keys, or wallet authority.
 
 Files/Desktop projection:
 
@@ -267,6 +292,20 @@ Mainnet Pay2Speak registry:
 bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4
 ```
 
+Tokens:
+
+```text
+pwt1:create:<ticker>:<max-supply>:<mint-amount>:<mint-price-sats>:<token-registry-address>
+pwt1:mint:<token-create-txid>:<amount>
+```
+
+Mainnet token creation index:
+
+```text
+tokens@proofofwork.me
+1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn
+```
+
 ## Launch Rule
 
 For production, ID resolution should prefer the ProofOfWork API over public mempool.space. If the API is unavailable, it is safer to fail closed than to route or register IDs from incomplete public API state.
@@ -279,14 +318,14 @@ After changing the API or production build, verify:
 
 - `/health` returns `service: proofofwork-op-return-api`.
 - ID registry count matches the node-backed API and includes pending records when visible.
-- `bitcoin@proofofwork.me` resolves only if confirmed.
+- `tokens@proofofwork.me` resolves to the expected token index address.
 - Duplicate/pending IDs cannot be routed.
 - Sent, inbox, incoming, files, outbox, and dropped status all work through the API.
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
 - Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
 - Standalone Marketplace can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Log can load global Bitcoin Computer events and search an address, confirmed ProofOfWork ID, or txid.
-- Growth can load real chain metrics and render the modeled-vs-real sats/USD value graph without layout overlap on desktop and mobile.
+- Growth can load real chain metrics, including token creations and mints, and render the modeled-vs-real sats/USD value graph without layout overlap on desktop and mobile.
 - Known attachment transactions reconstruct with valid size and SHA-256.
 - Known HTML message-body transactions render through Browser from `pwm1:m`.
 - Known pending txs return `pending`.

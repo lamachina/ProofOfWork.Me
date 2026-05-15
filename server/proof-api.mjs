@@ -36,7 +36,16 @@ const MAX_ACTIVITY_ADDRESS_GRAPH_PASSES = Number(
   process.env.MAX_ACTIVITY_ADDRESS_GRAPH_PASSES ?? 1,
 );
 const ACTIVITY_CACHE_TTL_MS = Number(
-  process.env.ACTIVITY_CACHE_TTL_MS ?? 15_000,
+  process.env.ACTIVITY_CACHE_TTL_MS ?? 60_000,
+);
+const ACTIVITY_CACHE_STALE_MS = Number(
+  process.env.ACTIVITY_CACHE_STALE_MS ?? 3_600_000,
+);
+const RESPONSE_CACHE_TTL_MS = Number(
+  process.env.RESPONSE_CACHE_TTL_MS ?? 15_000,
+);
+const RESPONSE_CACHE_STALE_MS = Number(
+  process.env.RESPONSE_CACHE_STALE_MS ?? 120_000,
 );
 const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
 const BLOCK_TXID_FETCH_CONCURRENCY = Number(
@@ -46,10 +55,25 @@ const BLOCK_TXID_FETCH_CONCURRENCY = Number(
 const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
 const PAY2SPEAK_PROTOCOL_PREFIX = "pws1:";
+const TOKEN_PROTOCOL_PREFIX = "pwt1:";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
 const PAY2SPEAK_REGISTRY_PRICE_SATS = 1000;
 const PAY2SPEAK_SPLIT_THRESHOLD_SATS = 5460;
+const TOKEN_CREATE_ACTION = "create";
+const TOKEN_MINT_ACTION = "mint";
+const TOKEN_CREATION_PRICE_SATS = 546;
+const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
+const TOKEN_INDEX_ID = "tokens@proofofwork.me";
+const TOKEN_INDEX_TXID =
+  "7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19";
+const WORK_TOKEN_TICKER = "WORK";
+const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
+const WORK_TOKEN_MINT_AMOUNT = 1000;
+const WORK_TOKEN_MINT_PRICE_SATS = 1000;
+const WORK_TOKEN_PRICE_SATS_PER_WORK = 1;
+const WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS =
+  "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
 const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
 const ID_SALE_AUTH_VERSION_ANCHORED = "pwid-sale-v2";
 const ID_SALE_AUTH_VERSION = "pwid-sale-v3";
@@ -68,10 +92,16 @@ const ID_REGISTRY_ADDRESSES = {
 const PAY2SPEAK_REGISTRY_ADDRESSES = {
   livenet: "bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4",
 };
+const TOKEN_INDEX_ADDRESSES = {
+  livenet: "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn",
+};
 
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
 const BLOCK_TXID_INDEX_CACHE = new Map();
 const GLOBAL_ACTIVITY_CACHE = new Map();
+const RESPONSE_CACHE = new Map();
+const READ_CACHE_CONTROL =
+  "public, max-age=15, stale-while-revalidate=60, stale-if-error=120";
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
@@ -83,7 +113,16 @@ function jsonResponse(
   payload,
   cacheControl = "no-store",
 ) {
-  const body = JSON.stringify(payload);
+  writeJsonBody(response, statusCode, JSON.stringify(payload), cacheControl);
+}
+
+function writeJsonBody(
+  response,
+  statusCode,
+  body,
+  cacheControl = "no-store",
+  cacheStatus = "",
+) {
   response.writeHead(statusCode, {
     "Access-Control-Allow-Headers":
       "Accept, Authorization, Cache-Control, Content-Type",
@@ -92,6 +131,7 @@ function jsonResponse(
     "Cache-Control": cacheControl,
     "Content-Length": Buffer.byteLength(body),
     "Content-Type": "application/json; charset=utf-8",
+    ...(cacheStatus ? { "X-PoW-Cache": cacheStatus } : {}),
   });
   response.end(body);
 }
@@ -102,6 +142,140 @@ function errorResponse(response, statusCode, message, details) {
     error: message,
     ok: false,
   });
+}
+
+async function cachedPayload(
+  cacheKey,
+  producer,
+  ttlMs = RESPONSE_CACHE_TTL_MS,
+  staleMs = RESPONSE_CACHE_STALE_MS,
+) {
+  const now = Date.now();
+  const cached = RESPONSE_CACHE.get(cacheKey);
+  if (cached?.payload && now < cached.expiresAt) {
+    return cached.payload;
+  }
+
+  if (cached?.payload && now < cached.staleUntil) {
+    if (!cached.promise) {
+      cached.promise = producer()
+        .then((payload) => {
+          RESPONSE_CACHE.set(cacheKey, {
+            expiresAt: Date.now() + ttlMs,
+            payload,
+            staleUntil: Date.now() + staleMs,
+          });
+          return payload;
+        })
+        .catch((error) => {
+          RESPONSE_CACHE.set(cacheKey, {
+            ...cached,
+            promise: null,
+          });
+          console.error(`Cache refresh failed for ${cacheKey}:`, error);
+          return cached.payload;
+        });
+      RESPONSE_CACHE.set(cacheKey, cached);
+    }
+    return cached.payload;
+  }
+
+  if (cached?.promise) {
+    return cached.promise;
+  }
+
+  const promise = producer()
+    .then((payload) => {
+      RESPONSE_CACHE.set(cacheKey, {
+        expiresAt: Date.now() + ttlMs,
+        payload,
+        staleUntil: Date.now() + staleMs,
+      });
+      return payload;
+    })
+    .catch((error) => {
+      RESPONSE_CACHE.delete(cacheKey);
+      throw error;
+    });
+  RESPONSE_CACHE.set(cacheKey, {
+    expiresAt: now + ttlMs,
+    payload: cached?.payload,
+    promise,
+    staleUntil: now + staleMs,
+  });
+  return promise;
+}
+
+async function cachedJsonResponse(
+  response,
+  cacheKey,
+  producer,
+  cacheControl = READ_CACHE_CONTROL,
+  ttlMs = RESPONSE_CACHE_TTL_MS,
+  staleMs = RESPONSE_CACHE_STALE_MS,
+) {
+  const jsonKey = `json:${cacheKey}`;
+  const now = Date.now();
+  const cached = RESPONSE_CACHE.get(jsonKey);
+  if (cached?.body && now < cached.expiresAt) {
+    writeJsonBody(response, 200, cached.body, cacheControl, "HIT");
+    return;
+  }
+
+  if (cached?.body && now < cached.staleUntil) {
+    if (!cached.promise) {
+      cached.promise = producer()
+        .then((payload) => {
+          const body = JSON.stringify(payload);
+          RESPONSE_CACHE.set(jsonKey, {
+            body,
+            expiresAt: Date.now() + ttlMs,
+            staleUntil: Date.now() + staleMs,
+          });
+          return body;
+        })
+        .catch((error) => {
+          RESPONSE_CACHE.set(jsonKey, {
+            ...cached,
+            promise: null,
+          });
+          console.error(`JSON cache refresh failed for ${cacheKey}:`, error);
+          return cached.body;
+        });
+      RESPONSE_CACHE.set(jsonKey, cached);
+    }
+    writeJsonBody(response, 200, cached.body, cacheControl, "STALE");
+    return;
+  }
+
+  if (cached?.promise) {
+    const body = await cached.promise;
+    writeJsonBody(response, 200, body, cacheControl, "MISS-COALESCED");
+    return;
+  }
+
+  const promise = producer()
+    .then((payload) => {
+      const body = JSON.stringify(payload);
+      RESPONSE_CACHE.set(jsonKey, {
+        body,
+        expiresAt: Date.now() + ttlMs,
+        staleUntil: Date.now() + staleMs,
+      });
+      return body;
+    })
+    .catch((error) => {
+      RESPONSE_CACHE.delete(jsonKey);
+      throw error;
+    });
+  RESPONSE_CACHE.set(jsonKey, {
+    body: cached?.body,
+    expiresAt: now + ttlMs,
+    promise,
+    staleUntil: now + staleMs,
+  });
+  const body = await promise;
+  writeJsonBody(response, 200, body, cacheControl, "MISS");
 }
 
 function networkFromSearch(searchParams) {
@@ -143,6 +317,10 @@ function registryAddressForNetwork(network) {
 
 function pay2SpeakRegistryAddressForNetwork(network) {
   return PAY2SPEAK_REGISTRY_ADDRESSES[network] ?? "";
+}
+
+function tokenIndexAddressForNetwork(network) {
+  return TOKEN_INDEX_ADDRESSES[network] ?? "";
 }
 
 async function fetchJson(url) {
@@ -672,7 +850,8 @@ function proofProtocolDataBytesForVout(vout) {
       (message) =>
         message.startsWith(PROTOCOL_PREFIX) ||
         message.startsWith(ID_PROTOCOL_PREFIX) ||
-        message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX),
+        message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX) ||
+        message.startsWith(TOKEN_PROTOCOL_PREFIX),
     )
     .reduce((total, message) => total + Buffer.byteLength(message, "utf8"), 0);
 }
@@ -1021,6 +1200,322 @@ function pay2SpeakPaymentAmountBeforeProtocol(vout, address) {
 
     return total;
   }, 0);
+}
+
+function firstTokenOutputIndex(vout) {
+  return vout.findIndex((output) => {
+    if (output.scriptpubkey_type !== "op_return") {
+      return false;
+    }
+
+    return decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).length > 0;
+  });
+}
+
+function tokenPaymentAmountBeforeProtocol(vout, address) {
+  const protocolIndex = firstTokenOutputIndex(vout);
+  return vout.reduce((total, output, index) => {
+    if (
+      output.scriptpubkey_address === address &&
+      typeof output.value === "number" &&
+      output.value > 0 &&
+      (protocolIndex === -1 || index < protocolIndex)
+    ) {
+      return total + output.value;
+    }
+
+    return total;
+  }, 0);
+}
+
+function normalizeTokenTicker(value) {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/gu, "")
+    .slice(0, 12);
+}
+
+function parseTokenPayload(message, network) {
+  if (!message.startsWith(TOKEN_PROTOCOL_PREFIX)) {
+    return null;
+  }
+
+  const parts = message.slice(TOKEN_PROTOCOL_PREFIX.length).split(":");
+  if (parts.length === 6 && parts[0] === TOKEN_CREATE_ACTION) {
+    const ticker = normalizeTokenTicker(parts[1]);
+    const maxSupply = Number(parts[2]);
+    const mintAmount = Number(parts[3]);
+    const mintPriceSats = Number(parts[4]);
+    const registryAddress = String(parts[5] ?? "").trim();
+    if (
+      !/^[A-Z0-9]{1,12}$/u.test(ticker) ||
+      !Number.isSafeInteger(maxSupply) ||
+      maxSupply < 1 ||
+      !Number.isSafeInteger(mintAmount) ||
+      mintAmount < 1 ||
+      mintAmount > maxSupply ||
+      !Number.isSafeInteger(mintPriceSats) ||
+      mintPriceSats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+      !isValidBitcoinAddress(registryAddress, network)
+    ) {
+      return null;
+    }
+
+    return {
+      kind: "create",
+      maxSupply,
+      mintAmount,
+      mintPriceSats,
+      registryAddress,
+      ticker,
+    };
+  }
+
+  if (parts.length === 3 && parts[0] === TOKEN_MINT_ACTION) {
+    const tokenId = String(parts[1] ?? "").toLowerCase();
+    const amount = Number(parts[2]);
+    if (
+      !/^[0-9a-f]{64}$/u.test(tokenId) ||
+      !Number.isSafeInteger(amount) ||
+      amount < 1
+    ) {
+      return null;
+    }
+
+    return { amount, kind: "mint", tokenId };
+  }
+
+  return null;
+}
+
+function emptyTokenState() {
+  return {
+    creationSats: 0,
+    confirmedSupply: 0,
+    holders: [],
+    mints: [],
+    pendingSupply: 0,
+    tokens: [],
+  };
+}
+
+function tokenTransactionTime(tx) {
+  return typeof tx.status?.block_time === "number"
+    ? tx.status.block_time * 1000
+    : Date.now();
+}
+
+function tokenProtocolSortedTransactions(txs) {
+  return txs.slice().sort((left, right) => {
+    const leftConfirmed = transactionConfirmed(left);
+    const rightConfirmed = transactionConfirmed(right);
+    if (leftConfirmed !== rightConfirmed) {
+      return Number(rightConfirmed) - Number(leftConfirmed);
+    }
+
+    return (
+      (transactionBlockHeight(left) ?? Number.MAX_SAFE_INTEGER) -
+        (transactionBlockHeight(right) ?? Number.MAX_SAFE_INTEGER) ||
+      (transactionBlockIndex(left) ?? Number.MAX_SAFE_INTEGER) -
+        (transactionBlockIndex(right) ?? Number.MAX_SAFE_INTEGER) ||
+      transactionTxid(left).localeCompare(transactionTxid(right))
+    );
+  });
+}
+
+function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
+  const tokens = [];
+  let creationSats = 0;
+
+  for (const tx of tokenProtocolSortedTransactions(txs)) {
+    const txid = transactionTxid(tx);
+    if (!txid) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
+    const vout = Array.isArray(tx.vout) ? tx.vout : [];
+    const actorAddress = inputAddresses(vin)[0] ?? "";
+    if (!isValidBitcoinAddress(actorAddress, network)) {
+      continue;
+    }
+
+    const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+    if (messages.length === 0) {
+      continue;
+    }
+
+    let remainingCreationSats = tokenPaymentAmountBeforeProtocol(
+      vout,
+      indexAddress,
+    );
+    const confirmed = transactionConfirmed(tx);
+    const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+
+    for (const message of messages) {
+      const parsed = parseTokenPayload(message, network);
+      if (
+        !parsed ||
+        parsed.kind !== "create" ||
+        remainingCreationSats < TOKEN_CREATION_PRICE_SATS ||
+        tokens.some((token) => token.tokenId === txid)
+      ) {
+        continue;
+      }
+
+      remainingCreationSats -= TOKEN_CREATION_PRICE_SATS;
+      creationSats += TOKEN_CREATION_PRICE_SATS;
+      tokens.push({
+        confirmed,
+        createdAt,
+        creationFeeSats: TOKEN_CREATION_PRICE_SATS,
+        creatorAddress: actorAddress,
+        dataBytes: proofProtocolDataBytesForVout(vout),
+        maxSupply: parsed.maxSupply,
+        mintAmount: parsed.mintAmount,
+        mintPriceSats: parsed.mintPriceSats,
+        network,
+        registryAddress: parsed.registryAddress,
+        ticker: parsed.ticker,
+        tokenId: txid,
+        txid,
+      });
+    }
+  }
+
+  return {
+    creationSats,
+    tokens: tokens.sort(
+      (left, right) =>
+        Number(right.confirmed) - Number(left.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    ),
+  };
+}
+
+function tokenStateFromTransactions(indexTxs, registryTxsByAddress, indexAddress, network) {
+  const { creationSats, tokens } = tokenDefinitionsFromTransactions(
+    indexTxs,
+    indexAddress,
+    network,
+  );
+  const tokensById = new Map(tokens.map((token) => [token.tokenId, token]));
+  const tokenSupply = new Map();
+  const balances = new Map();
+  const mints = [];
+  let confirmedSupply = 0;
+  let pendingSupply = 0;
+
+  for (const token of tokens) {
+    const txs = registryTxsByAddress.get(token.registryAddress) ?? [];
+    for (const tx of tokenProtocolSortedTransactions(txs)) {
+      const txid = transactionTxid(tx);
+      if (!txid) {
+        continue;
+      }
+
+      const vin = Array.isArray(tx.vin) ? tx.vin : [];
+      const vout = Array.isArray(tx.vout) ? tx.vout : [];
+      const actorAddress = inputAddresses(vin)[0] ?? "";
+      if (!isValidBitcoinAddress(actorAddress, network)) {
+        continue;
+      }
+
+      const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+      if (messages.length === 0) {
+        continue;
+      }
+
+      let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
+        vout,
+        token.registryAddress,
+      );
+      const confirmed = transactionConfirmed(tx);
+      const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+
+      for (const message of messages) {
+        const parsed = parseTokenPayload(message, network);
+        if (!parsed || parsed.kind !== "mint") {
+          continue;
+        }
+
+        const mintedToken = tokensById.get(parsed.tokenId);
+        if (
+          !mintedToken ||
+          mintedToken.registryAddress !== token.registryAddress ||
+          parsed.amount !== mintedToken.mintAmount ||
+          remainingRegistrySats < mintedToken.mintPriceSats
+        ) {
+          continue;
+        }
+
+        const currentSupply = tokenSupply.get(mintedToken.tokenId) ?? {
+          confirmed: 0,
+          pending: 0,
+        };
+        if (
+          currentSupply.confirmed + currentSupply.pending + parsed.amount >
+          mintedToken.maxSupply
+        ) {
+          continue;
+        }
+
+        remainingRegistrySats -= mintedToken.mintPriceSats;
+        if (confirmed) {
+          currentSupply.confirmed += parsed.amount;
+          confirmedSupply += parsed.amount;
+          const balanceKey = `${mintedToken.tokenId}:${actorAddress}`;
+          balances.set(
+            balanceKey,
+            (balances.get(balanceKey) ?? 0) + parsed.amount,
+          );
+        } else {
+          currentSupply.pending += parsed.amount;
+          pendingSupply += parsed.amount;
+        }
+        tokenSupply.set(mintedToken.tokenId, currentSupply);
+
+        mints.push({
+          amount: parsed.amount,
+          confirmed,
+          createdAt,
+          dataBytes: proofProtocolDataBytesForVout(vout),
+          minterAddress: actorAddress,
+          network,
+          paidSats: mintedToken.mintPriceSats,
+          registryAddress: mintedToken.registryAddress,
+          ticker: mintedToken.ticker,
+          tokenId: mintedToken.tokenId,
+          txid,
+        });
+      }
+    }
+  }
+
+  return {
+    creationSats,
+    confirmedSupply,
+    holders: [...balances.entries()]
+      .map(([key, balance]) => ({
+        address: String(key).split(":").slice(1).join(":"),
+        balance,
+      }))
+      .sort(
+        (left, right) =>
+          right.balance - left.balance ||
+          left.address.localeCompare(right.address),
+      ),
+    mints: mints.sort(
+      (left, right) =>
+        Number(right.confirmed) - Number(left.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    ),
+    pendingSupply,
+    tokens,
+  };
 }
 
 function normalizeXHandle(value) {
@@ -2389,6 +2884,116 @@ function mailActivityItemsFromTransactions(txs, network) {
     .filter(Boolean);
 }
 
+function pay2SpeakActivityItemsFromState(state, registryAddress) {
+  const campaigns = (state.campaigns ?? []).map((campaign) => ({
+    amountSats: campaign.registrySats,
+    actor: campaign.creatorAddress,
+    confirmed: campaign.confirmed,
+    counterparty: registryAddress,
+    createdAt: campaign.createdAt,
+    dataBytes: campaign.dataBytes,
+    description: `${campaign.title} opened by ${shortAddress(campaign.creatorAddress)} with a ${campaign.targetGrossSats.toLocaleString()} sat target.`,
+    detail: `Space ${campaign.spaceNumber.toLocaleString()} · @${campaign.handle}`,
+    kind: "pay2speak-campaign",
+    network: campaign.network,
+    tags: [
+      activityStatusTag(campaign.confirmed),
+      networkLabel(campaign.network),
+      "Pay2Speak",
+      "Campaign",
+      `${campaign.registrySats.toLocaleString()} registry sats`,
+    ],
+    title: campaign.confirmed
+      ? "Pay2Speak campaign"
+      : "Pay2Speak campaign pending",
+    txid: campaign.txid,
+  }));
+
+  const funding = (state.funding ?? []).map((item) => ({
+    amountSats: item.grossSats,
+    actor: item.donorAddress,
+    confirmed: item.confirmed,
+    counterparty: item.creatorAddress,
+    createdAt: item.createdAt,
+    dataBytes: item.dataBytes,
+    description: `${shortAddress(item.donorAddress)} funded ${shortAddress(item.creatorAddress)} with ${item.grossSats.toLocaleString()} gross sats.`,
+    detail: item.question
+      ? `Question: ${compactText(item.question, 120)}`
+      : `Campaign ${shortAddress(item.campaignId)}`,
+    kind: "pay2speak-funding",
+    network: item.network,
+    tags: [
+      activityStatusTag(item.confirmed),
+      networkLabel(item.network),
+      "Pay2Speak",
+      item.question ? "Question" : "Funding",
+      `${item.creatorSats.toLocaleString()} creator sats`,
+      `${item.registrySats.toLocaleString()} registry sats`,
+    ],
+    title: item.confirmed
+      ? item.question
+        ? "Funded question"
+        : "Campaign funding"
+      : item.question
+        ? "Funded question pending"
+        : "Campaign funding pending",
+    txid: item.txid,
+  }));
+
+  return [...campaigns, ...funding];
+}
+
+function tokenActivityItemsFromState(state, indexAddress) {
+  const creations = (state.tokens ?? []).map((token) => ({
+    amountSats: token.creationFeeSats,
+    actor: token.creatorAddress,
+    confirmed: token.confirmed,
+    counterparty: indexAddress,
+    createdAt: token.createdAt,
+    dataBytes: token.dataBytes,
+    description: `${token.ticker} created with ${token.maxSupply.toLocaleString()} max supply and registry ${shortAddress(token.registryAddress)}.`,
+    detail: `${token.mintAmount.toLocaleString()} ${token.ticker} for ${token.mintPriceSats.toLocaleString()} sats`,
+    kind: "token-create",
+    network: token.network,
+    tags: [
+      activityStatusTag(token.confirmed),
+      networkLabel(token.network),
+      "Token",
+      "Creation",
+      token.ticker,
+      `${token.creationFeeSats.toLocaleString()} creation sats`,
+    ],
+    title: token.confirmed ? "Token created" : "Token creation pending",
+    txid: token.txid,
+  }));
+
+  const mints = (state.mints ?? []).map((mint) => ({
+    amountSats: mint.paidSats,
+    actor: mint.minterAddress,
+    confirmed: mint.confirmed,
+    counterparty: mint.registryAddress,
+    createdAt: mint.createdAt,
+    dataBytes: mint.dataBytes,
+    description: `${mint.amount.toLocaleString()} ${mint.ticker} minted by ${shortAddress(mint.minterAddress)}.`,
+    detail: `Token ${shortAddress(mint.tokenId)}`,
+    kind: "token-mint",
+    network: mint.network,
+    tags: [
+      activityStatusTag(mint.confirmed),
+      networkLabel(mint.network),
+      "Token",
+      "Mint",
+      mint.ticker,
+      `${mint.amount.toLocaleString()} ${mint.ticker}`,
+      `${mint.paidSats.toLocaleString()} mint sats`,
+    ],
+    title: mint.confirmed ? "Token mint" : "Token mint pending",
+    txid: mint.txid,
+  }));
+
+  return [...creations, ...mints];
+}
+
 function addActivityAddress(addresses, address, network) {
   if (typeof address === "string" && isValidBitcoinAddress(address, network)) {
     addresses.add(address);
@@ -2522,14 +3127,35 @@ async function globalActivityPayload(network) {
   }
 
   const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
+  const [pay2SpeakState, tokenState] = await Promise.all([
+    pay2SpeakPayload(network).catch(() => null),
+    tokenPayload(network).catch(() => null),
+  ]);
+  const pay2SpeakActivity = pay2SpeakState
+    ? pay2SpeakActivityItemsFromState(
+        pay2SpeakState,
+        pay2SpeakState.registryAddress ?? "",
+      )
+    : [];
+  const tokenActivity = tokenState
+    ? tokenActivityItemsFromState(tokenState, tokenState.indexAddress ?? "")
+    : [];
   const activity = dedupeActivityItems([
     ...(registry.activity ?? []),
     ...mailActivity,
+    ...pay2SpeakActivity,
+    ...tokenActivity,
   ]);
   const dataBytes = totalProtocolDataBytes(activity);
   const fileActions = activity.filter((item) => item.kind === "file").length;
   const messageActions = activity.filter(
     (item) => item.kind === "mail" || item.kind === "reply",
+  ).length;
+  const pay2SpeakActions = activity.filter((item) =>
+    String(item.kind).startsWith("pay2speak-"),
+  ).length;
+  const tokenActions = activity.filter((item) =>
+    String(item.kind).startsWith("token-"),
   ).length;
 
   const payload = {
@@ -2542,8 +3168,10 @@ async function globalActivityPayload(network) {
       dataBytes,
       files: fileActions,
       messages: messageActions,
+      pay2Speak: pay2SpeakActions,
       pending: activity.filter((item) => !item.confirmed).length,
       registry: (registry.activity ?? []).length,
+      tokens: tokenActions,
       total: activity.length,
     },
   };
@@ -3548,6 +4176,7 @@ function pay2SpeakStateFromTransactions(txs, registryAddress, network) {
           confirmed,
           createdAt,
           creatorAddress: actorAddress,
+          dataBytes: proofProtocolDataBytesForVout(vout),
           fundedGrossSats: 0,
           fundingCount: 0,
           handle: parsed.handle,
@@ -3566,6 +4195,7 @@ function pay2SpeakStateFromTransactions(txs, registryAddress, network) {
         campaignId: parsed.campaignId,
         confirmed,
         createdAt,
+        dataBytes: proofProtocolDataBytesForVout(vout),
         donorAddress: actorAddress,
         network,
         question: parsed.question,
@@ -3684,6 +4314,83 @@ async function pay2SpeakPayload(network) {
       ),
       questions: state.questions.length,
       transactions: txs.length,
+    },
+  };
+}
+
+async function tokenPayload(network) {
+  const indexAddress = tokenIndexAddressForNetwork(network);
+  if (!indexAddress) {
+    return {
+      ...emptyTokenState(),
+      creationPriceSats: TOKEN_CREATION_PRICE_SATS,
+      indexedAt: new Date().toISOString(),
+      indexAddress: "",
+      indexId: TOKEN_INDEX_ID,
+      indexTxid: TOKEN_INDEX_TXID,
+      minMutationPriceSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+      network,
+      workDefaults: {
+        maxSupply: WORK_TOKEN_MAX_SUPPLY,
+        mintAmount: WORK_TOKEN_MINT_AMOUNT,
+        mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+        priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
+        registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+        ticker: WORK_TOKEN_TICKER,
+      },
+    };
+  }
+
+  const indexTxs = await fetchRegistryTransactions(indexAddress, network);
+  const { tokens } = tokenDefinitionsFromTransactions(
+    indexTxs,
+    indexAddress,
+    network,
+  );
+  const registryAddresses = [
+    ...new Set(tokens.map((token) => token.registryAddress).filter(Boolean)),
+  ];
+  const registryEntries = await Promise.all(
+    registryAddresses.map(async (registryAddress) => [
+      registryAddress,
+      await fetchRegistryTransactions(registryAddress, network),
+    ]),
+  );
+  const state = tokenStateFromTransactions(
+    indexTxs,
+    new Map(registryEntries),
+    indexAddress,
+    network,
+  );
+  return {
+    ...state,
+    creationPriceSats: TOKEN_CREATION_PRICE_SATS,
+    indexedAt: new Date().toISOString(),
+    indexAddress,
+    indexId: TOKEN_INDEX_ID,
+    indexTxid: TOKEN_INDEX_TXID,
+    minMutationPriceSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    network,
+    source: mempoolBase(network),
+    stats: {
+      confirmedMints: state.mints.filter((mint) => mint.confirmed).length,
+      confirmedTokens: state.tokens.filter((token) => token.confirmed).length,
+      creationSats: state.creationSats,
+      holders: state.holders.length,
+      pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
+      pendingTokens: state.tokens.filter((token) => !token.confirmed).length,
+      registries: registryAddresses.length,
+      transactions:
+        indexTxs.length +
+        registryEntries.reduce((total, [, txs]) => total + txs.length, 0),
+    },
+    workDefaults: {
+      maxSupply: WORK_TOKEN_MAX_SUPPLY,
+      mintAmount: WORK_TOKEN_MINT_AMOUNT,
+      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
+      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      ticker: WORK_TOKEN_TICKER,
     },
   };
 }
@@ -3819,31 +4526,43 @@ async function handleRequest(request, response) {
     const network = networkFromSearch(url.searchParams);
 
     if (url.pathname === "/api/v1/registry" || url.pathname === "/api/v1/ids") {
-      jsonResponse(
+      await cachedJsonResponse(
         response,
-        200,
-        await registryPayload(network),
-        "public, max-age=15",
+        `registry:${network}`,
+        () => registryPayload(network),
+        READ_CACHE_CONTROL,
       );
       return;
     }
 
     if (url.pathname === "/api/v1/activity" || url.pathname === "/api/v1/log") {
-      jsonResponse(
+      await cachedJsonResponse(
         response,
-        200,
-        await globalActivityPayload(network),
-        "public, max-age=15",
+        `activity:${network}`,
+        () => globalActivityPayload(network),
+        READ_CACHE_CONTROL,
+        ACTIVITY_CACHE_TTL_MS,
+        ACTIVITY_CACHE_STALE_MS,
       );
       return;
     }
 
     if (url.pathname === "/api/v1/pay2speak") {
-      jsonResponse(
+      await cachedJsonResponse(
         response,
-        200,
-        await pay2SpeakPayload(network),
-        "public, max-age=15",
+        `pay2speak:${network}`,
+        () => pay2SpeakPayload(network),
+        READ_CACHE_CONTROL,
+      );
+      return;
+    }
+
+    if (url.pathname === "/api/v1/token") {
+      await cachedJsonResponse(
+        response,
+        `token:${network}`,
+        () => tokenPayload(network),
+        READ_CACHE_CONTROL,
       );
       return;
     }
@@ -3855,7 +4574,9 @@ async function handleRequest(request, response) {
       pathParts[2] === "ids"
     ) {
       const id = normalizePowId(decodeURIComponent(pathParts[3]));
-      const registry = await registryPayload(network);
+      const registry = await cachedPayload(`registry:${network}`, () =>
+        registryPayload(network),
+      );
       const records = registry.records.filter((record) => record.id === id);
       const confirmed = records.find((record) => record.confirmed);
       const pending = records.find((record) => !record.confirmed);

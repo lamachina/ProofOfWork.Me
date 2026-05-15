@@ -3594,6 +3594,31 @@ pre {
   overflow-wrap: anywhere;
 }
 
+.token-utxo-prep {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 0;
+}
+
+.token-utxo-prep summary {
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 820;
+  list-style-position: inside;
+  padding: 10px 12px;
+}
+
+.token-utxo-prep .id-form {
+  border-top: 1px solid var(--border);
+  padding: 11px;
+}
+
+.token-utxo-stats div {
+  min-height: 66px;
+}
+
 .token-progress-mini {
   background: var(--surface);
   gap: 8px;

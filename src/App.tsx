@@ -840,6 +840,9 @@ const TOKEN_CREATE_ACTION = "create";
 const TOKEN_MINT_ACTION = "mint";
 const TOKEN_CREATION_PRICE_SATS = 546;
 const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
+const TOKEN_PREPARE_DEFAULT_MINT_COUNT = 40;
+const TOKEN_PREPARE_MAX_MINT_COUNT = 100;
+const TOKEN_PREPARE_DEFAULT_FEE_RESERVE_SATS = 1000;
 const TOKEN_INDEX_ID = "tokens@proofofwork.me";
 const TOKEN_INDEX_TXID =
   "7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19";
@@ -9569,7 +9572,15 @@ export default function App() {
   const [tokenBtcUsd, setTokenBtcUsd] = useState(
     GROWTH_MODEL_INPUTS.currentBtcUsd,
   );
-  const [tokenAction, setTokenAction] = useState<"" | "create" | "mint">("");
+  const [tokenPrepareMintCount, setTokenPrepareMintCount] = useState(
+    TOKEN_PREPARE_DEFAULT_MINT_COUNT,
+  );
+  const [tokenPrepareFeeReserveSats, setTokenPrepareFeeReserveSats] = useState(
+    TOKEN_PREPARE_DEFAULT_FEE_RESERVE_SATS,
+  );
+  const [tokenAction, setTokenAction] = useState<
+    "" | "create" | "mint" | "split"
+  >("");
   const [mailPreferences, setMailPreferences] = useState<MailPreferences>(() =>
     loadMailPreferences(),
   );
@@ -10226,6 +10237,20 @@ export default function App() {
       tokenMintPayload ? dataCarrierBytesForPayload(tokenMintPayload) : 0,
     [tokenMintPayload],
   );
+  const tokenPrepareMintCountValue = Number.isFinite(tokenPrepareMintCount)
+    ? Math.floor(tokenPrepareMintCount)
+    : 0;
+  const tokenPrepareFeeReserveValue = Number.isFinite(
+    tokenPrepareFeeReserveSats,
+  )
+    ? Math.floor(tokenPrepareFeeReserveSats)
+    : 0;
+  const tokenPrepareOutputSats = selectedToken
+    ? Math.max(
+        DUST_SATS,
+        selectedToken.mintPriceSats + Math.max(0, tokenPrepareFeeReserveValue),
+      )
+    : 0;
   const canCreatePay2SpeakCampaign =
     Boolean(
       address &&
@@ -10265,6 +10290,16 @@ export default function App() {
       (selectedToken?.maxSupply ?? 0) &&
     tokenMintBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
+  const canPrepareTokenMintUtxos =
+    Boolean(
+      address &&
+      network === "livenet" &&
+      selectedToken &&
+      tokenPrepareMintCountValue >= 1 &&
+      tokenPrepareMintCountValue <= TOKEN_PREPARE_MAX_MINT_COUNT &&
+      tokenPrepareFeeReserveValue >= 0 &&
+      tokenPrepareOutputSats >= DUST_SATS,
+    ) && !busy;
   const canCreateToken =
     Boolean(
       address &&
@@ -14130,6 +14165,107 @@ export default function App() {
     }
   }
 
+  async function prepareTokenMintUtxos(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (network !== "livenet" || !selectedToken) {
+      setStatus({ tone: "bad", text: "Select a mainnet token first." });
+      return;
+    }
+
+    const mintCount = tokenPrepareMintCountValue;
+    const feeReserveSats = Math.max(0, tokenPrepareFeeReserveValue);
+    const outputSats = Math.max(
+      DUST_SATS,
+      selectedToken.mintPriceSats + feeReserveSats,
+    );
+
+    if (
+      !Number.isSafeInteger(mintCount) ||
+      mintCount < 1 ||
+      mintCount > TOKEN_PREPARE_MAX_MINT_COUNT
+    ) {
+      setStatus({
+        tone: "bad",
+        text: `Prepare between 1 and ${TOKEN_PREPARE_MAX_MINT_COUNT} mint UTXOs at a time.`,
+      });
+      return;
+    }
+
+    if (!Number.isSafeInteger(outputSats) || outputSats < DUST_SATS) {
+      setStatus({ tone: "bad", text: "Prepared UTXO amount is too small." });
+      return;
+    }
+
+    setTokenAction("split");
+    setBusy(true);
+    setStatus({
+      tone: "idle",
+      text: `Preparing ${mintCount.toLocaleString()} ${selectedToken.ticker} mint UTXOs...`,
+    });
+
+    try {
+      const currentNetwork = await getWalletNetwork(window.unisat);
+      if (currentNetwork !== "livenet") {
+        await switchWalletNetwork(window.unisat, "livenet");
+      }
+
+      const paymentPsbt = await buildPaymentPsbt({
+        feeRate,
+        fromAddress: address,
+        network: "livenet",
+        payments: Array.from({ length: mintCount }, () => ({
+          address,
+          amountSats: outputSats,
+        })),
+        protocolPayloads: [],
+        requireConfirmedUtxos: true,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network: "livenet",
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+      setStatus({
+        tone: "good",
+        text: `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Wait for confirmation before burst minting.`,
+      });
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Mint UTXO preparation failed."),
+      });
+    } finally {
+      setTokenAction("");
+      setBusy(false);
+    }
+  }
+
   if (landingMode) {
     return (
       <LandingApp
@@ -14292,6 +14428,7 @@ export default function App() {
         busy={busy}
         canCreate={canCreateToken}
         canMint={canMintToken}
+        canPrepareMintUtxos={canPrepareTokenMintUtxos}
         confirmedSupply={selectedTokenLedger.confirmedSupply}
         connectWallet={connectWallet}
         createBytes={tokenCreateBytes}
@@ -14318,6 +14455,10 @@ export default function App() {
         mintingToken={tokenAction === "mint"}
         mints={selectedTokenLedger.mints}
         pendingSupply={selectedTokenLedger.pendingSupply}
+        prepareFeeReserveSats={tokenPrepareFeeReserveSats}
+        prepareMintCount={tokenPrepareMintCount}
+        prepareMintUtxos={prepareTokenMintUtxos}
+        preparingMintUtxos={tokenAction === "split"}
         selectedToken={selectedToken}
         selectedTokenId={selectedToken?.tokenId ?? ""}
         setFeeRate={setFeeRate}
@@ -14326,6 +14467,8 @@ export default function App() {
         setCreateMintPriceSats={setTokenCreateMintPriceSats}
         setCreateRegistryAddress={setTokenCreateRegistryAddress}
         setCreateTicker={setTokenCreateTicker}
+        setPrepareFeeReserveSats={setTokenPrepareFeeReserveSats}
+        setPrepareMintCount={setTokenPrepareMintCount}
         setSelectedTokenId={setTokenSelectedId}
         setTokenDetailTarget={setTokenDetailTarget}
         setTheme={setTheme}
@@ -15005,6 +15148,7 @@ export default function App() {
             busy={busy}
             canCreate={canCreateToken}
             canMint={canMintToken}
+            canPrepareMintUtxos={canPrepareTokenMintUtxos}
             confirmedSupply={selectedTokenLedger.confirmedSupply}
             createBytes={tokenCreateBytes}
             creatingToken={tokenAction === "create"}
@@ -15028,6 +15172,10 @@ export default function App() {
             mintingToken={tokenAction === "mint"}
             mints={selectedTokenLedger.mints}
             pendingSupply={selectedTokenLedger.pendingSupply}
+            prepareFeeReserveSats={tokenPrepareFeeReserveSats}
+            prepareMintCount={tokenPrepareMintCount}
+            prepareMintUtxos={prepareTokenMintUtxos}
+            preparingMintUtxos={tokenAction === "split"}
             selectedToken={selectedToken}
             selectedTokenId={selectedToken?.tokenId ?? ""}
             setFeeRate={setFeeRate}
@@ -15036,6 +15184,8 @@ export default function App() {
             setCreateMintPriceSats={setTokenCreateMintPriceSats}
             setCreateRegistryAddress={setTokenCreateRegistryAddress}
             setCreateTicker={setTokenCreateTicker}
+            setPrepareFeeReserveSats={setTokenPrepareFeeReserveSats}
+            setPrepareMintCount={setTokenPrepareMintCount}
             setSelectedTokenId={setTokenSelectedId}
             setTokenDetailTarget={setTokenDetailTarget}
             submitMint={mintToken}
@@ -16606,6 +16756,7 @@ type TokenAppProps = {
   busy: boolean;
   canCreate: boolean;
   canMint: boolean;
+  canPrepareMintUtxos: boolean;
   confirmedSupply: number;
   connectWallet: () => void;
   createBytes: number;
@@ -16632,6 +16783,10 @@ type TokenAppProps = {
   mintingToken: boolean;
   mints: PowTokenMint[];
   pendingSupply: number;
+  prepareFeeReserveSats: number;
+  prepareMintCount: number;
+  prepareMintUtxos: (event: FormEvent<HTMLFormElement>) => void;
+  preparingMintUtxos: boolean;
   selectedToken: PowTokenDefinition | undefined;
   selectedTokenId: string;
   setFeeRate: (value: number) => void;
@@ -16640,6 +16795,8 @@ type TokenAppProps = {
   setCreateMintPriceSats: (value: number) => void;
   setCreateRegistryAddress: (value: string) => void;
   setCreateTicker: (value: string) => void;
+  setPrepareFeeReserveSats: (value: number) => void;
+  setPrepareMintCount: (value: number) => void;
   setSelectedTokenId: (value: string) => void;
   setTokenDetailTarget: (value: string) => void;
   setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
@@ -16763,6 +16920,7 @@ function TokenWorkspace({
   busy,
   canCreate,
   canMint,
+  canPrepareMintUtxos,
   confirmedSupply,
   createBytes,
   creatingToken,
@@ -16786,6 +16944,10 @@ function TokenWorkspace({
   mintingToken,
   mints,
   pendingSupply,
+  prepareFeeReserveSats,
+  prepareMintCount,
+  prepareMintUtxos,
+  preparingMintUtxos,
   selectedToken,
   selectedTokenId,
   setFeeRate,
@@ -16794,6 +16956,8 @@ function TokenWorkspace({
   setCreateMintPriceSats,
   setCreateRegistryAddress,
   setCreateTicker,
+  setPrepareFeeReserveSats,
+  setPrepareMintCount,
   setSelectedTokenId,
   setTokenDetailTarget,
   submitMint,
@@ -16930,6 +17094,98 @@ function TokenWorkspace({
 
     return stats;
   }, [mints, tokens]);
+  const normalizedPrepareMintCount = Number.isFinite(prepareMintCount)
+    ? Math.max(0, Math.floor(prepareMintCount))
+    : 0;
+  const normalizedPrepareFeeReserveSats = Number.isFinite(prepareFeeReserveSats)
+    ? Math.max(0, Math.floor(prepareFeeReserveSats))
+    : 0;
+  const renderMintUtxoPrep = (token: PowTokenDefinition | undefined) => {
+    if (!token) {
+      return null;
+    }
+
+    const outputSats = Math.max(
+      DUST_SATS,
+      token.mintPriceSats + normalizedPrepareFeeReserveSats,
+    );
+    const totalPreparedSats = outputSats * normalizedPrepareMintCount;
+    const helperTokenSelected = selectedToken?.tokenId === token.tokenId;
+    const helperCanPrepare = canPrepareMintUtxos && helperTokenSelected;
+
+    return (
+      <details className="token-utxo-prep">
+        <summary>Prepare UTXOs for fast minting</summary>
+        <form className="id-form" onSubmit={prepareMintUtxos}>
+          <div className="token-form-grid">
+            <label>
+              Mint txs
+              <input
+                max={TOKEN_PREPARE_MAX_MINT_COUNT}
+                min={1}
+                onChange={(event) =>
+                  setPrepareMintCount(Number(event.target.value))
+                }
+                type="number"
+                value={prepareMintCount || ""}
+              />
+            </label>
+            <label>
+              Miner reserve / UTXO
+              <input
+                min={0}
+                onChange={(event) =>
+                  setPrepareFeeReserveSats(Number(event.target.value))
+                }
+                type="number"
+                value={prepareFeeReserveSats || ""}
+              />
+            </label>
+          </div>
+          <div
+            className="id-launch-stats token-utxo-stats"
+            aria-label="Prepared UTXO preview"
+          >
+            <div>
+              <span>Outputs</span>
+              <strong>{normalizedPrepareMintCount.toLocaleString()}</strong>
+            </div>
+            <div>
+              <span>Each UTXO</span>
+              <strong>{outputSats.toLocaleString()} sats</strong>
+            </div>
+            <div>
+              <span>Outputs total</span>
+              <strong>{totalPreparedSats.toLocaleString()} sats</strong>
+            </div>
+            <div>
+              <span>Use after</span>
+              <strong>1 confirm</strong>
+            </div>
+          </div>
+          <p className="field-note">
+            Creates self-send outputs to your connected wallet. Each output is
+            sized for the {token.mintPriceSats.toLocaleString()} sat registry
+            payment plus a miner-fee reserve for one later mint. The split
+            transaction fee uses the current fee rate.
+          </p>
+          <button className="secondary" disabled={!helperCanPrepare} type="submit">
+            <span className="button-content">
+              <Wallet size={16} />
+              <span>
+                {preparingMintUtxos ? "Preparing" : "Prepare Mint UTXOs"}
+              </span>
+            </span>
+          </button>
+          {!address ? (
+            <p className="field-note">Connect UniSat to prepare mint UTXOs.</p>
+          ) : !helperTokenSelected ? (
+            <p className="field-note">Select this token before preparing UTXOs.</p>
+          ) : null}
+        </form>
+      </details>
+    );
+  };
 
   if (detailMode) {
     return (
@@ -17109,6 +17365,7 @@ function TokenWorkspace({
                     </span>
                   </button>
                 </form>
+                {renderMintUtxoPrep(detailToken)}
               </section>
 
               <section className="id-launch-card">
@@ -17586,6 +17843,7 @@ function TokenWorkspace({
               <p className="field-note">Create or load a token before minting.</p>
             ) : null}
           </form>
+          {renderMintUtxoPrep(selectedToken)}
         </section>
       </div>
 

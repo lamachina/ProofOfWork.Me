@@ -843,6 +843,7 @@ const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const TOKEN_PREPARE_DEFAULT_MINT_COUNT = 40;
 const TOKEN_PREPARE_MAX_MINT_COUNT = 100;
 const TOKEN_PREPARE_DEFAULT_FEE_RESERVE_SATS = 1000;
+const TOKEN_LIST_PREVIEW_COUNT = 25;
 const TOKEN_INDEX_ID = "tokens@proofofwork.me";
 const TOKEN_INDEX_TXID =
   "7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19";
@@ -5493,6 +5494,33 @@ function tokenLedgerFor(
     mints: tokenMints,
     pendingSupply,
   };
+}
+
+function tokenHolderMatchesSearch(holder: PowTokenHolder, query: string) {
+  if (!query) {
+    return true;
+  }
+
+  return [holder.address, String(holder.balance)].some((value) =>
+    value.toLowerCase().includes(query),
+  );
+}
+
+function tokenMintMatchesSearch(mint: PowTokenMint, query: string) {
+  if (!query) {
+    return true;
+  }
+
+  return [
+    mint.txid,
+    mint.minterAddress,
+    mint.registryAddress,
+    mint.ticker,
+    mint.confirmed ? "confirmed" : "pending",
+    String(mint.amount),
+    String(mint.paidSats),
+    formatDate(mint.createdAt),
+  ].some((value) => value.toLowerCase().includes(query));
 }
 
 function compareTokensByConfirmation(
@@ -16975,8 +17003,26 @@ function TokenWorkspace({
   | "status"
   | "theme"
 >) {
+  const [holderSearch, setHolderSearch] = useState("");
+  const [mintSearch, setMintSearch] = useState("");
+  const holderQuery = holderSearch.trim().toLowerCase();
+  const mintQuery = mintSearch.trim().toLowerCase();
   const holderBalance =
     holders.find((holder) => holder.address === address)?.balance ?? 0;
+  const selectedMatchingHolders = holders.filter((holder) =>
+    tokenHolderMatchesSearch(holder, holderQuery),
+  );
+  const selectedVisibleHolders = selectedMatchingHolders.slice(
+    0,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
+  const selectedMatchingMints = mints.filter((mint) =>
+    tokenMintMatchesSearch(mint, mintQuery),
+  );
+  const selectedVisibleMints = selectedMatchingMints.slice(
+    0,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
   const confirmedTokenCount = tokens.filter((token) => token.confirmed).length;
   const pendingTokenCount = tokens.length - confirmedTokenCount;
   const selectedPricePerToken =
@@ -17029,8 +17075,22 @@ function TokenWorkspace({
   );
   const detailMintUsd = satsToUsd(detailToken?.mintPriceSats ?? 0, btcUsd);
   const detailUnitUsd = satsToUsd(detailPricePerToken, btcUsd);
-  const detailTopHolders = detailHolders.slice(0, 12);
-  const detailRecentMints = detailMints.slice(0, 16);
+  const detailMatchingHolders = detailHolders.filter((holder) =>
+    tokenHolderMatchesSearch(holder, holderQuery),
+  );
+  const detailVisibleHolders = detailMatchingHolders.slice(
+    0,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
+  const detailMatchingMints = detailMints.filter((mint) =>
+    tokenMintMatchesSearch(mint, mintQuery),
+  );
+  const detailVisibleMints = detailMatchingMints.slice(
+    0,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
+  const detailHolderBalance =
+    detailHolders.find((holder) => holder.address === address)?.balance ?? 0;
   const detailConfirmedMintCount = detailMints.filter(
     (mint) => mint.confirmed,
   ).length;
@@ -17186,6 +17246,152 @@ function TokenWorkspace({
       </details>
     );
   };
+  const visibleCountText = (
+    visibleCount: number,
+    matchingCount: number,
+    totalCount: number,
+    label: string,
+    query: string,
+  ) =>
+    query
+      ? `${visibleCount.toLocaleString()} of ${matchingCount.toLocaleString()} matching ${label}`
+      : `${visibleCount.toLocaleString()} of ${totalCount.toLocaleString()} ${label}`;
+  const renderHolderSearch = (
+    visibleCount: number,
+    matchingCount: number,
+    totalCount: number,
+  ) => (
+    <div className="token-search-row">
+      <label className="token-search-field">
+        <Search size={15} />
+        <input
+          aria-label="Search token holders"
+          onChange={(event) => setHolderSearch(event.target.value)}
+          placeholder="Search address or balance"
+          value={holderSearch}
+        />
+      </label>
+      <span className="token-search-count">
+        {visibleCountText(
+          visibleCount,
+          matchingCount,
+          totalCount,
+          "holders",
+          holderQuery,
+        )}
+      </span>
+    </div>
+  );
+  const renderMintSearch = (
+    visibleCount: number,
+    matchingCount: number,
+    totalCount: number,
+  ) => (
+    <div className="token-search-row">
+      <label className="token-search-field">
+        <Search size={15} />
+        <input
+          aria-label="Search token mints"
+          onChange={(event) => setMintSearch(event.target.value)}
+          placeholder="Search minter, txid, status, sats"
+          value={mintSearch}
+        />
+      </label>
+      <span className="token-search-count">
+        {visibleCountText(
+          visibleCount,
+          matchingCount,
+          totalCount,
+          "mints",
+          mintQuery,
+        )}
+      </span>
+    </div>
+  );
+  const renderHolderList = (
+    token: PowTokenDefinition,
+    visibleHolders: PowTokenHolder[],
+  ) => (
+    <div className="id-record-list">
+      {visibleHolders.length === 0 ? (
+        <div className="empty-state">
+          <h3>{holderQuery ? "No holder matches" : "No holders yet"}</h3>
+          <p>
+            {holderQuery
+              ? "Search by a full address fragment or confirmed balance."
+              : "The first confirmed mint will appear here."}
+          </p>
+        </div>
+      ) : (
+        visibleHolders.map((holder) => (
+          <article className="id-record" key={holder.address}>
+            <div>
+              <strong>
+                {holder.balance.toLocaleString()} {token.ticker}
+              </strong>
+              <code>{holder.address}</code>
+            </div>
+            <a
+              className="secondary small"
+              href={mempoolBase(token.network) + `/address/${holder.address}`}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="button-content">
+                <ArrowUpRight size={15} />
+                <span>Address</span>
+              </span>
+            </a>
+          </article>
+        ))
+      )}
+    </div>
+  );
+  const renderMintList = (visibleMints: PowTokenMint[]) => (
+    <div className="activity-feed">
+      {visibleMints.length === 0 ? (
+        <div className="empty-state">
+          <h3>{mintQuery ? "No mint matches" : "No mints yet"}</h3>
+          <p>
+            {mintQuery
+              ? "Search by minter address, transaction id, status, amount, or sats."
+              : "The selected token starts with its first valid mint."}
+          </p>
+        </div>
+      ) : (
+        visibleMints.map((mint) => (
+          <article className="activity-row" key={`${mint.txid}-${mint.amount}`}>
+            <div className="activity-row-main">
+              <div>
+                <h4>
+                  {mint.amount.toLocaleString()} {mint.ticker}
+                </h4>
+                <strong>{shortAddress(mint.minterAddress)}</strong>
+                <p>
+                  {mint.confirmed ? "Confirmed" : "Pending"} -{" "}
+                  {mint.paidSats.toLocaleString()} sats
+                </p>
+              </div>
+              <time dateTime={mint.createdAt}>{formatDate(mint.createdAt)}</time>
+            </div>
+            <div className="id-record-actions">
+              <a
+                className="secondary small"
+                href={mempoolTxUrl(mint.txid, mint.network)}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <span className="button-content">
+                  <ArrowUpRight size={15} />
+                  <span>View TX</span>
+                </span>
+              </a>
+            </div>
+          </article>
+        ))
+      )}
+    </div>
+  );
 
   if (detailMode) {
     return (
@@ -17342,7 +17548,11 @@ function TokenWorkspace({
                   </div>
                   <p className="field-note">
                     {tokenUsd(detailMintUsd)} per mint at the current BTC/USD
-                    estimate. Paid to {shortAddress(detailToken.registryAddress)}.
+                    estimate. Paid to{" "}
+                    {shortAddress(detailToken.registryAddress)}.
+                    {address
+                      ? ` Your confirmed balance is ${detailHolderBalance.toLocaleString()} ${detailToken.ticker}.`
+                      : ""}
                   </p>
                   <div className="token-payment-lane">
                     <div>
@@ -17424,39 +17634,12 @@ function TokenWorkspace({
                     <p>Confirmed balances for {detailToken.ticker}.</p>
                   </div>
                 </div>
-                <div className="id-record-list">
-                  {detailTopHolders.length === 0 ? (
-                    <div className="empty-state">
-                      <h3>No holders yet</h3>
-                      <p>The first confirmed mint will appear here.</p>
-                    </div>
-                  ) : (
-                    detailTopHolders.map((holder) => (
-                      <article className="id-record" key={holder.address}>
-                        <div>
-                          <strong>
-                            {holder.balance.toLocaleString()}{" "}
-                            {detailToken.ticker}
-                          </strong>
-                          <code>{holder.address}</code>
-                        </div>
-                        <a
-                          className="secondary small"
-                          href={
-                            mempoolBase("livenet") + `/address/${holder.address}`
-                          }
-                          rel="noreferrer"
-                          target="_blank"
-                        >
-                          <span className="button-content">
-                            <ArrowUpRight size={15} />
-                            <span>Address</span>
-                          </span>
-                        </a>
-                      </article>
-                    ))
-                  )}
-                </div>
+                {renderHolderSearch(
+                  detailVisibleHolders.length,
+                  detailMatchingHolders.length,
+                  detailHolders.length,
+                )}
+                {renderHolderList(detailToken, detailVisibleHolders)}
               </section>
 
               <section className="id-launch-card">
@@ -17471,50 +17654,12 @@ function TokenWorkspace({
                     </p>
                   </div>
                 </div>
-                <div className="activity-feed">
-                  {detailRecentMints.length === 0 ? (
-                    <div className="empty-state">
-                      <h3>No mints yet</h3>
-                      <p>The selected token starts with its first valid mint.</p>
-                    </div>
-                  ) : (
-                    detailRecentMints.map((mint) => (
-                      <article
-                        className="activity-row"
-                        key={`${mint.txid}-${mint.amount}`}
-                      >
-                        <div className="activity-row-main">
-                          <div>
-                            <h4>
-                              {mint.amount.toLocaleString()} {mint.ticker}
-                            </h4>
-                            <strong>{shortAddress(mint.minterAddress)}</strong>
-                            <p>
-                              {mint.confirmed ? "Confirmed" : "Pending"} -{" "}
-                              {mint.paidSats.toLocaleString()} sats
-                            </p>
-                          </div>
-                          <time dateTime={mint.createdAt}>
-                            {formatDate(mint.createdAt)}
-                          </time>
-                        </div>
-                        <div className="id-record-actions">
-                          <a
-                            className="secondary small"
-                            href={mempoolTxUrl(mint.txid, mint.network)}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            <span className="button-content">
-                              <ArrowUpRight size={15} />
-                              <span>View TX</span>
-                            </span>
-                          </a>
-                        </div>
-                      </article>
-                    ))
-                  )}
-                </div>
+                {renderMintSearch(
+                  detailVisibleMints.length,
+                  detailMatchingMints.length,
+                  detailMints.length,
+                )}
+                {renderMintList(detailVisibleMints)}
               </section>
             </div>
           </>
@@ -17865,6 +18010,46 @@ function TokenWorkspace({
           <span>Creation sats</span>
         </div>
       </div>
+
+      {selectedToken ? (
+        <div className="id-launch-grid token-selected-ledger">
+          <section className="id-launch-card">
+            <div className="id-card-head">
+              <div className="empty-icon" aria-hidden="true">
+                <Users size={24} />
+              </div>
+              <div>
+                <h3>{selectedToken.ticker} holders</h3>
+                <p>First 25 balances by default. Search to verify an address.</p>
+              </div>
+            </div>
+            {renderHolderSearch(
+              selectedVisibleHolders.length,
+              selectedMatchingHolders.length,
+              holders.length,
+            )}
+            {renderHolderList(selectedToken, selectedVisibleHolders)}
+          </section>
+
+          <section className="id-launch-card">
+            <div className="id-card-head">
+              <div className="empty-icon" aria-hidden="true">
+                <Clock size={24} />
+              </div>
+              <div>
+                <h3>{selectedToken.ticker} mints</h3>
+                <p>Latest 25 mints by default. Pending records stay visible.</p>
+              </div>
+            </div>
+            {renderMintSearch(
+              selectedVisibleMints.length,
+              selectedMatchingMints.length,
+              mints.length,
+            )}
+            {renderMintList(selectedVisibleMints)}
+          </section>
+        </div>
+      ) : null}
 
       <div className="id-launch-grid">
         <section className="id-launch-card">

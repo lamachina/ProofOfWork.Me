@@ -3480,6 +3480,46 @@ pre {
   grid-template-columns: minmax(0, 1fr) minmax(120px, 160px);
 }
 
+.token-search-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.token-search-field {
+  position: relative;
+}
+
+.token-search-field svg {
+  color: var(--text-muted);
+  left: 11px;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.token-search-field input {
+  padding-left: 36px;
+}
+
+.token-search-count {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 780;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.token-selected-ledger .id-record-list,
+.token-selected-ledger .activity-feed,
+.token-detail-page .id-record-list,
+.token-detail-page .activity-feed {
+  max-height: 520px;
+  overflow: auto;
+}
+
 .token-public-app .id-launch-stats {
   gap: 8px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3758,10 +3798,16 @@ pre {
 @media (max-width: 620px) {
   .token-form-grid,
   .token-mint-grid,
+  .token-search-row,
   .token-payment-lane,
   .token-public-app .browser-meta,
   .token-public-app .id-launch-stats {
     grid-template-columns: 1fr;
+  }
+
+  .token-search-count {
+    text-align: left;
+    white-space: normal;
   }
 
   .token-progress-mini > div,

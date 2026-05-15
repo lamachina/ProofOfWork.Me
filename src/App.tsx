@@ -78,6 +78,7 @@ type Folder =
   | "ids"
   | "marketplace"
   | "pay2speak"
+  | "nft"
   | "token"
   | "work"
   | "log"
@@ -94,6 +95,15 @@ type SortMode =
 type FileFilter = "all" | "image" | "pdf" | "document" | "other";
 type ThemeMode = "light" | "dark";
 type BroadcastStatus = "pending" | "confirmed" | "dropped" | "unknown";
+type BroadcastSource = "mempool" | "slipstream" | "wallet";
+type BroadcastStrategy = "mempool" | "slipstream-if-multiple-op-return";
+
+type TransactionBroadcastResult = {
+  opReturnCount: number;
+  source: BroadcastSource;
+  txid: string;
+  url?: string;
+};
 
 type MailAttachment = {
   name: string;
@@ -374,6 +384,78 @@ type Pay2SpeakState = {
   questions: Pay2SpeakQuestion[];
 };
 
+type AkLayerConfig = {
+  count: number;
+  folder: string;
+  hasLeadingZeros: boolean;
+  id: string;
+  name: string;
+  prefix: string;
+};
+
+type AkTraits = Record<string, number>;
+
+type NftCollectionDefinition = {
+  defaultOperatorAddress: string;
+  description: string;
+  displayName: string;
+  id: string;
+  maxSupply: number;
+  mintProtocolPayload: string;
+  name: string;
+  operatorMinSats: number;
+  ownerAnchorSats: number;
+  slug: string;
+};
+
+type NftCollectionRecord = NftCollectionDefinition & {
+  confirmed: boolean;
+  createdAt: string;
+  dataBytes?: number;
+  deployedHeight?: number;
+  deployedTime?: number;
+  deployFeeSats: number;
+  genesisTag: string | null;
+  imageBase64: string;
+  imageDataUrl: string;
+  network: BitcoinNetwork;
+  operatorAddress: string;
+  txid: string;
+};
+
+type AkMintRecord = {
+  collectionId?: string;
+  collectionName?: string;
+  confirmed: boolean;
+  createdAt: string;
+  dataBytes?: number;
+  genesisTag: string | null;
+  imageBase64: string;
+  imageDataUrl: string;
+  mintedHeight?: number;
+  mintedTime?: number;
+  network: BitcoinNetwork;
+  operatorAddress: string;
+  operatorSats: number;
+  ownerAddress: string;
+  tokenIdentifier: string;
+  txid: string;
+  voutIndex: number;
+};
+
+type AkState = {
+  collection?: NftCollectionDefinition;
+  collections?: NftCollectionRecord[];
+  indexedAt?: string;
+  mints: AkMintRecord[];
+  operatorAddress?: string;
+  stats?: {
+    confirmed?: number;
+    pending?: number;
+    total?: number;
+  };
+};
+
 type PowTokenDefinition = {
   confirmed: boolean;
   createdAt: string;
@@ -440,6 +522,7 @@ type PowActivityKind =
   | "file"
   | "pay2speak-campaign"
   | "pay2speak-funding"
+  | "ak-mint"
   | "token-create"
   | "token-mint";
 
@@ -727,6 +810,8 @@ type Pay2SpeakApiResponse = Partial<Pay2SpeakState> & {
   registryAddress?: string;
 };
 
+type AkApiResponse = Partial<AkState>;
+
 type PowTokenApiResponse = Partial<PowTokenState> & {
   registryAddress?: string;
   reserveAddress?: string;
@@ -783,6 +868,7 @@ const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 const BROWSER_APP_URL = "https://browser.proofofwork.me";
 const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 const PAY2SPEAK_APP_URL = "https://pay2speak.proofofwork.me";
+const NFT_APP_URL = "https://nft.proofofwork.me";
 const TOKEN_APP_URL = "https://token.proofofwork.me";
 const WORK_TOKEN_APP_URL = "https://work.proofofwork.me";
 const LOG_APP_URL = "https://log.proofofwork.me";
@@ -794,6 +880,7 @@ const LOCAL_DESKTOP_APP_URL = "/?desktop=1";
 const LOCAL_BROWSER_APP_URL = "/?browser=1";
 const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
 const LOCAL_PAY2SPEAK_APP_URL = "/?pay2speak=1";
+const LOCAL_NFT_APP_URL = "/?nft=1";
 const LOCAL_TOKEN_APP_URL = "/?token=1";
 const LOCAL_WORK_TOKEN_APP_URL = "/?work=1";
 const LOCAL_LOG_APP_URL = "/?log=1";
@@ -810,6 +897,9 @@ const CANONICAL_WELCOME_CREATED_AT = "2026-05-13T17:58:01.000Z";
 const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "")
   .trim()
   .replace(/\/+$/u, "");
+const SLIPSTREAM_SUBMIT_TX_URL =
+  "https://slipstream.mara.com/rest-api/submit-tx";
+const SLIPSTREAM_TX_URL = "https://slipstream.mara.com/tx";
 const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_REGISTRY_TX_PAGES = 100;
@@ -843,6 +933,78 @@ const PAY2SPEAK_SPLIT_THRESHOLD_SATS = 5460;
 const PAY2SPEAK_REGISTRY_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
   livenet: "bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4",
 };
+const AK_PROTOCOL_MINT = '{"p":"nft","op":"mint","name":"ak21"}';
+const AK_OPERATOR_ADDRESS = "bc1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk7whapn";
+const NFT_DEPLOY_FEE_ADDRESS = AK_OPERATOR_ADDRESS;
+const NFT_DEPLOY_MIN_FEE_SATS = 1000;
+const AK_OPERATOR_MIN_SATS = 1000;
+const AK_OWNER_ANCHOR_SATS = 762;
+const AK_LAYER_BASE_PATH = "/nft/layers";
+const NFT_COLLECTIONS: NftCollectionDefinition[] = [
+  {
+    defaultOperatorAddress: AK_OPERATOR_ADDRESS,
+    description:
+      "AK21 visual NFT mints with an operator payment, mint JSON, owner anchor, optional Genesis Tag, and image OP_RETURN.",
+    displayName: "AK",
+    id: "ak21",
+    maxSupply: 1000,
+    mintProtocolPayload: AK_PROTOCOL_MINT,
+    name: "ak21",
+    operatorMinSats: AK_OPERATOR_MIN_SATS,
+    ownerAnchorSats: AK_OWNER_ANCHOR_SATS,
+    slug: "ak",
+  },
+];
+const AK_LAYERS: AkLayerConfig[] = [
+  {
+    count: 34,
+    folder: "1-dot",
+    hasLeadingZeros: false,
+    id: "dot",
+    name: "Dot",
+    prefix: "dot_",
+  },
+  {
+    count: 34,
+    folder: "2-frame",
+    hasLeadingZeros: false,
+    id: "frame",
+    name: "Frame",
+    prefix: "frame_",
+  },
+  {
+    count: 34,
+    folder: "3-grip",
+    hasLeadingZeros: true,
+    id: "grip",
+    name: "Grip",
+    prefix: "grip_",
+  },
+  {
+    count: 34,
+    folder: "4-metal",
+    hasLeadingZeros: true,
+    id: "metal",
+    name: "Metal",
+    prefix: "metal_",
+  },
+  {
+    count: 34,
+    folder: "5-nail",
+    hasLeadingZeros: false,
+    id: "nail",
+    name: "Nail",
+    prefix: "nail_",
+  },
+  {
+    count: 34,
+    folder: "6-rail",
+    hasLeadingZeros: false,
+    id: "rail",
+    name: "Rail",
+    prefix: "rail_",
+  },
+];
 const TOKEN_PROTOCOL_PREFIX = "pwt1:";
 const TOKEN_CREATE_ACTION = "create";
 const TOKEN_MINT_ACTION = "mint";
@@ -906,6 +1068,7 @@ const APP_LINKS = [
     label: "Pay2Speak",
     localHref: LOCAL_PAY2SPEAK_APP_URL,
   },
+  { href: NFT_APP_URL, label: "NFT", localHref: LOCAL_NFT_APP_URL },
   {
     href: TOKEN_APP_URL,
     label: "Token",
@@ -922,6 +1085,8 @@ const APP_LINKS = [
 
 type GrowthModelRow = {
   adoption: number;
+  akSats: number;
+  akWrites: number;
   browserSats: number;
   browserWrites: number;
   blockspaceUsageRatio: number;
@@ -954,6 +1119,8 @@ type GrowthValuePoint = {
 };
 
 type GrowthActualNetworkValue = {
+  akFlowSats: number;
+  akSats: number;
   browserFlowSats: number;
   browserSats: number;
   driveFlowSats: number;
@@ -999,12 +1166,14 @@ const GROWTH_MODEL_INPUTS = {
   baselineMarketplaceVolumeSats: 1_000,
   baselineBrowserFlowSats: 0,
   baselinePay2SpeakFlowSats: 0,
+  baselineAkFlowSats: 0,
   baselineTokenFlowSats: 0,
   mailEdgeDensity: 0.012307692307692308,
   mailSatsPerDelivery: 680.1333333333333,
   marketplaceAverageSaleSats: 1000,
   browserAveragePageSats: 1000,
   pay2SpeakAverageCampaignSats: 5460,
+  akAverageMintSats: 1000,
   tokenAverageMintSats: 1000,
   satsPerFile: 1000,
   canonicalFee: 0.00001,
@@ -1015,12 +1184,14 @@ const GROWTH_MODEL_INPUTS = {
   marketplaceVbytesPerSale: 1_500,
   browserVbytesPerPage: 15_000,
   pay2SpeakVbytesPerWrite: 700,
+  akVbytesPerMint: 2500,
   tokenVbytesPerWrite: 700,
   mailMessagesPerPairPerYear: 4,
   driveFilesPerIdPerYear: 6,
   marketplaceSalesPerIdPerYear: 0.2,
   browserPagesPerIdPerYear: 1,
   pay2SpeakCampaignsPerIdPerYear: 0.15,
+  akMintsPerIdPerYear: 0.1,
   tokenMintsPerIdPerYear: 0.25,
   valueMultiple: 5,
   elasticities: {
@@ -1030,6 +1201,7 @@ const GROWTH_MODEL_INPUTS = {
     marketplace: 0.5,
     browser: 0.75,
     pay2speak: 0.6,
+    ak: 0.6,
     token: 0.6,
   },
   horizons: [
@@ -1094,6 +1266,10 @@ function growthModelRow(horizon: {
     GROWTH_MODEL_INPUTS.canonicalFee,
     GROWTH_MODEL_INPUTS.elasticities.pay2speak,
   );
+  const akMultiplier = growthFeeMultiplier(
+    GROWTH_MODEL_INPUTS.canonicalFee,
+    GROWTH_MODEL_INPUTS.elasticities.ak,
+  );
   const tokenMultiplier = growthFeeMultiplier(
     GROWTH_MODEL_INPUTS.canonicalFee,
     GROWTH_MODEL_INPUTS.elasticities.token,
@@ -1131,6 +1307,12 @@ function growthModelRow(horizon: {
     GROWTH_MODEL_INPUTS.pay2SpeakAverageCampaignSats *
     GROWTH_MODEL_INPUTS.valueMultiple *
     pay2SpeakMultiplier;
+  const rawAkSats =
+    powids *
+    GROWTH_MODEL_INPUTS.akMintsPerIdPerYear *
+    GROWTH_MODEL_INPUTS.akAverageMintSats *
+    GROWTH_MODEL_INPUTS.valueMultiple *
+    akMultiplier;
   const rawTokenSats =
     powids *
     GROWTH_MODEL_INPUTS.tokenMintsPerIdPerYear *
@@ -1155,6 +1337,8 @@ function growthModelRow(horizon: {
     powids *
     GROWTH_MODEL_INPUTS.pay2SpeakCampaignsPerIdPerYear *
     pay2SpeakMultiplier;
+  const akWrites =
+    powids * GROWTH_MODEL_INPUTS.akMintsPerIdPerYear * akMultiplier;
   const tokenWrites =
     powids *
     GROWTH_MODEL_INPUTS.tokenMintsPerIdPerYear *
@@ -1166,6 +1350,7 @@ function growthModelRow(horizon: {
     marketplaceWrites * GROWTH_MODEL_INPUTS.marketplaceVbytesPerSale +
     browserWrites * GROWTH_MODEL_INPUTS.browserVbytesPerPage +
     pay2SpeakWrites * GROWTH_MODEL_INPUTS.pay2SpeakVbytesPerWrite +
+    akWrites * GROWTH_MODEL_INPUTS.akVbytesPerMint +
     tokenWrites * GROWTH_MODEL_INPUTS.tokenVbytesPerWrite;
   const blockspaceUsageRatio =
     rawBlockspaceVbytes > 0
@@ -1180,6 +1365,7 @@ function growthModelRow(horizon: {
   const marketplaceSats = rawMarketplaceSats * blockspaceUsageRatio;
   const browserSats = rawBrowserSats * blockspaceUsageRatio;
   const pay2SpeakSats = rawPay2SpeakSats * blockspaceUsageRatio;
+  const akSats = rawAkSats * blockspaceUsageRatio;
   const tokenSats = rawTokenSats * blockspaceUsageRatio;
   const totalSats =
     idSats +
@@ -1188,11 +1374,14 @@ function growthModelRow(horizon: {
     marketplaceSats +
     browserSats +
     pay2SpeakSats +
+    akSats +
     tokenSats;
   const btcUsdBase = growthBtcUsdAtYears(horizon.years);
 
   return {
     ...horizon,
+    akSats,
+    akWrites: akWrites * blockspaceUsageRatio,
     blockspaceUsageRatio,
     browserSats,
     browserWrites: browserWrites * blockspaceUsageRatio,
@@ -1220,6 +1409,7 @@ function growthModelRow(horizon: {
         marketplaceWrites +
         browserWrites +
         pay2SpeakWrites +
+        akWrites +
         tokenWrites
       ) *
         blockspaceUsageRatio,
@@ -1245,6 +1435,9 @@ function growthModelStartRow(): GrowthModelRow {
   const pay2SpeakSats =
     GROWTH_MODEL_INPUTS.baselinePay2SpeakFlowSats *
     GROWTH_MODEL_INPUTS.valueMultiple;
+  const akSats =
+    GROWTH_MODEL_INPUTS.baselineAkFlowSats *
+    GROWTH_MODEL_INPUTS.valueMultiple;
   const tokenSats =
     GROWTH_MODEL_INPUTS.baselineTokenFlowSats *
     GROWTH_MODEL_INPUTS.valueMultiple;
@@ -1255,10 +1448,13 @@ function growthModelStartRow(): GrowthModelRow {
     marketplaceSats +
     browserSats +
     pay2SpeakSats +
+    akSats +
     tokenSats;
   const btcUsdBase = growthBtcUsdAtYears(0);
   return {
     adoption: 0,
+    akSats,
+    akWrites: 0,
     blockspaceUsageRatio: 1,
     browserSats,
     browserWrites: 0,
@@ -1378,6 +1574,144 @@ function isPay2SpeakRoute() {
     hostname === "pay2speak.proofofwork.me" ||
     window.location.search.includes("pay2speak=1")
   );
+}
+
+function isNftRoute() {
+  if (
+    import.meta.env.VITE_NFT_ONLY === "1" ||
+    import.meta.env.VITE_AK_ONLY === "1"
+  ) {
+    return true;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  // Production NFT collections app: nft.proofofwork.me. AK route flags are kept as compatibility aliases.
+  return (
+    hostname === "nft.proofofwork.me" ||
+    hostname === "ak.proofofwork.me" ||
+    window.location.search.includes("nft=1") ||
+    window.location.search.includes("ak=1")
+  );
+}
+
+function nftCollectionById(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return (
+    NFT_COLLECTIONS.find(
+      (collection) =>
+        collection.id.toLowerCase() === normalized ||
+        collection.name.toLowerCase() === normalized ||
+        collection.slug.toLowerCase() === normalized,
+    ) ?? NFT_COLLECTIONS[0]
+  );
+}
+
+function nftSyntheticCollectionDefinition(
+  name: string,
+  operatorAddress = "",
+): NftCollectionDefinition {
+  const normalizedName = (name.trim() || "nft").toLowerCase();
+  return {
+    defaultOperatorAddress: operatorAddress || AK_OPERATOR_ADDRESS,
+    description: `${name.trim() || "NFT"} NFT collection.`,
+    displayName: name.trim() || "NFT",
+    id: normalizedName,
+    maxSupply: 0,
+    mintProtocolPayload: JSON.stringify({
+      p: "nft",
+      op: "mint",
+      name: normalizedName,
+    }),
+    name: name.trim() || normalizedName,
+    operatorMinSats: AK_OPERATOR_MIN_SATS,
+    ownerAnchorSats: AK_OWNER_ANCHOR_SATS,
+    slug: normalizedName,
+  };
+}
+
+function nftCollectionByNameAndOperator(value: string, operatorAddress: string) {
+  const normalized = value.trim().toLowerCase();
+  const normalizedOperator = operatorAddress.trim().toLowerCase();
+  if (!normalized) {
+    return NFT_COLLECTIONS[0];
+  }
+  const matches = NFT_COLLECTIONS.filter(
+    (collection) =>
+      collection.id.toLowerCase() === normalized ||
+      collection.name.toLowerCase() === normalized ||
+      collection.slug.toLowerCase() === normalized,
+  );
+
+  if (normalizedOperator) {
+    const operatorMatch = matches.find(
+      (collection) =>
+        collection.defaultOperatorAddress.toLowerCase() === normalizedOperator,
+    );
+    if (operatorMatch) {
+      return operatorMatch;
+    }
+  }
+
+  return (
+    matches[0] ??
+    NFT_COLLECTIONS.find(
+      (collection) =>
+        normalizedOperator &&
+        collection.defaultOperatorAddress.toLowerCase() === normalizedOperator,
+    ) ??
+    nftSyntheticCollectionDefinition(value, operatorAddress)
+  );
+}
+
+function nftRouteCollection() {
+  if (typeof window === "undefined") {
+    return NFT_COLLECTIONS[0];
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return nftCollectionById(params.get("collection") ?? params.get("c") ?? "");
+}
+
+function nftRouteCollectionId() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return (params.get("collection") ?? params.get("c") ?? "").trim();
+}
+
+function nftRouteOperatorAddress(collection: NftCollectionDefinition) {
+  if (typeof window === "undefined") {
+    return collection.defaultOperatorAddress;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return (
+    params.get("operator") ??
+    params.get("operatorAddress") ??
+    collection.defaultOperatorAddress
+  ).trim();
+}
+
+function nftRouteOperatorParam() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return (params.get("operator") ?? params.get("operatorAddress") ?? "").trim();
+}
+
+function nftCollectionUrl(
+  collection: NftCollectionDefinition,
+  operatorAddress = collection.defaultOperatorAddress,
+) {
+  const params = new URLSearchParams();
+  params.set("nft", "1");
+  params.set("collection", collection.name);
+  params.set("operator", operatorAddress || collection.defaultOperatorAddress);
+  return `/?${params.toString()}`;
 }
 
 function isTokenRoute() {
@@ -2819,6 +3153,10 @@ function folderLabel(folder: Folder) {
     return "Pay2Speak";
   }
 
+  if (folder === "nft") {
+    return "NFT";
+  }
+
   if (folder === "token") {
     return "Token";
   }
@@ -2881,6 +3219,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "pay2speak") {
     return "X Space funding";
+  }
+
+  if (folder === "nft") {
+    return "NFT collections and minting";
   }
 
   if (folder === "token") {
@@ -5906,6 +6248,392 @@ function comparePay2SpeakCampaigns(
   );
 }
 
+function akLayerFilename(layer: AkLayerConfig, index: number) {
+  const suffix = layer.hasLeadingZeros ? String(index).padStart(2, "0") : index;
+  return `${layer.prefix}${suffix}.png`;
+}
+
+function akLayerPath(layer: AkLayerConfig, traits: AkTraits) {
+  const index = Math.max(
+    0,
+    Math.min(layer.count - 1, Math.floor(traits[layer.id] ?? 0)),
+  );
+  return `${AK_LAYER_BASE_PATH}/${layer.folder}/${akLayerFilename(layer, index)}`;
+}
+
+function randomAkTraits(): AkTraits {
+  return Object.fromEntries(
+    AK_LAYERS.map((layer) => [
+      layer.id,
+      Math.floor(Math.random() * layer.count),
+    ]),
+  );
+}
+
+function buildAkImagePayload(imageBase64: string) {
+  const value = imageBase64.trim();
+  if (!value) {
+    return "";
+  }
+
+  return value.startsWith("data:image/")
+    ? value
+    : `data:image/png;base64,${value}`;
+}
+
+function buildNftDeployPayload(name: string, maxSupply: number) {
+  return JSON.stringify({
+    p: "nft",
+    op: "deploy",
+    name: name.trim(),
+    amt: String(Math.floor(maxSupply)),
+  });
+}
+
+function parseNftDeployPayload(payload: string) {
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>;
+    if (parsed.p !== "nft" || parsed.op !== "deploy") {
+      return null;
+    }
+
+    const name = String(parsed.name ?? "").trim();
+    const maxSupply = Number.parseInt(String(parsed.amt ?? ""), 10);
+    if (!name || !Number.isSafeInteger(maxSupply) || maxSupply <= 0) {
+      return null;
+    }
+
+    return { maxSupply, name };
+  } catch {
+    return null;
+  }
+}
+
+function buildAkMintPayloads(genesisTag: string, imageBase64: string) {
+  const imagePayload = buildAkImagePayload(imageBase64);
+  const tag = genesisTag.trim();
+  return tag
+    ? [AK_PROTOCOL_MINT, tag, imagePayload]
+    : [AK_PROTOCOL_MINT, imagePayload];
+}
+
+function isAkImagePayload(payload: string) {
+  const value = payload.trim();
+  return (
+    value.startsWith("data:image/") ||
+    value.startsWith("iVBORw0KGgo")
+  );
+}
+
+function normalizeAkImagePayload(payload: string) {
+  const value = payload.trim();
+  if (value.startsWith("data:image/")) {
+    return value;
+  }
+
+  return `data:image/png;base64,${value}`;
+}
+
+function akImageBase64(payload: string) {
+  const value = payload.trim();
+  if (!value.startsWith("data:image/")) {
+    return value;
+  }
+
+  const comma = value.indexOf(",");
+  return comma >= 0 ? value.slice(comma + 1) : "";
+}
+
+function decodedOpReturnAt(vout: Array<Record<string, unknown>>, index: number) {
+  const output = vout[index];
+  if (!output || output.scriptpubkey_type !== "op_return") {
+    return "";
+  }
+
+  return decodedOpReturnMessages([output])[0] ?? "";
+}
+
+function nftDeployFeeAmount(vout: Array<Record<string, unknown>>) {
+  return vout.reduce((total, output) => {
+    if (
+      output.scriptpubkey_address === NFT_DEPLOY_FEE_ADDRESS &&
+      typeof output.value === "number"
+    ) {
+      return total + output.value;
+    }
+
+    return total;
+  }, 0);
+}
+
+function nftCollectionDefinitionFromRecord(
+  collection: NftCollectionRecord,
+): NftCollectionDefinition {
+  return {
+    defaultOperatorAddress: collection.operatorAddress,
+    description: collection.description,
+    displayName: collection.displayName,
+    id: collection.id,
+    maxSupply: collection.maxSupply,
+    mintProtocolPayload: collection.mintProtocolPayload,
+    name: collection.name,
+    operatorMinSats: collection.operatorMinSats,
+    ownerAnchorSats: collection.ownerAnchorSats,
+    slug: collection.slug,
+  };
+}
+
+function nftKnownCollectionRecords(
+  targetNetwork: BitcoinNetwork,
+): NftCollectionRecord[] {
+  return NFT_COLLECTIONS.map((collection) => ({
+    ...collection,
+    confirmed: true,
+    createdAt: "2026-05-05T11:21:44.000Z",
+    deployFeeSats: NFT_DEPLOY_MIN_FEE_SATS,
+    genesisTag: null,
+    imageBase64: "",
+    imageDataUrl: "",
+    network: targetNetwork,
+    operatorAddress: collection.defaultOperatorAddress,
+    txid: "",
+  }));
+}
+
+function mergeNftCollections(
+  indexed: NftCollectionRecord[],
+  targetNetwork: BitcoinNetwork,
+) {
+  const byKey = new Map<string, NftCollectionRecord>();
+  for (const collection of nftKnownCollectionRecords(targetNetwork)) {
+    byKey.set(
+      `${collection.name.toLowerCase()}:${collection.operatorAddress.toLowerCase()}`,
+      collection,
+    );
+  }
+  for (const collection of indexed) {
+    byKey.set(
+      `${collection.name.toLowerCase()}:${collection.operatorAddress.toLowerCase()}`,
+      collection,
+    );
+  }
+  return [...byKey.values()].sort(compareNftCollections);
+}
+
+function parseNftDeployTransaction(
+  tx: Record<string, unknown>,
+  targetNetwork: BitcoinNetwork,
+): NftCollectionRecord | null {
+  const txid = transactionTxid(tx);
+  if (!txid) {
+    return null;
+  }
+
+  const vin = Array.isArray(tx.vin)
+    ? (tx.vin as Array<Record<string, unknown>>)
+    : [];
+  const operatorAddress = transactionInputAddresses(vin)[0] ?? "";
+  if (!isValidBitcoinAddress(operatorAddress, targetNetwork)) {
+    return null;
+  }
+
+  const vout = Array.isArray(tx.vout)
+    ? (tx.vout as Array<Record<string, unknown>>)
+    : [];
+  const deployPayload = parseNftDeployPayload(decodedOpReturnAt(vout, 0));
+  if (!deployPayload) {
+    return null;
+  }
+
+  const deployFeeSats = nftDeployFeeAmount(vout);
+  if (deployFeeSats < NFT_DEPLOY_MIN_FEE_SATS) {
+    return null;
+  }
+
+  const genesisTag = decodedOpReturnAt(vout, 1).trim() || null;
+  const imagePayload = decodedOpReturnAt(vout, 2);
+  if (!isAkImagePayload(imagePayload)) {
+    return null;
+  }
+
+  const status = tx.status as Record<string, unknown> | undefined;
+  const blockTime =
+    typeof status?.block_time === "number"
+      ? status.block_time * 1000
+      : Date.now();
+  const normalizedName = deployPayload.name.toLowerCase();
+  const dataBytes = [decodedOpReturnAt(vout, 0), genesisTag ?? "", imagePayload]
+    .filter(Boolean)
+    .reduce(
+      (total, payload) => total + new TextEncoder().encode(payload).length,
+      0,
+    );
+
+  return {
+    confirmed: transactionConfirmed(tx),
+    createdAt: new Date(blockTime).toISOString(),
+    dataBytes,
+    defaultOperatorAddress: operatorAddress,
+    deployedHeight: transactionBlockHeight(tx),
+    deployedTime:
+      typeof status?.block_time === "number" ? status.block_time : undefined,
+    deployFeeSats,
+    description:
+      genesisTag ??
+      `${deployPayload.name} NFT collection deployed by ${shortAddress(operatorAddress)}.`,
+    displayName: deployPayload.name,
+    genesisTag,
+    id: normalizedName,
+    imageBase64: akImageBase64(imagePayload),
+    imageDataUrl: normalizeAkImagePayload(imagePayload),
+    maxSupply: deployPayload.maxSupply,
+    mintProtocolPayload: JSON.stringify({
+      p: "nft",
+      op: "mint",
+      name: normalizedName,
+    }),
+    name: deployPayload.name,
+    network: targetNetwork,
+    operatorAddress,
+    operatorMinSats: AK_OPERATOR_MIN_SATS,
+    ownerAnchorSats: AK_OWNER_ANCHOR_SATS,
+    slug: normalizedName,
+    txid,
+  };
+}
+
+function parseAkMintTransaction(
+  tx: Record<string, unknown>,
+  targetNetwork: BitcoinNetwork,
+  collection: NftCollectionDefinition = NFT_COLLECTIONS[0],
+  operatorAddress = collection.defaultOperatorAddress,
+): AkMintRecord | null {
+  const txid = transactionTxid(tx);
+  if (!txid) {
+    return null;
+  }
+
+  const vout = Array.isArray(tx.vout)
+    ? (tx.vout as Array<Record<string, unknown>>)
+    : [];
+  const operatorOutput = vout[0];
+  if (
+    operatorOutput?.scriptpubkey_address !== operatorAddress ||
+    typeof operatorOutput.value !== "number" ||
+    operatorOutput.value < collection.operatorMinSats
+  ) {
+    return null;
+  }
+
+  if (decodedOpReturnAt(vout, 1) !== collection.mintProtocolPayload) {
+    return null;
+  }
+
+  const ownerOutput = vout[2];
+  const ownerAddress = ownerOutput?.scriptpubkey_address;
+  if (
+    typeof ownerAddress !== "string" ||
+    !isValidBitcoinAddress(ownerAddress, targetNetwork) ||
+    typeof ownerOutput.value !== "number" ||
+    ownerOutput.value < collection.ownerAnchorSats
+  ) {
+    return null;
+  }
+
+  const vout3Payload = decodedOpReturnAt(vout, 3);
+  if (!vout3Payload) {
+    return null;
+  }
+
+  let genesisTag: string | null = null;
+  let imagePayload = "";
+  if (isAkImagePayload(vout3Payload)) {
+    imagePayload = vout3Payload;
+  } else {
+    genesisTag = vout3Payload.trim() || null;
+    imagePayload = decodedOpReturnAt(vout, 4);
+  }
+
+  if (!isAkImagePayload(imagePayload)) {
+    return null;
+  }
+
+  const status = tx.status as Record<string, unknown> | undefined;
+  const blockTime =
+    typeof status?.block_time === "number"
+      ? status.block_time * 1000
+      : Date.now();
+  const dataBytes = [collection.mintProtocolPayload, genesisTag ?? "", imagePayload]
+    .filter(Boolean)
+    .reduce((total, payload) => total + new TextEncoder().encode(payload).length, 0);
+
+  return {
+    confirmed: transactionConfirmed(tx),
+    collectionId: collection.id,
+    collectionName: collection.name,
+    createdAt: new Date(blockTime).toISOString(),
+    dataBytes,
+    genesisTag,
+    imageBase64: akImageBase64(imagePayload),
+    imageDataUrl: normalizeAkImagePayload(imagePayload),
+    mintedHeight: transactionBlockHeight(tx),
+    mintedTime:
+      typeof status?.block_time === "number" ? status.block_time : undefined,
+    network: targetNetwork,
+    operatorAddress,
+    operatorSats: operatorOutput.value,
+    ownerAddress,
+    tokenIdentifier: `${txid}:2`,
+    txid,
+    voutIndex: 2,
+  };
+}
+
+function compareNftCollections(
+  left: NftCollectionRecord,
+  right: NftCollectionRecord,
+) {
+  if (left.confirmed !== right.confirmed) {
+    return Number(right.confirmed) - Number(left.confirmed);
+  }
+
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    left.txid.localeCompare(right.txid)
+  );
+}
+
+function akStateFromTransactions(
+  txs: Array<Record<string, unknown>>,
+  targetNetwork: BitcoinNetwork,
+  collection: NftCollectionDefinition = NFT_COLLECTIONS[0],
+  operatorAddress = collection.defaultOperatorAddress,
+): AkState {
+  const mints = txs
+    .map((tx) =>
+      parseAkMintTransaction(tx, targetNetwork, collection, operatorAddress),
+    )
+    .filter((mint): mint is AkMintRecord => Boolean(mint))
+    .sort(
+      (left, right) =>
+        Number(right.confirmed) - Number(left.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    );
+
+  return {
+    collection,
+    indexedAt: new Date().toISOString(),
+    mints,
+    operatorAddress,
+    stats: {
+      confirmed: mints.filter((mint) => mint.confirmed).length,
+      pending: mints.filter((mint) => !mint.confirmed).length,
+      total: mints.length,
+    },
+  };
+}
+
 function pay2SpeakCampaignProgress(campaign: Pay2SpeakCampaign) {
   if (campaign.targetGrossSats <= 0) {
     return 0;
@@ -8220,6 +8948,66 @@ async function fetchPay2SpeakState(
   return pay2SpeakStateFromTransactions(txs, registryAddress, targetNetwork);
 }
 
+async function fetchAkState(
+  targetNetwork: BitcoinNetwork,
+  collection: NftCollectionDefinition = NFT_COLLECTIONS[0],
+  operatorAddress = collection.defaultOperatorAddress,
+): Promise<AkState> {
+  if (targetNetwork !== "livenet") {
+    return { collection, collections: [], mints: [], operatorAddress };
+  }
+
+  if (POW_API_BASE) {
+    const params = new URLSearchParams();
+    params.set("collection", collection.id);
+    params.set("operator", operatorAddress);
+    const payload = await fetchProofApiJson<AkApiResponse>(
+      `/api/v1/nft?${params.toString()}`,
+      targetNetwork,
+    );
+    return {
+      collection: payload.collection ?? collection,
+      collections: Array.isArray(payload.collections)
+        ? mergeNftCollections(payload.collections, targetNetwork)
+        : nftKnownCollectionRecords(targetNetwork),
+      indexedAt: payload.indexedAt,
+      mints: Array.isArray(payload.mints) ? payload.mints : [],
+      operatorAddress: payload.operatorAddress ?? operatorAddress,
+      stats: payload.stats,
+    };
+  }
+
+  if (!isValidBitcoinAddress(operatorAddress, targetNetwork)) {
+    return { collection, collections: [], mints: [], operatorAddress };
+  }
+
+  const [deployTxs, mintTxs] = await Promise.all([
+    fetchRegistryTransactions(NFT_DEPLOY_FEE_ADDRESS, targetNetwork),
+    fetchRegistryTransactions(operatorAddress, targetNetwork),
+  ]);
+  const collections = deployTxs
+    .map((tx) => parseNftDeployTransaction(tx, targetNetwork))
+    .filter((item): item is NftCollectionRecord => Boolean(item))
+    .sort(compareNftCollections);
+  const mergedCollections = mergeNftCollections(collections, targetNetwork);
+  const deployedCollection = collections.find(
+    (item) =>
+      item.name.toLowerCase() === collection.name.toLowerCase() &&
+      item.operatorAddress.toLowerCase() === operatorAddress.toLowerCase(),
+  );
+  return {
+    ...akStateFromTransactions(
+      mintTxs,
+      targetNetwork,
+      deployedCollection
+        ? nftCollectionDefinitionFromRecord(deployedCollection)
+        : collection,
+      operatorAddress,
+    ),
+    collections: mergedCollections,
+  };
+}
+
 async function fetchTokenState(
   targetNetwork: BitcoinNetwork,
 ): Promise<PowTokenState> {
@@ -8836,6 +9624,133 @@ async function buildPaymentPsbt({
   };
 }
 
+async function buildAkMintPsbt({
+  feeRate,
+  fromAddress,
+  genesisTag,
+  imageBase64,
+  network,
+}: {
+  feeRate: number;
+  fromAddress: string;
+  genesisTag: string;
+  imageBase64: string;
+  network: BitcoinNetwork;
+}) {
+  if (network !== "livenet") {
+    throw new Error("NFT minting is mainnet-only in V1.");
+  }
+
+  const selectedNetwork = bitcoinNetwork(network);
+  const operatorScript = scriptForAddress(
+    AK_OPERATOR_ADDRESS,
+    network,
+    "AK operator",
+  );
+  const ownerScript = scriptForAddress(fromAddress, network, "AK owner");
+  const changeScript = scriptForAddress(
+    fromAddress,
+    network,
+    "Connected wallet",
+  );
+  const payloads = buildAkMintPayloads(genesisTag, imageBase64);
+  const opReturnScripts = protocolOutputScripts(payloads);
+  const fixedOutputVbytes =
+    outputVbytesForScript(operatorScript) +
+    opReturnScripts.reduce(
+      (total, script) => total + outputVbytesForScript(script),
+      0,
+    ) +
+    outputVbytesForScript(ownerScript);
+  const changeOutputVbytes = outputVbytesForScript(changeScript);
+  const walletUtxos = await fetchUtxos(fromAddress, network);
+  const utxos = walletUtxos.filter((utxo) => utxo.status?.confirmed);
+
+  if (walletUtxos.length === 0) {
+    throw new Error(
+      `No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`,
+    );
+  }
+
+  if (utxos.length === 0) {
+    throw new Error(
+      `No confirmed UTXOs found for ${shortAddress(fromAddress)}. Wait for wallet funds to confirm before broadcasting.`,
+    );
+  }
+
+  const selection = selectUtxos(
+    utxos,
+    AK_OPERATOR_MIN_SATS + AK_OWNER_ANCHOR_SATS,
+    feeRate,
+    fixedOutputVbytes,
+    changeOutputVbytes,
+  );
+  const selectedWithPreviousTx = await Promise.all(
+    selection.selected.map(async (utxo) => {
+      const previousTxHex = await fetchTransactionHex(utxo.txid, network);
+      const previousTx = bitcoin.Transaction.fromHex(previousTxHex);
+      const previousOutput = previousTx.outs[utxo.vout];
+
+      if (!previousOutput) {
+        throw new Error(
+          `Previous output ${shortAddress(utxo.txid)}:${utxo.vout} could not be read.`,
+        );
+      }
+
+      return {
+        ...utxo,
+        previousTxHex,
+        previousOutput,
+      };
+    }),
+  );
+
+  const psbt = new bitcoin.Psbt({ network: selectedNetwork });
+  for (const utxo of selectedWithPreviousTx) {
+    psbt.addInput({
+      hash: utxo.txid,
+      index: utxo.vout,
+      ...utxoInputData(utxo),
+    });
+  }
+
+  psbt.addOutput({
+    address: AK_OPERATOR_ADDRESS,
+    value: BigInt(AK_OPERATOR_MIN_SATS),
+  });
+  psbt.addOutput({
+    script: opReturnScripts[0],
+    value: 0n,
+  });
+  psbt.addOutput({
+    address: fromAddress,
+    value: BigInt(AK_OWNER_ANCHOR_SATS),
+  });
+
+  for (const script of opReturnScripts.slice(1)) {
+    psbt.addOutput({
+      script,
+      value: 0n,
+    });
+  }
+
+  if (selection.changeSats >= DUST_SATS) {
+    psbt.addOutput({
+      address: fromAddress,
+      value: BigInt(selection.changeSats),
+    });
+  }
+
+  return {
+    changeSats: selection.changeSats,
+    dustFeeSats: selection.dustFeeSats,
+    feeSats: selection.feeSats,
+    inputCount: selection.selected.length,
+    outputCount: 3 + opReturnScripts.length - 1 + (selection.changeSats >= DUST_SATS ? 1 : 0),
+    psbtHex: psbt.toHex(),
+  };
+}
+
 async function signSellerAnchorAuthorization({
   anchorUtxo,
   network,
@@ -9179,6 +10094,134 @@ async function assertListingAnchorUnspent(
   };
 }
 
+async function buildNftDeployPsbt({
+  feeRate,
+  fromAddress,
+  genesisTag,
+  imagePayload,
+  maxSupply,
+  name,
+  network,
+}: {
+  feeRate: number;
+  fromAddress: string;
+  genesisTag: string;
+  imagePayload: string;
+  maxSupply: number;
+  name: string;
+  network: BitcoinNetwork;
+}) {
+  if (network !== "livenet") {
+    throw new Error("NFT deployment is mainnet-only in V1.");
+  }
+
+  const deployPayload = buildNftDeployPayload(name, maxSupply);
+  const normalizedImagePayload = buildAkImagePayload(imagePayload);
+  const payloads = [
+    deployPayload,
+    genesisTag.trim(),
+    normalizedImagePayload,
+  ].filter((payload) => payload.length > 0);
+  const selectedNetwork = bitcoinNetwork(network);
+  const deployFeeScript = scriptForAddress(
+    NFT_DEPLOY_FEE_ADDRESS,
+    network,
+    "NFT deploy fee address",
+  );
+  const changeScript = scriptForAddress(fromAddress, network, "Connected wallet");
+  const opReturnScripts = protocolOutputScripts(payloads);
+  const fixedOutputVbytes =
+    opReturnScripts.reduce(
+      (total, script) => total + outputVbytesForScript(script),
+      0,
+    ) + outputVbytesForScript(deployFeeScript);
+  const changeOutputVbytes = outputVbytesForScript(changeScript);
+  const walletUtxos = await fetchUtxos(fromAddress, network);
+  const utxos = walletUtxos.filter((utxo) => utxo.status?.confirmed);
+
+  if (walletUtxos.length === 0) {
+    throw new Error(
+      `No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`,
+    );
+  }
+
+  if (utxos.length === 0) {
+    throw new Error(
+      `No confirmed UTXOs found for ${shortAddress(fromAddress)}. Wait for wallet funds to confirm before broadcasting.`,
+    );
+  }
+
+  let selection: UtxoSelection;
+  try {
+    selection = selectUtxos(
+      utxos,
+      NFT_DEPLOY_MIN_FEE_SATS,
+      feeRate,
+      fixedOutputVbytes,
+      changeOutputVbytes,
+    );
+  } catch (error) {
+    throw new Error(
+      `${errorMessage(error, "Insufficient confirmed funds.")} NFT deployment spends confirmed wallet UTXOs only.`,
+    );
+  }
+
+  const selectedWithPreviousTx = await Promise.all(
+    selection.selected.map(async (utxo) => {
+      const previousTxHex = await fetchTransactionHex(utxo.txid, network);
+      const previousTx = bitcoin.Transaction.fromHex(previousTxHex);
+      const previousOutput = previousTx.outs[utxo.vout];
+
+      if (!previousOutput) {
+        throw new Error(
+          `Previous output ${shortAddress(utxo.txid)}:${utxo.vout} could not be read.`,
+        );
+      }
+
+      return {
+        ...utxo,
+        previousTxHex,
+        previousOutput,
+      };
+    }),
+  );
+
+  const psbt = new bitcoin.Psbt({ network: selectedNetwork });
+  for (const utxo of selectedWithPreviousTx) {
+    psbt.addInput({
+      hash: utxo.txid,
+      index: utxo.vout,
+      ...utxoInputData(utxo),
+    });
+  }
+
+  for (const script of opReturnScripts) {
+    psbt.addOutput({ script, value: 0n });
+  }
+  psbt.addOutput({
+    address: NFT_DEPLOY_FEE_ADDRESS,
+    value: BigInt(NFT_DEPLOY_MIN_FEE_SATS),
+  });
+  if (selection.changeSats >= DUST_SATS) {
+    psbt.addOutput({
+      address: fromAddress,
+      value: BigInt(selection.changeSats),
+    });
+  }
+
+  return {
+    changeSats: selection.changeSats,
+    dustFeeSats: selection.dustFeeSats,
+    feeSats: selection.feeSats,
+    inputCount: selection.selected.length,
+    outputCount:
+      opReturnScripts.length +
+      1 +
+      (selection.changeSats >= DUST_SATS ? 1 : 0),
+    psbtHex: psbt.toHex(),
+  };
+}
+
 async function buildAnchoredMarketplacePsbt({
   anchorSpendMode = "preSigned",
   excludeOutpoints,
@@ -9417,7 +10460,40 @@ async function buildAnchoredMarketplacePsbt({
   };
 }
 
-async function broadcastRawTransaction(rawTx: string, ownerNetwork: BitcoinNetwork) {
+function normalizeBroadcastTxid(value: unknown) {
+  const txid = String(value ?? "").trim().toLowerCase();
+  return /^[0-9a-f]{64}$/u.test(txid) ? txid : "";
+}
+
+function countOpReturnOutputs(rawTx: string, network: BitcoinNetwork) {
+  try {
+    const transaction = bitcoin.Transaction.fromHex(rawTx);
+    return transaction.outs.filter(
+      (output) => output.script[0] === bitcoin.opcodes.OP_RETURN,
+    ).length;
+  } catch {
+    const psbt = bitcoin.Psbt.fromHex(rawTx, {
+      network: bitcoinNetwork(network),
+    });
+    const transaction = psbt.extractTransaction();
+    return transaction.outs.filter(
+      (output) => output.script[0] === bitcoin.opcodes.OP_RETURN,
+    ).length;
+  }
+}
+
+function slipstreamBroadcastUrl(path: string, network: BitcoinNetwork) {
+  if (POW_API_BASE) {
+    return proofApiUrl(path, network);
+  }
+
+  return SLIPSTREAM_SUBMIT_TX_URL;
+}
+
+async function broadcastRawTransaction(
+  rawTx: string,
+  ownerNetwork: BitcoinNetwork,
+): Promise<TransactionBroadcastResult> {
   const response = await fetch(`${mempoolBase(ownerNetwork)}/api/tx`, {
     body: rawTx,
     method: "POST",
@@ -9430,10 +10506,110 @@ async function broadcastRawTransaction(rawTx: string, ownerNetwork: BitcoinNetwo
     );
   }
 
-  return response.text();
+  const txid = normalizeBroadcastTxid(await response.text());
+  if (!txid) {
+    throw new Error("Mempool broadcast did not return a valid txid.");
+  }
+
+  return {
+    opReturnCount: countOpReturnOutputs(rawTx, ownerNetwork),
+    source: "mempool",
+    txid,
+    url: `${mempoolBase(ownerNetwork)}/tx/${txid}`,
+  };
 }
 
-async function signAndBroadcastPsbt({
+async function broadcastRawTransactionViaSlipstream(
+  rawTx: string,
+  ownerNetwork: BitcoinNetwork,
+): Promise<TransactionBroadcastResult> {
+  if (ownerNetwork !== "livenet") {
+    return broadcastRawTransaction(rawTx, ownerNetwork);
+  }
+
+  const response = await fetch(
+    slipstreamBroadcastUrl("/api/v1/broadcast/slipstream", ownerNetwork),
+    POW_API_BASE
+      ? {
+          body: JSON.stringify({ txHex: rawTx }),
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        }
+      : {
+          body: JSON.stringify({ tx_hex: rawTx }),
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        },
+  );
+  const responseText = await response.text().catch(() => "");
+  let payload: Record<string, unknown> | null = null;
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText) as Record<string, unknown>;
+    } catch {
+      payload = { message: responseText };
+    }
+  }
+
+  const txid = normalizeBroadcastTxid(
+    POW_API_BASE
+      ? payload?.txid
+      : (payload?.message ?? payload?.txId ?? payload?.txid ?? payload?.result),
+  );
+  const slipstreamOk = POW_API_BASE
+    ? response.ok && Boolean(txid)
+    : response.ok && payload?.status === "success" && Boolean(txid);
+  if (!slipstreamOk) {
+    throw new Error(
+      String(
+        payload?.error ??
+          payload?.message ??
+          responseText ??
+          `Slipstream broadcast failed with HTTP ${response.status}.`,
+      ),
+    );
+  }
+
+  return {
+    opReturnCount: countOpReturnOutputs(rawTx, ownerNetwork),
+    source: "slipstream",
+    txid,
+    url:
+      typeof payload?.url === "string"
+        ? payload.url
+        : `${SLIPSTREAM_TX_URL}/${txid}`,
+  };
+}
+
+async function broadcastSignedRawTransaction(
+  rawTx: string,
+  ownerNetwork: BitcoinNetwork,
+  strategy: BroadcastStrategy = "mempool",
+) {
+  const opReturnCount = countOpReturnOutputs(rawTx, ownerNetwork);
+  if (
+    strategy === "slipstream-if-multiple-op-return" &&
+    opReturnCount > 1
+  ) {
+    const result = await broadcastRawTransactionViaSlipstream(
+      rawTx,
+      ownerNetwork,
+    );
+    return { ...result, opReturnCount };
+  }
+
+  const result = await broadcastRawTransaction(rawTx, ownerNetwork);
+  return { ...result, opReturnCount };
+}
+
+async function signAndBroadcastPsbtDetailed({
+  broadcastStrategy = "mempool",
   inputCount,
   network,
   psbtHex,
@@ -9441,13 +10617,14 @@ async function signAndBroadcastPsbt({
   signingAddress,
   wallet,
 }: {
+  broadcastStrategy?: BroadcastStrategy;
   inputCount: number;
   network: BitcoinNetwork;
   psbtHex: string;
   signInputIndexes?: number[];
   signingAddress?: string;
   wallet: UnisatWallet;
-}) {
+}): Promise<TransactionBroadcastResult> {
   if (!wallet.signPsbt) {
     throw new Error(
       "UniSat signPsbt is not available. Update UniSat or use a wallet that can sign PSBTs.",
@@ -9504,13 +10681,29 @@ async function signAndBroadcastPsbt({
     rawTx = signedPsbt.extractTransaction().toHex();
   } catch (error) {
     if (wallet.pushPsbt) {
-      return wallet.pushPsbt(signedPsbtHex);
+      const txid = normalizeBroadcastTxid(await wallet.pushPsbt(signedPsbtHex));
+      if (!txid) {
+        throw new Error("Wallet broadcast did not return a valid txid.");
+      }
+
+      return {
+        opReturnCount: 0,
+        source: "wallet",
+        txid,
+      };
     }
 
     throw error;
   }
 
-  return broadcastRawTransaction(rawTx, network);
+  return broadcastSignedRawTransaction(rawTx, network, broadcastStrategy);
+}
+
+async function signAndBroadcastPsbt(
+  args: Parameters<typeof signAndBroadcastPsbtDetailed>[0],
+) {
+  const result = await signAndBroadcastPsbtDetailed(args);
+  return result.txid;
 }
 
 export default function App() {
@@ -9520,6 +10713,7 @@ export default function App() {
   const browserRoute = isBrowserRoute();
   const marketplaceMode = isMarketplaceRoute();
   const pay2SpeakMode = isPay2SpeakRoute();
+  const nftMode = isNftRoute();
   const tokenMode = isTokenRoute();
   const workTokenMode = isWorkTokenRoute();
   const pay2SpeakCreatorAddress = pay2SpeakCreatorRouteAddress();
@@ -9529,6 +10723,7 @@ export default function App() {
     idLaunchMode ||
     marketplaceMode ||
     pay2SpeakMode ||
+    nftMode ||
     tokenMode ||
     workTokenMode ||
     activityMode ||
@@ -9589,6 +10784,37 @@ export default function App() {
   const [pay2SpeakContributionSats, setPay2SpeakContributionSats] =
     useState(5460);
   const [pay2SpeakQuestion, setPay2SpeakQuestion] = useState("");
+  const [akMints, setAkMints] = useState<AkMintRecord[]>([]);
+  const [nftCollections, setNftCollections] = useState<NftCollectionRecord[]>(
+    [],
+  );
+  const [nftDeployName, setNftDeployName] = useState("");
+  const [nftDeployMaxSupply, setNftDeployMaxSupply] = useState(1000);
+  const [nftDeployGenesisTag, setNftDeployGenesisTag] = useState("");
+  const [nftDeployImagePayload, setNftDeployImagePayload] = useState("");
+  const [nftSelectedCollectionId, setNftSelectedCollectionId] = useState(() =>
+    nftRouteCollectionId(),
+  );
+  const [nftRouteOperator] = useState(() => nftRouteOperatorParam());
+  const nftCollectionPage = Boolean(nftSelectedCollectionId && nftRouteOperator);
+  const nftIncompleteCollectionRoute = Boolean(
+    nftSelectedCollectionId && !nftRouteOperator,
+  );
+  const nftSelectedCollection = nftCollectionByNameAndOperator(
+    nftSelectedCollectionId || NFT_COLLECTIONS[0].id,
+    nftRouteOperator,
+  );
+  const [nftOperatorAddress, setNftOperatorAddress] = useState(() =>
+    nftRouteOperator || nftRouteOperatorAddress(nftSelectedCollection),
+  );
+  const nftSelectedOperatorAddress = nftOperatorAddress.trim();
+  const visibleNftCollections = nftCollections.length
+    ? nftCollections
+    : nftKnownCollectionRecords(network);
+  const [akTraits, setAkTraits] = useState<AkTraits>(() => randomAkTraits());
+  const [akImageBase64, setAkImageBase64] = useState("");
+  const [akImageDataUrl, setAkImageDataUrl] = useState("");
+  const [akGenesisTag, setAkGenesisTag] = useState("");
   const [tokenDefinitions, setTokenDefinitions] = useState<
     PowTokenDefinition[]
   >([]);
@@ -9644,7 +10870,19 @@ export default function App() {
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
   const [activeFolder, setActiveFolder] = useState<Folder>(() =>
-    desktopRoute ? "desktop" : mainnetRegistryMode ? "ids" : "inbox",
+    desktopRoute
+      ? "desktop"
+      : pay2SpeakMode
+        ? "pay2speak"
+        : nftMode
+          ? "nft"
+          : tokenMode
+            ? "token"
+            : workTokenMode
+              ? "work"
+              : mainnetRegistryMode
+                ? "ids"
+                : "inbox",
   );
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("value");
@@ -10141,6 +11379,51 @@ export default function App() {
       return undefined;
     }
   }, [pay2SpeakContributionSats]);
+  const akMintPayloads = useMemo(
+    () =>
+      akImageBase64
+        ? buildAkMintPayloads(akGenesisTag, akImageBase64)
+        : [AK_PROTOCOL_MINT],
+    [akGenesisTag, akImageBase64],
+  );
+  const akMintBytes = useMemo(
+    () =>
+      akImageBase64
+        ? akMintPayloads.reduce(
+            (total, payload) => total + dataCarrierBytesForPayload(payload),
+            0,
+          )
+        : 0,
+    [akImageBase64, akMintPayloads],
+  );
+  const nftDeployPayloads = useMemo(
+    () =>
+      nftDeployName.trim() &&
+      nftDeployGenesisTag.trim() &&
+      nftDeployImagePayload.trim() &&
+      Number.isSafeInteger(Math.floor(nftDeployMaxSupply)) &&
+      nftDeployMaxSupply > 0
+        ? [
+            buildNftDeployPayload(nftDeployName, nftDeployMaxSupply),
+            nftDeployGenesisTag.trim(),
+            buildAkImagePayload(nftDeployImagePayload),
+          ]
+        : [],
+    [
+      nftDeployGenesisTag,
+      nftDeployImagePayload,
+      nftDeployMaxSupply,
+      nftDeployName,
+    ],
+  );
+  const nftDeployBytes = useMemo(
+    () =>
+      nftDeployPayloads.reduce(
+        (total, payload) => total + dataCarrierBytesForPayload(payload),
+        0,
+      ),
+    [nftDeployPayloads],
+  );
   const normalizedTokenTicker = normalizeTokenTicker(tokenCreateTicker);
   const tokenRegistryRecords = useMemo(() => {
     if (network !== "livenet") {
@@ -10329,6 +11612,28 @@ export default function App() {
     ) &&
     pay2SpeakFundingBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
+  const canMintAk =
+    Boolean(
+      address &&
+        network === "livenet" &&
+        akImageBase64 &&
+        nftSelectedCollection.id === "ak21" &&
+        nftSelectedOperatorAddress === nftSelectedCollection.defaultOperatorAddress,
+    ) &&
+    akMintBytes <= MAX_DATA_CARRIER_BYTES &&
+    !busy;
+  const canDeployNft =
+    Boolean(
+      address &&
+        network === "livenet" &&
+        nftDeployName.trim() &&
+        nftDeployGenesisTag.trim() &&
+        nftDeployImagePayload.trim() &&
+        Number.isSafeInteger(Math.floor(nftDeployMaxSupply)) &&
+        nftDeployMaxSupply > 0,
+    ) &&
+    nftDeployBytes <= MAX_DATA_CARRIER_BYTES &&
+    !busy;
   const canMintToken =
     Boolean(
       address &&
@@ -10485,6 +11790,7 @@ export default function App() {
           : activeFolder === "ids" ||
               activeFolder === "marketplace" ||
               activeFolder === "pay2speak" ||
+              activeFolder === "nft" ||
               activeFolder === "token" ||
               activeFolder === "work" ||
               activeFolder === "log"
@@ -10646,7 +11952,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (activityMode || growthMode || tokenMode || workTokenMode) {
+    if (activityMode || growthMode || nftMode || tokenMode || workTokenMode) {
       return;
     }
 
@@ -10654,6 +11960,7 @@ export default function App() {
       activeFolder === "ids" ||
       activeFolder === "marketplace" ||
       activeFolder === "pay2speak" ||
+      activeFolder === "nft" ||
       activeFolder === "token" ||
       activeFolder === "work" ||
       activeFolder === "log" ||
@@ -10661,6 +11968,14 @@ export default function App() {
     ) {
       if (activeFolder === "pay2speak") {
         void refreshPay2Speak(true);
+        return;
+      }
+      if (activeFolder === "nft") {
+        if (network !== "livenet") {
+          setNetwork("livenet");
+          return;
+        }
+        void refreshAk(true);
         return;
       }
       if (activeFolder === "token" || activeFolder === "work") {
@@ -10673,7 +11988,15 @@ export default function App() {
       }
       void refreshIds(true);
     }
-  }, [activeFolder, activityMode, growthMode, network, tokenMode, workTokenMode]);
+  }, [
+    activeFolder,
+    activityMode,
+    nftMode,
+    growthMode,
+    network,
+    tokenMode,
+    workTokenMode,
+  ]);
 
   useEffect(() => {
     if (!mainnetRegistryMode) {
@@ -10685,13 +12008,20 @@ export default function App() {
       return;
     }
 
-    if (pay2SpeakMode || tokenMode || workTokenMode) {
+    if (pay2SpeakMode || nftMode || tokenMode || workTokenMode) {
       return;
     }
 
     setActiveFolder("ids");
     void refreshIds(true);
-  }, [mainnetRegistryMode, network, pay2SpeakMode, tokenMode, workTokenMode]);
+  }, [
+    nftMode,
+    mainnetRegistryMode,
+    network,
+    pay2SpeakMode,
+    tokenMode,
+    workTokenMode,
+  ]);
 
   useEffect(() => {
     if (!pay2SpeakMode || network !== "livenet") {
@@ -10701,6 +12031,15 @@ export default function App() {
     setActiveFolder("pay2speak");
     void refreshPay2Speak(true);
   }, [pay2SpeakMode, network]);
+
+  useEffect(() => {
+    if (!nftMode || network !== "livenet") {
+      return;
+    }
+
+    setActiveFolder("nft");
+    void refreshAk(true);
+  }, [nftMode, network]);
 
   useEffect(() => {
     if ((!tokenMode && !workTokenMode) || network !== "livenet") {
@@ -10866,13 +12205,15 @@ export default function App() {
       setActiveFolder(
         pay2SpeakMode
           ? "pay2speak"
-          : workTokenMode
-            ? "work"
-            : tokenMode
-              ? "token"
-              : mainnetRegistryMode
-                ? "ids"
-                : "inbox",
+          : nftMode
+            ? "nft"
+            : workTokenMode
+              ? "work"
+              : tokenMode
+                ? "token"
+                : mainnetRegistryMode
+                  ? "ids"
+                  : "inbox",
       );
       setComposeOpen(false);
 
@@ -10891,6 +12232,22 @@ export default function App() {
           setStatus({
             tone: "good",
             text: `${shortAddress(nextAddress)} connected. Pay2Speak ready.`,
+          });
+          return;
+        }
+
+        if (nftMode) {
+          await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
+          const state = await fetchAkState(
+            "livenet",
+            nftSelectedCollection,
+            nftSelectedOperatorAddress,
+          );
+          setAkMints(state.mints);
+          setNftCollections(state.collections ?? []);
+          setStatus({
+            tone: "good",
+            text: `${shortAddress(nextAddress)} connected. NFT mint ready.`,
           });
           return;
         }
@@ -10968,6 +12325,7 @@ export default function App() {
     growthMode,
     hasUnisat,
     landingMode,
+    nftMode,
     mainnetRegistryMode,
     network,
     pay2SpeakMode,
@@ -11738,6 +13096,50 @@ export default function App() {
     }
   }
 
+  async function refreshAk(silent = false) {
+    if (network !== "livenet") {
+      setAkMints([]);
+      setNftCollections([]);
+      if (!silent) {
+        setStatus({
+          tone: "idle",
+          text: "NFT minting and indexing are mainnet-only in V1.",
+        });
+      }
+      return;
+    }
+
+    setBusy(true);
+    if (!silent) {
+      setStatus({ tone: "idle", text: "Scanning NFT mints..." });
+    }
+
+    try {
+      const state = await fetchAkState(
+        network,
+        nftSelectedCollection,
+        nftSelectedOperatorAddress,
+      );
+      setAkMints(state.mints);
+      setNftCollections(state.collections ?? []);
+      if (!silent) {
+        const confirmed = state.mints.filter((mint) => mint.confirmed).length;
+        const pending = state.mints.length - confirmed;
+        setStatus({
+          tone: "good",
+          text: `NFT collection loaded. ${confirmed.toLocaleString()} confirmed ${nftSelectedCollection.name} mint${confirmed === 1 ? "" : "s"}, ${pending.toLocaleString()} pending.`,
+        });
+      }
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "NFT scan failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function refreshToken(silent = false) {
     if (!tokenIndexAddress) {
       setTokenDefinitions([]);
@@ -11785,9 +13187,10 @@ export default function App() {
     }
 
     try {
-      const [registryState, pay2SpeakState, tokenState] = await Promise.all([
+      const [registryState, pay2SpeakState, akState, tokenState] = await Promise.all([
         fetchIdRegistryState("livenet"),
         fetchPay2SpeakState("livenet"),
+        fetchAkState("livenet"),
         fetchTokenState("livenet"),
       ]);
       setIdRegistry(registryState.records);
@@ -11798,13 +13201,15 @@ export default function App() {
       setPay2SpeakCampaigns(pay2SpeakState.campaigns);
       setPay2SpeakFunding(pay2SpeakState.funding);
       setPay2SpeakQuestions(pay2SpeakState.questions);
+      setAkMints(akState.mints);
+      setNftCollections(akState.collections ?? []);
       setTokenDefinitions(tokenState.tokens);
       setTokenMints(tokenState.mints);
       setTokenCreationSats(tokenState.creationSats);
       if (!silent) {
         setStatus({
           tone: "good",
-          text: `Growth metrics loaded. ${registryState.records.filter((record) => record.confirmed).length.toLocaleString()} IDs, ${pay2SpeakState.campaigns.length.toLocaleString()} Pay2Speak campaign${pay2SpeakState.campaigns.length === 1 ? "" : "s"}, ${tokenState.tokens.length.toLocaleString()} token${tokenState.tokens.length === 1 ? "" : "s"}.`,
+          text: `Growth metrics loaded. ${registryState.records.filter((record) => record.confirmed).length.toLocaleString()} IDs, ${pay2SpeakState.campaigns.length.toLocaleString()} Pay2Speak campaign${pay2SpeakState.campaigns.length === 1 ? "" : "s"}, ${akState.mints.length.toLocaleString()} AK mint${akState.mints.length === 1 ? "" : "s"}, ${tokenState.tokens.length.toLocaleString()} token${tokenState.tokens.length === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -11939,7 +13344,17 @@ export default function App() {
       setChainSent([]);
       setSelectedKey("");
       setActiveFolder(
-        pay2SpeakMode ? "pay2speak" : mainnetRegistryMode ? "ids" : "inbox",
+        pay2SpeakMode
+          ? "pay2speak"
+          : nftMode
+            ? "nft"
+            : tokenMode
+              ? "token"
+              : workTokenMode
+                ? "work"
+                : mainnetRegistryMode
+                  ? "ids"
+                  : "inbox",
       );
       setComposeOpen(false);
 
@@ -11952,6 +13367,21 @@ export default function App() {
           setStatus({
             tone: "good",
             text: `UniSat connected. Pay2Speak ready.`,
+          });
+          return;
+        }
+
+        if (nftMode) {
+          const state = await fetchAkState(
+          "livenet",
+          nftSelectedCollection,
+          nftSelectedOperatorAddress,
+          );
+          setAkMints(state.mints);
+          setNftCollections(state.collections ?? []);
+          setStatus({
+            tone: "good",
+          text: `UniSat connected. NFT mint ready.`,
           });
           return;
         }
@@ -13945,6 +15375,257 @@ export default function App() {
     }
   }
 
+  async function mintAk(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (network !== "livenet") {
+      setStatus({ tone: "bad", text: "NFT minting is mainnet only." });
+      return;
+    }
+
+    if (
+      nftSelectedCollection.id !== "ak21" ||
+      nftSelectedOperatorAddress !== nftSelectedCollection.defaultOperatorAddress
+    ) {
+      setStatus({
+        tone: "bad",
+        text: "Minting is enabled only for the canonical AK operator in V1.",
+      });
+      return;
+    }
+
+    if (!akImageBase64) {
+      setStatus({ tone: "bad", text: "Select an AK image before minting." });
+      return;
+    }
+
+    if (akMintBytes > MAX_DATA_CARRIER_BYTES) {
+      setStatus({
+        tone: "bad",
+        text: "NFT mint OP_RETURN data is over 100 KB.",
+      });
+      return;
+    }
+
+    setBusy(true);
+    setStatus({ tone: "idle", text: "Preparing NFT mint transaction..." });
+
+    try {
+      const currentNetwork = await getWalletNetwork(window.unisat);
+      if (currentNetwork !== "livenet") {
+        await switchWalletNetwork(window.unisat, "livenet");
+      }
+
+      const mintPsbt = await buildAkMintPsbt({
+        feeRate,
+        fromAddress: address,
+        genesisTag: akGenesisTag,
+        imageBase64: akImageBase64,
+        network: "livenet",
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: mintPsbt.dustFeeSats,
+          feeRate,
+          feeSats: mintPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      setStatus({
+        tone: "idle",
+        text: `Waiting for UniSat signature. Fee estimate: ${mintPsbt.feeSats.toLocaleString()} sats.`,
+      });
+      const broadcast = await signAndBroadcastPsbtDetailed({
+        broadcastStrategy: "slipstream-if-multiple-op-return",
+        inputCount: mintPsbt.inputCount,
+        network: "livenet",
+        psbtHex: mintPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+      const txid = broadcast.txid;
+      const mint: AkMintRecord = {
+        confirmed: false,
+        collectionId: "ak21",
+        collectionName: "AK",
+        createdAt: new Date().toISOString(),
+        dataBytes: akMintBytes,
+        genesisTag: akGenesisTag.trim() || null,
+        imageBase64: akImageBase64,
+        imageDataUrl: akImageDataUrl || buildAkImagePayload(akImageBase64),
+        network: "livenet",
+        operatorAddress: AK_OPERATOR_ADDRESS,
+        operatorSats: AK_OPERATOR_MIN_SATS,
+        ownerAddress: address,
+        tokenIdentifier: `${txid}:2`,
+        txid,
+        voutIndex: 2,
+      };
+
+      setAkMints((current) => [mint, ...current]);
+      setStatus({
+        tone: "good",
+        text: `NFT mint broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
+      });
+      await refreshAk(true);
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "NFT mint failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deployNftCollection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (network !== "livenet") {
+      setStatus({ tone: "bad", text: "NFT deployment is mainnet only." });
+      return;
+    }
+
+    if (!nftDeployName.trim() || !nftDeployGenesisTag.trim()) {
+      setStatus({
+        tone: "bad",
+        text: "Add a collection name and Genesis Tag before deploying.",
+      });
+      return;
+    }
+
+    if (!isAkImagePayload(buildAkImagePayload(nftDeployImagePayload))) {
+      setStatus({
+        tone: "bad",
+        text: "Add a valid collection image payload before deploying.",
+      });
+      return;
+    }
+
+    if (nftDeployBytes > MAX_DATA_CARRIER_BYTES) {
+      setStatus({
+        tone: "bad",
+        text: "NFT deploy OP_RETURN data is over 100 KB.",
+      });
+      return;
+    }
+
+    setBusy(true);
+    setStatus({ tone: "idle", text: "Preparing NFT deploy transaction..." });
+
+    try {
+      const currentNetwork = await getWalletNetwork(window.unisat);
+      if (currentNetwork !== "livenet") {
+        await switchWalletNetwork(window.unisat, "livenet");
+      }
+
+      const deployPsbt = await buildNftDeployPsbt({
+        feeRate,
+        fromAddress: address,
+        genesisTag: nftDeployGenesisTag,
+        imagePayload: nftDeployImagePayload,
+        maxSupply: nftDeployMaxSupply,
+        name: nftDeployName,
+        network: "livenet",
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: deployPsbt.dustFeeSats,
+          feeRate,
+          feeSats: deployPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      setStatus({
+        tone: "idle",
+        text: `Waiting for UniSat signature. Fee estimate: ${deployPsbt.feeSats.toLocaleString()} sats.`,
+      });
+      const broadcast = await signAndBroadcastPsbtDetailed({
+        broadcastStrategy: "slipstream-if-multiple-op-return",
+        inputCount: deployPsbt.inputCount,
+        network: "livenet",
+        psbtHex: deployPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+      const txid = broadcast.txid;
+      const imagePayload = buildAkImagePayload(nftDeployImagePayload);
+      const collection: NftCollectionRecord = {
+        confirmed: false,
+        createdAt: new Date().toISOString(),
+        dataBytes: nftDeployBytes,
+        defaultOperatorAddress: address,
+        deployFeeSats: NFT_DEPLOY_MIN_FEE_SATS,
+        description: nftDeployGenesisTag.trim(),
+        displayName: nftDeployName.trim(),
+        genesisTag: nftDeployGenesisTag.trim(),
+        id: nftDeployName.trim().toLowerCase(),
+        imageBase64: imagePayload.startsWith("data:image/")
+          ? imagePayload.slice(imagePayload.indexOf(",") + 1)
+          : imagePayload,
+        imageDataUrl: normalizeAkImagePayload(imagePayload),
+        maxSupply: Math.floor(nftDeployMaxSupply),
+        mintProtocolPayload: JSON.stringify({
+          p: "nft",
+          op: "mint",
+          name: nftDeployName.trim().toLowerCase(),
+        }),
+        name: nftDeployName.trim(),
+        network: "livenet",
+        operatorAddress: address,
+        operatorMinSats: AK_OPERATOR_MIN_SATS,
+        ownerAnchorSats: AK_OWNER_ANCHOR_SATS,
+        slug: nftDeployName.trim().toLowerCase(),
+        txid,
+      };
+      setNftCollections((current) =>
+        mergeNftCollections([collection, ...current], "livenet"),
+      );
+      setStatus({
+        tone: "good",
+        text: `NFT collection deployed via ${broadcast.source}: ${shortAddress(txid)}.`,
+      });
+      await refreshAk(true);
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "NFT deployment failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createToken(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -14482,6 +16163,57 @@ export default function App() {
     );
   }
 
+  if (nftMode) {
+    return (
+      <NftApp
+        address={address}
+        busy={busy}
+        canDeployCollection={canDeployNft}
+        canMint={canMintAk}
+        collectionPage={nftCollectionPage}
+        collectionUrl={nftCollectionUrl(
+        nftSelectedCollection,
+        nftSelectedOperatorAddress,
+        )}
+        collections={visibleNftCollections}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        deployBytes={nftDeployBytes}
+        deployCollection={deployNftCollection}
+        deployGenesisTag={nftDeployGenesisTag}
+        deployImagePayload={nftDeployImagePayload}
+        deployMaxSupply={nftDeployMaxSupply}
+        deployName={nftDeployName}
+        feeRate={feeRate}
+        genesisTag={akGenesisTag}
+        hasUnisat={hasUnisat}
+        imageDataUrl={akImageDataUrl}
+        incompleteCollectionRoute={nftIncompleteCollectionRoute}
+        mintAk={mintAk}
+        mintBytes={akMintBytes}
+        mints={akMints.filter((mint) => mint.network === "livenet")}
+        operatorAddress={nftOperatorAddress}
+        selectedCollection={nftSelectedCollection}
+        setFeeRate={setFeeRate}
+        setGenesisTag={setAkGenesisTag}
+        setImageBase64={setAkImageBase64}
+        setImageDataUrl={setAkImageDataUrl}
+        setDeployGenesisTag={setNftDeployGenesisTag}
+        setDeployImagePayload={setNftDeployImagePayload}
+        setDeployMaxSupply={setNftDeployMaxSupply}
+        setDeployName={setNftDeployName}
+        setOperatorAddress={setNftOperatorAddress}
+        setSelectedCollectionId={setNftSelectedCollectionId}
+        setTheme={setTheme}
+        setTraits={setAkTraits}
+        status={status}
+        theme={theme}
+        traits={akTraits}
+        onRefresh={() => void refreshAk()}
+      />
+    );
+  }
+
   if (tokenMode || workTokenMode) {
     return (
       <TokenApp
@@ -14608,6 +16340,7 @@ export default function App() {
   if (growthMode) {
     return (
       <GrowthApp
+        akMints={akMints.filter((mint) => mint.network === "livenet")}
         busy={busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
         pay2SpeakCampaigns={pay2SpeakCampaigns.filter(
@@ -14669,6 +16402,11 @@ export default function App() {
             onClick={() => {
               if (activeFolder === "pay2speak") {
                 void refreshPay2Speak();
+                return;
+              }
+
+              if (activeFolder === "nft") {
+                void refreshAk();
                 return;
               }
 
@@ -14985,6 +16723,17 @@ export default function App() {
               <strong>{pay2SpeakCampaigns.length}</strong>
             </button>
             <button
+              aria-current={activeFolder === "nft"}
+              onClick={() => openFolder("nft")}
+              type="button"
+            >
+              <span className="folder-label">
+                <Star size={17} />
+                <span>NFT</span>
+              </span>
+              <strong>{akMints.length}</strong>
+            </button>
+            <button
               aria-current={activeFolder === "token"}
               onClick={() => openFolder("token")}
               type="button"
@@ -15208,6 +16957,47 @@ export default function App() {
             split={pay2SpeakSplit}
             targetSats={pay2SpeakTargetSats}
             onRefresh={() => void refreshPay2Speak()}
+          />
+        ) : activeFolder === "nft" ? (
+          <NftWorkspace
+            address={address}
+            busy={busy}
+            canDeployCollection={canDeployNft}
+            canMint={canMintAk}
+            collectionPage={nftCollectionPage}
+            collectionUrl={nftCollectionUrl(
+              nftSelectedCollection,
+              nftOperatorAddress,
+            )}
+            collections={visibleNftCollections}
+            deployBytes={nftDeployBytes}
+            deployCollection={deployNftCollection}
+            deployGenesisTag={nftDeployGenesisTag}
+            deployImagePayload={nftDeployImagePayload}
+            deployMaxSupply={nftDeployMaxSupply}
+            deployName={nftDeployName}
+            feeRate={feeRate}
+            genesisTag={akGenesisTag}
+            imageDataUrl={akImageDataUrl}
+            incompleteCollectionRoute={nftIncompleteCollectionRoute}
+            mintAk={mintAk}
+            mintBytes={akMintBytes}
+            mints={akMints}
+            operatorAddress={nftOperatorAddress}
+            selectedCollection={nftSelectedCollection}
+            setFeeRate={setFeeRate}
+            setGenesisTag={setAkGenesisTag}
+            setImageBase64={setAkImageBase64}
+            setImageDataUrl={setAkImageDataUrl}
+            setDeployGenesisTag={setNftDeployGenesisTag}
+            setDeployImagePayload={setNftDeployImagePayload}
+            setDeployMaxSupply={setNftDeployMaxSupply}
+            setDeployName={setNftDeployName}
+            setOperatorAddress={setNftOperatorAddress}
+            setSelectedCollectionId={setNftSelectedCollectionId}
+            setTraits={setAkTraits}
+            traits={akTraits}
+            onRefresh={() => void refreshAk()}
           />
         ) : activeFolder === "token" || activeFolder === "work" ? (
           <TokenWorkspace
@@ -18306,6 +20096,959 @@ function TokenWorkspace({
   );
 }
 
+type NftWorkspaceProps = {
+  address: string;
+  busy: boolean;
+  canMint: boolean;
+  collectionPage: boolean;
+  collectionUrl: string;
+  collections: NftCollectionRecord[];
+  canDeployCollection: boolean;
+  deployBytes: number;
+  deployCollection: (event: FormEvent<HTMLFormElement>) => void;
+  deployGenesisTag: string;
+  deployImagePayload: string;
+  deployMaxSupply: number;
+  deployName: string;
+  feeRate: number;
+  genesisTag: string;
+  imageDataUrl: string;
+  incompleteCollectionRoute: boolean;
+  mintBytes: number;
+  mintAk: (event: FormEvent<HTMLFormElement>) => void;
+  mints: AkMintRecord[];
+  operatorAddress: string;
+  selectedCollection: NftCollectionDefinition;
+  setFeeRate: (value: number) => void;
+  setGenesisTag: (value: string) => void;
+  setImageBase64: (value: string) => void;
+  setImageDataUrl: (value: string) => void;
+  setOperatorAddress: (value: string) => void;
+  setDeployGenesisTag: (value: string) => void;
+  setDeployImagePayload: (value: string) => void;
+  setDeployMaxSupply: (value: number) => void;
+  setDeployName: (value: string) => void;
+  setSelectedCollectionId: (value: string) => void;
+  setTraits: (value: AkTraits | ((current: AkTraits) => AkTraits)) => void;
+  traits: AkTraits;
+  onRefresh: () => void;
+};
+
+function NftApp({
+  address,
+  busy,
+  connectWallet,
+  disconnectWallet,
+  hasUnisat,
+  setTheme,
+  status,
+  theme,
+  ...workspaceProps
+}: NftWorkspaceProps & {
+  connectWallet: () => void;
+  disconnectWallet: () => void;
+  hasUnisat: boolean;
+  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
+  status: { tone: StatusTone; text: string };
+  theme: ThemeMode;
+}) {
+  return (
+    <main className="id-launch-app">
+      <header className="id-launch-topbar">
+        <a
+          className="brand"
+          href={HOME_APP_URL}
+          aria-label="ProofOfWork.Me home"
+        >
+          <div className="brand-mark" aria-hidden="true">
+            NFT
+          </div>
+          <div>
+            <h1>NFT</h1>
+            <span>Collections on Bitcoin</span>
+          </div>
+        </a>
+
+        <DomainNav compact />
+
+        <div className="topbar-controls">
+          <button
+            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
+            className="icon-button"
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            type="button"
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          {address ? (
+            <button
+              className="secondary small"
+              disabled={busy}
+              onClick={disconnectWallet}
+              type="button"
+            >
+              <span className="button-content">
+                <LogOut size={15} />
+                <span>{shortAddress(address)}</span>
+              </span>
+            </button>
+          ) : hasUnisat ? (
+            <button
+              className="primary small"
+              disabled={busy}
+              onClick={connectWallet}
+              type="button"
+            >
+              <span className="button-content">
+                <Wallet size={15} />
+                <span>Connect</span>
+              </span>
+            </button>
+          ) : (
+            <a
+              className="primary small link-button"
+              href={UNISAT_DOWNLOAD_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="button-content">
+                <Wallet size={15} />
+                <span>UniSat</span>
+              </span>
+            </a>
+          )}
+        </div>
+      </header>
+
+      {status.tone !== "idle" ? (
+        <div className={`status ${status.tone}`}>
+          <span className="status-dot" aria-hidden="true" />
+          <span>{status.text}</span>
+        </div>
+      ) : null}
+
+      <NftWorkspace address={address} busy={busy} {...workspaceProps} />
+      <SocialFooter />
+    </main>
+  );
+}
+
+const NFT_PAGE_STYLE: CSSProperties = {
+  display: "grid",
+  gap: "clamp(22px, 3vw, 36px)",
+  margin: "0 auto",
+  maxWidth: 1180,
+  padding: "clamp(20px, 4vw, 56px)",
+  width: "100%",
+};
+
+const NFT_CENTER_HEADER_STYLE: CSSProperties = {
+  display: "grid",
+  gap: 12,
+  justifyItems: "center",
+  margin: "0 auto",
+  maxWidth: 760,
+  textAlign: "center",
+};
+
+const NFT_AUTO_GRID_STYLE: CSSProperties = {
+  display: "grid",
+  gap: "clamp(16px, 2vw, 24px)",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+};
+
+const NFT_CARD_STYLE: CSSProperties = {
+  borderWidth: 2,
+  display: "grid",
+  gap: 18,
+  padding: "clamp(18px, 2.5vw, 28px)",
+};
+
+const NFT_PIXEL_STAGE_STYLE: CSSProperties = {
+  alignItems: "center",
+  background: "var(--surface-soft)",
+  border: "2px solid var(--border)",
+  borderRadius: 8,
+  display: "flex",
+  imageRendering: "pixelated",
+  justifyContent: "center",
+  overflow: "hidden",
+};
+
+function NftWorkspace({
+  address,
+  busy,
+  canDeployCollection,
+  canMint,
+  collectionPage,
+  collectionUrl,
+  collections,
+  deployBytes,
+  deployCollection,
+  deployGenesisTag,
+  deployImagePayload,
+  deployMaxSupply,
+  deployName,
+  feeRate,
+  genesisTag,
+  imageDataUrl,
+  incompleteCollectionRoute,
+  mintBytes,
+  mintAk,
+  mints,
+  operatorAddress,
+  selectedCollection,
+  setFeeRate,
+  setGenesisTag,
+  setImageBase64,
+  setImageDataUrl,
+  setOperatorAddress,
+  setDeployGenesisTag,
+  setDeployImagePayload,
+  setDeployMaxSupply,
+  setDeployName,
+  setSelectedCollectionId,
+  setTraits,
+  traits,
+  onRefresh,
+}: NftWorkspaceProps) {
+  const confirmedMints = mints.filter((mint) => mint.confirmed).length;
+  const mintProgress = selectedCollection.maxSupply
+    ? Math.min(100, (confirmedMints / selectedCollection.maxSupply) * 100)
+    : 0;
+  const canMintSelectedCollection =
+    selectedCollection.id === "ak21" &&
+    operatorAddress === selectedCollection.defaultOperatorAddress;
+
+  if (!collectionPage) {
+    return (
+      <section style={NFT_PAGE_STYLE}>
+        <header style={NFT_CENTER_HEADER_STYLE}>
+          <p className="eyebrow">NFT</p>
+          <h2 style={{ margin: 0 }}>Collections</h2>
+          <p style={{ margin: 0 }}>
+            Browse Bitcoin-native NFT collections indexed by ProofOfWork.Me.
+            Each collection is defined by a name, an operator address, and
+            deterministic decoding rules.
+          </p>
+        </header>
+
+        <section className="id-launch-card" style={NFT_CARD_STYLE}>
+          <div
+            style={{
+              alignItems: "center",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 16,
+              justifyContent: "space-between",
+            }}
+          >
+            <div>
+              <p className="eyebrow">Available</p>
+              <h3 style={{ marginBottom: 0 }}>
+                {collections.length.toLocaleString()} collection
+              </h3>
+            </div>
+            <strong>{confirmedMints.toLocaleString()} indexed mints</strong>
+          </div>
+
+          {incompleteCollectionRoute ? (
+            <a className="primary small link-button" href={nftCollectionUrl(selectedCollection)}>
+              <span className="button-content">
+                <ArrowUpRight size={14} />
+                <span>Open canonical collection page</span>
+              </span>
+            </a>
+          ) : null}
+        </section>
+
+        <form
+          className="id-launch-card id-form"
+          onSubmit={deployCollection}
+          style={NFT_CARD_STYLE}
+        >
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Deploy</p>
+              <h3>Create NFT collection</h3>
+            </div>
+            <strong>{NFT_DEPLOY_MIN_FEE_SATS.toLocaleString()} sats</strong>
+          </div>
+
+          <label>
+            Collection name
+            <input
+              maxLength={32}
+              onChange={(event) => setDeployName(event.target.value)}
+              placeholder="AK21"
+              value={deployName}
+            />
+          </label>
+
+          <label>
+            Max supply
+            <input
+              min={1}
+              onChange={(event) => setDeployMaxSupply(Number(event.target.value))}
+              step={1}
+              type="number"
+              value={deployMaxSupply}
+            />
+          </label>
+
+          <label>
+            Genesis Tag
+            <input
+              maxLength={120}
+              onChange={(event) => setDeployGenesisTag(event.target.value)}
+              placeholder="I made it to protect Bitcoin"
+              value={deployGenesisTag}
+            />
+          </label>
+
+          <label>
+            Collection image payload
+            <textarea
+              onChange={(event) => setDeployImagePayload(event.target.value)}
+              placeholder="data:image/png;base64,..."
+              rows={4}
+              value={deployImagePayload}
+            />
+          </label>
+
+          <div className="id-record-list">
+            <div className="id-record">
+              <span>Deploy fee</span>
+              <strong>{NFT_DEPLOY_MIN_FEE_SATS.toLocaleString()} sats</strong>
+            </div>
+            <div className="id-record">
+              <span>Fee address</span>
+              <strong>{shortAddress(NFT_DEPLOY_FEE_ADDRESS)}</strong>
+            </div>
+            <div className="id-record">
+              <span>OP_RETURN data</span>
+              <strong>{deployBytes.toLocaleString()} bytes</strong>
+            </div>
+          </div>
+
+          <button className="primary" disabled={!canDeployCollection} type="submit">
+            <span className="button-content">
+              <Send size={16} />
+              <span>{address ? "Deploy collection" : "Connect wallet"}</span>
+            </span>
+          </button>
+        </form>
+
+        <div style={NFT_AUTO_GRID_STYLE}>
+          {collections.map((collection) => {
+            const collectionMints = mints.filter(
+              (mint) => mint.collectionId === collection.id,
+            );
+            const confirmed = collectionMints.filter(
+              (mint) => mint.confirmed,
+            ).length;
+            const previewMint = collectionMints.find((mint) => mint.imageDataUrl);
+            const previewImage = collection.imageDataUrl || previewMint?.imageDataUrl;
+
+            return (
+              <a
+                className="id-launch-card"
+                href={nftCollectionUrl(collection)}
+                key={collection.id}
+                style={{
+                  ...NFT_CARD_STYLE,
+                  color: "inherit",
+                  minHeight: "100%",
+                  textDecoration: "none",
+                }}
+              >
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">Collection</p>
+                    <h3>{collection.displayName}</h3>
+                  </div>
+                  <ArrowUpRight size={18} />
+                </div>
+
+                <div
+                  aria-hidden="true"
+                  style={{
+                    ...NFT_PIXEL_STAGE_STYLE,
+                    aspectRatio: "3 / 1",
+                    marginBottom: 16,
+                    width: "100%",
+                  }}
+                >
+                  {previewImage ? (
+                    <img
+                      alt=""
+                      src={previewImage}
+                      style={{
+                        height: "100%",
+                        imageRendering: "pixelated",
+                        objectFit: "contain",
+                        width: "100%",
+                      }}
+                    />
+                  ) : (
+                    <span style={{ color: "var(--muted)" }}>
+                      {collection.id}
+                    </span>
+                  )}
+                </div>
+
+                <p>{collection.description}</p>
+
+                <div className="id-record-list">
+                  <div className="id-record">
+                    <span>Name</span>
+                    <strong>{collection.name}</strong>
+                  </div>
+                  <div className="id-record">
+                    <span>Operator</span>
+                    <strong>{shortAddress(collection.defaultOperatorAddress)}</strong>
+                  </div>
+                  <div className="id-record">
+                    <span>Indexed</span>
+                    <strong>{confirmed.toLocaleString()} confirmed</strong>
+                  </div>
+                  {collection.txid ? (
+                    <div className="id-record">
+                      <span>Deploy tx</span>
+                      <strong>{shortAddress(collection.txid)}</strong>
+                    </div>
+                  ) : null}
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section style={NFT_PAGE_STYLE}>
+      <header style={NFT_CENTER_HEADER_STYLE}>
+        <a className="secondary small link-button" href="/?nft=1">
+          <span className="button-content">
+            <ArrowLeft size={14} />
+            <span>Collections</span>
+          </span>
+        </a>
+        <p className="eyebrow">NFT collection</p>
+        <h2 style={{ margin: 0 }}>
+          ASSEMBLE YOUR {selectedCollection.displayName}-21
+        </h2>
+        <p style={{ margin: 0 }}>
+          Generate a visual AK, forge a Genesis Tag, then inspect every valid
+          mint decoded from the collection operator.
+        </p>
+      </header>
+
+      <section className="id-launch-card" style={NFT_CARD_STYLE}>
+        <div
+          style={{
+            alignItems: "center",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            justifyContent: "space-between",
+          }}
+        >
+          <strong>
+            NFTs Minted: {confirmedMints.toLocaleString()} /{" "}
+              {selectedCollection.maxSupply.toLocaleString()}
+          </strong>
+          <span style={{ color: "var(--muted)", fontFamily: "var(--mono)" }}>
+            Operator {shortAddress(operatorAddress)}
+          </span>
+        </div>
+        <div
+          aria-label="Mint progress"
+          style={{
+            background: "var(--surface-soft)",
+            border: "2px solid var(--border)",
+            borderRadius: 999,
+            height: 14,
+            overflow: "hidden",
+            width: "100%",
+          }}
+        >
+          <div
+            style={{
+              background: "var(--accent)",
+              height: "100%",
+              transition: "width 250ms ease",
+              width: `${mintProgress}%`,
+            }}
+          />
+        </div>
+      </section>
+
+      <div style={NFT_AUTO_GRID_STYLE}>
+        <NftAkGenerator
+          busy={busy}
+          imageDataUrl={imageDataUrl}
+          setImageBase64={setImageBase64}
+          setImageDataUrl={setImageDataUrl}
+          setTraits={setTraits}
+          traits={traits}
+        />
+
+        <form
+          className="id-launch-card id-form"
+          onSubmit={mintAk}
+          style={NFT_CARD_STYLE}
+        >
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Mint</p>
+              <h3>{selectedCollection.displayName} mint transaction</h3>
+            </div>
+            <button
+              className="secondary small"
+              disabled={busy}
+              onClick={onRefresh}
+              type="button"
+            >
+              <span className="button-content">
+                <RefreshCw size={15} />
+                <span>Refresh</span>
+              </span>
+            </button>
+          </div>
+
+          <div
+            aria-label="Selected AK"
+            style={{
+              alignItems: "center",
+              background: "var(--surface-soft)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              display: "flex",
+              height: 78,
+              justifyContent: "center",
+              padding: 8,
+            }}
+          >
+            {imageDataUrl ? (
+              <img
+                alt="Selected AK"
+                src={imageDataUrl}
+                style={{
+                  height: 60,
+                  imageRendering: "pixelated",
+                  objectFit: "contain",
+                  width: 180,
+                }}
+              />
+            ) : (
+              <span style={{ color: "var(--muted)" }}>No AK selected</span>
+            )}
+          </div>
+
+          <label>
+            Genesis Tag
+            <input
+              maxLength={80}
+              onChange={(event) => setGenesisTag(event.target.value)}
+              placeholder="Optional"
+              value={genesisTag}
+            />
+          </label>
+
+          <label>
+            Fee rate
+            <input
+              min={0.1}
+              onChange={(event) => setFeeRate(Number(event.target.value))}
+              step={0.1}
+              type="number"
+              value={feeRate}
+            />
+          </label>
+
+          <div className="id-record-list">
+            <div className="id-record">
+              <span>Owner anchor</span>
+              <strong>
+                {selectedCollection.ownerAnchorSats.toLocaleString()} sats
+              </strong>
+            </div>
+            <div className="id-record">
+              <span>Operator payment</span>
+              <strong>
+                {selectedCollection.operatorMinSats.toLocaleString()} sats
+              </strong>
+            </div>
+            <div className="id-record">
+              <span>OP_RETURN data</span>
+              <strong>{mintBytes.toLocaleString()} bytes</strong>
+            </div>
+          </div>
+
+          <button className="primary" disabled={!canMint} type="submit">
+            <span className="button-content">
+              <Send size={16} />
+              <span>
+                {address
+                  ? canMintSelectedCollection
+                    ? `Mint ${selectedCollection.displayName}`
+                    : "Use canonical AK operator"
+                  : "Connect wallet"}
+              </span>
+            </span>
+          </button>
+        </form>
+      </div>
+
+      <NftCollectionGallery
+        collection={selectedCollection}
+        confirmedCount={confirmedMints}
+        mints={mints}
+        operatorAddress={operatorAddress}
+      />
+    </section>
+  );
+}
+
+function NftAkGenerator({
+  busy,
+  imageDataUrl,
+  setImageBase64,
+  setImageDataUrl,
+  setTraits,
+  traits,
+}: {
+  busy: boolean;
+  imageDataUrl: string;
+  setImageBase64: (value: string) => void;
+  setImageDataUrl: (value: string) => void;
+  setTraits: (value: AkTraits | ((current: AkTraits) => AkTraits)) => void;
+  traits: AkTraits;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewLayers = AK_LAYERS.map((layer) => akLayerPath(layer, traits));
+
+  const composeCurrent = async () => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) {
+      return;
+    }
+
+    canvas.width = 60;
+    canvas.height = 20;
+    context.imageSmoothingEnabled = false;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
+    for (const source of previewLayers) {
+      await new Promise<void>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => {
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          resolve();
+        };
+        image.onerror = () => reject(new Error(`AK layer failed: ${source}`));
+        image.src = source;
+      });
+    }
+
+    const dataUrl = canvas.toDataURL("image/png");
+    setImageDataUrl(dataUrl);
+    setImageBase64(dataUrl.split(",")[1] ?? "");
+  };
+
+  return (
+    <div className="id-launch-card" style={NFT_CARD_STYLE}>
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Generator</p>
+          <h3>Visual AK</h3>
+        </div>
+      </div>
+
+      <div
+        aria-label="AK preview"
+        style={{
+          aspectRatio: "3 / 1",
+          ...NFT_PIXEL_STAGE_STYLE,
+          display: "grid",
+          minHeight: "clamp(150px, 18vw, 220px)",
+          marginBottom: 16,
+          placeItems: "center",
+          position: "relative",
+          width: "100%",
+        }}
+      >
+        {imageDataUrl ? (
+          <img
+            alt="Selected AK"
+            src={imageDataUrl}
+            style={{
+              height: "100%",
+              imageRendering: "pixelated",
+              objectFit: "contain",
+              width: "100%",
+            }}
+          />
+        ) : (
+          previewLayers.map((source, index) => (
+            <img
+              alt=""
+              key={source}
+              src={source}
+              style={{
+                gridArea: "1 / 1",
+                height: "100%",
+                imageRendering: "pixelated",
+                objectFit: "contain",
+                width: "100%",
+                zIndex: index,
+              }}
+            />
+          ))
+        )}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: 12,
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+        }}
+      >
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => {
+            setTraits(randomAkTraits());
+            setImageDataUrl("");
+            setImageBase64("");
+          }}
+          style={{ flex: 1 }}
+          type="button"
+        >
+          <span className="button-content">
+            <RefreshCw size={15} />
+            <span>Generate</span>
+          </span>
+        </button>
+
+        <button
+          className="primary"
+          disabled={busy}
+          onClick={() => void composeCurrent()}
+          style={{ flex: 1 }}
+          type="button"
+        >
+          <span className="button-content">
+            <CheckCircle2 size={16} />
+            <span>Select</span>
+          </span>
+        </button>
+      </div>
+
+      <canvas ref={canvasRef} style={{ display: "none" }} />
+    </div>
+  );
+}
+
+function NftCollectionGallery({
+  collection,
+  confirmedCount,
+  mints,
+  operatorAddress,
+}: {
+  collection: NftCollectionDefinition;
+  confirmedCount: number;
+  mints: AkMintRecord[];
+  operatorAddress: string;
+}) {
+  const [selectedTokenIdentifier, setSelectedTokenIdentifier] = useState("");
+  const selectedMint =
+    mints.find((mint) => mint.tokenIdentifier === selectedTokenIdentifier) ??
+    mints[0] ??
+    null;
+
+  return (
+    <section className="id-launch-card" style={NFT_CARD_STYLE}>
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Explorer</p>
+          <h3>{collection.displayName} indexer</h3>
+        </div>
+        <strong>{confirmedCount.toLocaleString()} confirmed</strong>
+      </div>
+      <div className="id-record-list" style={{ marginBottom: 16 }}>
+        <div className="id-record">
+          <span>Operator</span>
+          <strong>{shortAddress(operatorAddress)}</strong>
+        </div>
+        <div className="id-record">
+          <span>Collection</span>
+          <strong>{collection.id}</strong>
+        </div>
+      </div>
+
+      {mints.length === 0 ? (
+        <div className="empty-state">
+          <strong>No valid {collection.displayName} mints indexed yet.</strong>
+          <span>Change operator address or refresh after a mint confirms.</span>
+        </div>
+      ) : (
+        <>
+          {selectedMint ? (
+            <div
+              style={{
+                border: "2px solid var(--border)",
+                borderRadius: 8,
+                display: "grid",
+                gap: "clamp(16px, 2.5vw, 28px)",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+                marginBottom: 18,
+                padding: "clamp(16px, 2.5vw, 24px)",
+              }}
+            >
+              <div
+                style={{
+                  ...NFT_PIXEL_STAGE_STYLE,
+                  borderRadius: 6,
+                  minHeight: "clamp(140px, 18vw, 220px)",
+                  padding: "clamp(14px, 2vw, 22px)",
+                }}
+              >
+                <img
+                  alt={`${collection.displayName} selected NFT`}
+                  src={selectedMint.imageDataUrl}
+                  style={{
+                    aspectRatio: "3 / 1",
+                    imageRendering: "pixelated",
+                    objectFit: "contain",
+                    width: "100%",
+                  }}
+                />
+              </div>
+
+              <div
+                style={{
+                  alignContent: "center",
+                  display: "grid",
+                  gap: 12,
+                  minWidth: 0,
+                }}
+              >
+                <div>
+                  <p className="eyebrow">Selected NFT</p>
+                  <h3>
+                    {collection.displayName} #
+                    {String(
+                      Math.max(
+                        1,
+                        mints.findIndex(
+                          (mint) =>
+                            mint.tokenIdentifier ===
+                            selectedMint.tokenIdentifier,
+                        ) + 1,
+                      ),
+                    ).padStart(4, "0")}
+                  </h3>
+                </div>
+                <div className="id-record-list">
+                  <div className="id-record">
+                    <span>Genesis Tag</span>
+                    <strong>{selectedMint.genesisTag || "No Genesis Tag"}</strong>
+                  </div>
+                  <div className="id-record">
+                    <span>Owner</span>
+                    <strong>{shortAddress(selectedMint.ownerAddress)}</strong>
+                  </div>
+                  <div className="id-record">
+                    <span>Token</span>
+                    <strong>{selectedMint.tokenIdentifier}</strong>
+                  </div>
+                </div>
+                <a
+                  className="secondary small link-button"
+                  href={mempoolTxUrl(selectedMint.txid, selectedMint.network)}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <span className="button-content">
+                    <span>Open tx</span>
+                    <ArrowUpRight size={14} />
+                  </span>
+                </a>
+              </div>
+            </div>
+          ) : null}
+
+          <div
+            style={{
+              display: "grid",
+              gap: 16,
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+            }}
+          >
+            {mints.map((mint, index) => (
+              <button
+                key={mint.tokenIdentifier}
+                onClick={() => setSelectedTokenIdentifier(mint.tokenIdentifier)}
+                style={{
+                  background: "var(--surface)",
+                  border:
+                    selectedMint?.tokenIdentifier === mint.tokenIdentifier
+                      ? "2px solid var(--accent)"
+                      : "2px solid var(--border)",
+                  borderRadius: 8,
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  display: "grid",
+                  gap: 12,
+                  padding: 14,
+                  textAlign: "left",
+                  width: "100%",
+                }}
+                type="button"
+              >
+                <div
+                  style={{
+                    ...NFT_PIXEL_STAGE_STYLE,
+                    borderRadius: 6,
+                    padding: 16,
+                  }}
+                >
+                <img
+                  alt={`${collection.displayName} ${shortAddress(mint.txid)}`}
+                  src={mint.imageDataUrl}
+                  style={{
+                    aspectRatio: "3 / 1",
+                    imageRendering: "pixelated",
+                    objectFit: "contain",
+                    width: "100%",
+                  }}
+                />
+                </div>
+                <strong>
+                  {collection.displayName} #{String(index + 1).padStart(4, "0")}
+                </strong>
+                <span>{mint.confirmed ? "Confirmed" : "Pending"}</span>
+                <span>{mint.genesisTag || shortAddress(mint.ownerAddress)}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 type Pay2SpeakWorkspaceProps = {
   address: string;
   busy: boolean;
@@ -19467,6 +22210,7 @@ function growthActualNetworkValue(
   sales: PowIdMarketplaceSale[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  akMints: AkMintRecord[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
   cutoffMs = Date.now(),
@@ -19487,6 +22231,9 @@ function growthActualNetworkValue(
   const confirmedPay2SpeakFunding = pay2SpeakFunding.filter(
     (funding) =>
       funding.confirmed && Date.parse(funding.createdAt) <= cutoffMs,
+  );
+  const confirmedAkMints = akMints.filter(
+    (mint) => mint.confirmed && Date.parse(mint.createdAt) <= cutoffMs,
   );
   const confirmedTokens = tokenDefinitions.filter(
     (token) => token.confirmed && Date.parse(token.createdAt) <= cutoffMs,
@@ -19521,6 +22268,10 @@ function growthActualNetworkValue(
       (total, funding) => total + funding.grossSats,
       0,
     );
+  const akFlowSats = confirmedAkMints.reduce(
+    (total, mint) => total + mint.operatorSats,
+    0,
+  );
   const tokenCreationFlowSats = confirmedTokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -19536,6 +22287,7 @@ function growthActualNetworkValue(
     marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const pay2SpeakSats = pay2SpeakFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const akSats = akFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const tokenSats =
     (tokenCreationFlowSats + tokenMintFlowSats) *
     GROWTH_MODEL_INPUTS.valueMultiple;
@@ -19546,6 +22298,7 @@ function growthActualNetworkValue(
     marketplaceSats +
     browserSats +
     pay2SpeakSats +
+    akSats +
     tokenSats;
   const years = Math.max(
     0,
@@ -19554,6 +22307,8 @@ function growthActualNetworkValue(
   );
 
   return {
+    akFlowSats,
+    akSats,
     browserFlowSats,
     browserSats,
     driveFlowSats,
@@ -19579,6 +22334,7 @@ function growthActualValuePoints(
   sales: PowIdMarketplaceSale[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  akMints: AkMintRecord[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
 ): GrowthValuePoint[] {
@@ -19623,6 +22379,12 @@ function growthActualValuePoints(
     }
   }
 
+  for (const mint of akMints) {
+    if (mint.confirmed) {
+      addEventTime(mint.createdAt, `AK ${shortAddress(mint.txid)}`);
+    }
+  }
+
   for (const token of tokenDefinitions) {
     if (token.confirmed) {
       addEventTime(token.createdAt, `${token.ticker} token created`);
@@ -19642,6 +22404,7 @@ function growthActualValuePoints(
     sales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    akMints,
     tokenDefinitions,
     tokenMints,
     GROWTH_MODEL_START_MS,
@@ -19662,6 +22425,7 @@ function growthActualValuePoints(
       sales,
       pay2SpeakCampaigns,
       pay2SpeakFunding,
+      akMints,
       tokenDefinitions,
       tokenMints,
       createdMs,
@@ -19687,6 +22451,7 @@ function growthActualValuePoints(
     sales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    akMints,
     tokenDefinitions,
     tokenMints,
   );
@@ -19774,6 +22539,10 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     return "Pay2Speak";
   }
 
+  if (kind === "ak-mint") {
+    return "AK";
+  }
+
   if (kind === "token-create" || kind === "token-mint") {
     return "Token";
   }
@@ -19786,6 +22555,7 @@ function confirmedComputerActionCount(
   idActivity: PowActivityItem[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  akMints: AkMintRecord[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
 ) {
@@ -19802,6 +22572,7 @@ function confirmedComputerActionCount(
     add(campaign.confirmed, campaign.txid),
   );
   pay2SpeakFunding.forEach((funding) => add(funding.confirmed, funding.txid));
+  akMints.forEach((mint) => add(mint.confirmed, mint.txid));
   tokenDefinitions.forEach((token) => add(token.confirmed, token.txid));
   tokenMints.forEach((mint) => add(mint.confirmed, mint.txid));
 
@@ -19814,6 +22585,7 @@ function growthRealEventItems(
   sales: PowIdMarketplaceSale[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  akMints: AkMintRecord[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
 ): GrowthRealEvent[] {
@@ -19908,6 +22680,25 @@ function growthRealEventItems(
       network: funding.network,
       title: funding.question ? "Funded question" : "Campaign funding",
       txid: funding.txid,
+    });
+  }
+
+  for (const mint of akMints) {
+    if (!mint.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${mint.operatorSats.toLocaleString()} operator sats`,
+      createdAt: mint.createdAt,
+      detail: mint.genesisTag
+        ? `Genesis Tag: ${mint.genesisTag}`
+        : `Owner ${shortAddress(mint.ownerAddress)}.`,
+      key: mint.txid,
+      kind: "AK",
+      network: mint.network,
+      title: "AK minted",
+      txid: mint.txid,
     });
   }
 
@@ -20151,6 +22942,7 @@ function GrowthProductCard({
 }
 
 function GrowthApp({
+  akMints,
   busy,
   idActivity,
   pay2SpeakCampaigns,
@@ -20165,6 +22957,7 @@ function GrowthApp({
   tokenMints,
   onRefresh,
 }: {
+  akMints: AkMintRecord[];
   busy: boolean;
   idActivity: PowActivityItem[];
   pay2SpeakCampaigns: Pay2SpeakCampaign[];
@@ -20220,6 +23013,7 @@ function GrowthApp({
       ) : null}
 
       <GrowthWorkspace
+        akMints={akMints}
         busy={busy}
         idActivity={idActivity}
         pay2SpeakCampaigns={pay2SpeakCampaigns}
@@ -20238,6 +23032,7 @@ function GrowthApp({
 }
 
 function GrowthWorkspace({
+  akMints,
   busy,
   idActivity,
   pay2SpeakCampaigns,
@@ -20249,6 +23044,7 @@ function GrowthWorkspace({
   tokenMints,
   onRefresh,
 }: {
+  akMints: AkMintRecord[];
   busy: boolean;
   idActivity: PowActivityItem[];
   pay2SpeakCampaigns: Pay2SpeakCampaign[];
@@ -20268,6 +23064,7 @@ function GrowthWorkspace({
     registrySales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    akMints,
     tokenDefinitions,
     tokenMints,
   );
@@ -20277,6 +23074,7 @@ function GrowthWorkspace({
     registrySales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    akMints,
     tokenDefinitions,
     tokenMints,
   );
@@ -20286,6 +23084,7 @@ function GrowthWorkspace({
     registrySales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    akMints,
     tokenDefinitions,
     tokenMints,
   );
@@ -20304,6 +23103,7 @@ function GrowthWorkspace({
     idActivity,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    akMints,
     tokenDefinitions,
     tokenMints,
   );
@@ -20320,6 +23120,7 @@ function GrowthWorkspace({
   const confirmedPay2SpeakFunding = pay2SpeakFunding.filter(
     (funding) => funding.confirmed,
   ).length;
+  const confirmedAkMints = akMints.filter((mint) => mint.confirmed).length;
   const confirmedTokenDefinitions = tokenDefinitions.filter(
     (token) => token.confirmed,
   ).length;
@@ -20336,7 +23137,7 @@ function GrowthWorkspace({
           <p>
             The blue line is modeled Bitcoin Computer network value. The green
             line is real confirmed mainnet value from IDs, Mail, Drive,
-            Marketplace, Browser, Pay2Speak, and Tokens.
+            Marketplace, Browser, Pay2Speak, AK, and Tokens.
           </p>
         </div>
         <div className="growth-model-card">
@@ -20688,6 +23489,22 @@ function GrowthWorkspace({
             )}
             name="Pay2Speak"
             note="Creator funding, paid questions, and campaign receipts become measurable work value."
+          />
+          <GrowthProductCard
+            actual={growthSats(actualValue.akSats)}
+            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.akSats, elapsedYears))} · ${actualValue.akFlowSats.toLocaleString()} operator sats · ${confirmedAkMints.toLocaleString()} mints`}
+            icon={<Star size={24} />}
+            modelFiveYear={growthSats(fiveYear.akSats)}
+            modelFiveYearLabel={growthUsd(
+              growthSatsToUsdAtYears(fiveYear.akSats, fiveYear.years),
+            )}
+            modelLabel="network value"
+            modelOneYear={growthSats(oneYear.akSats)}
+            modelOneYearLabel={growthUsd(
+              growthSatsToUsdAtYears(oneYear.akSats, oneYear.years),
+            )}
+            name="AK"
+            note="Wallet-signed NFT mints become chain-readable visual work."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}

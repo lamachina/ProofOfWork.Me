@@ -36,7 +36,10 @@ const MAX_ACTIVITY_ADDRESS_GRAPH_PASSES = Number(
   process.env.MAX_ACTIVITY_ADDRESS_GRAPH_PASSES ?? 1,
 );
 const ACTIVITY_CACHE_TTL_MS = Number(
-  process.env.ACTIVITY_CACHE_TTL_MS ?? 15_000,
+  process.env.ACTIVITY_CACHE_TTL_MS ?? 60_000,
+);
+const ACTIVITY_CACHE_STALE_MS = Number(
+  process.env.ACTIVITY_CACHE_STALE_MS ?? 3_600_000,
 );
 const RESPONSE_CACHE_TTL_MS = Number(
   process.env.RESPONSE_CACHE_TTL_MS ?? 15_000,
@@ -141,7 +144,12 @@ function errorResponse(response, statusCode, message, details) {
   });
 }
 
-async function cachedPayload(cacheKey, producer, ttlMs = RESPONSE_CACHE_TTL_MS) {
+async function cachedPayload(
+  cacheKey,
+  producer,
+  ttlMs = RESPONSE_CACHE_TTL_MS,
+  staleMs = RESPONSE_CACHE_STALE_MS,
+) {
   const now = Date.now();
   const cached = RESPONSE_CACHE.get(cacheKey);
   if (cached?.payload && now < cached.expiresAt) {
@@ -155,7 +163,7 @@ async function cachedPayload(cacheKey, producer, ttlMs = RESPONSE_CACHE_TTL_MS) 
           RESPONSE_CACHE.set(cacheKey, {
             expiresAt: Date.now() + ttlMs,
             payload,
-            staleUntil: Date.now() + RESPONSE_CACHE_STALE_MS,
+            staleUntil: Date.now() + staleMs,
           });
           return payload;
         })
@@ -181,7 +189,7 @@ async function cachedPayload(cacheKey, producer, ttlMs = RESPONSE_CACHE_TTL_MS) 
       RESPONSE_CACHE.set(cacheKey, {
         expiresAt: Date.now() + ttlMs,
         payload,
-        staleUntil: Date.now() + RESPONSE_CACHE_STALE_MS,
+        staleUntil: Date.now() + staleMs,
       });
       return payload;
     })
@@ -193,7 +201,7 @@ async function cachedPayload(cacheKey, producer, ttlMs = RESPONSE_CACHE_TTL_MS) 
     expiresAt: now + ttlMs,
     payload: cached?.payload,
     promise,
-    staleUntil: now + RESPONSE_CACHE_STALE_MS,
+    staleUntil: now + staleMs,
   });
   return promise;
 }
@@ -204,6 +212,7 @@ async function cachedJsonResponse(
   producer,
   cacheControl = READ_CACHE_CONTROL,
   ttlMs = RESPONSE_CACHE_TTL_MS,
+  staleMs = RESPONSE_CACHE_STALE_MS,
 ) {
   const jsonKey = `json:${cacheKey}`;
   const now = Date.now();
@@ -221,7 +230,7 @@ async function cachedJsonResponse(
           RESPONSE_CACHE.set(jsonKey, {
             body,
             expiresAt: Date.now() + ttlMs,
-            staleUntil: Date.now() + RESPONSE_CACHE_STALE_MS,
+            staleUntil: Date.now() + staleMs,
           });
           return body;
         })
@@ -251,7 +260,7 @@ async function cachedJsonResponse(
       RESPONSE_CACHE.set(jsonKey, {
         body,
         expiresAt: Date.now() + ttlMs,
-        staleUntil: Date.now() + RESPONSE_CACHE_STALE_MS,
+        staleUntil: Date.now() + staleMs,
       });
       return body;
     })
@@ -263,7 +272,7 @@ async function cachedJsonResponse(
     body: cached?.body,
     expiresAt: now + ttlMs,
     promise,
-    staleUntil: now + RESPONSE_CACHE_STALE_MS,
+    staleUntil: now + staleMs,
   });
   const body = await promise;
   writeJsonBody(response, 200, body, cacheControl, "MISS");
@@ -4536,6 +4545,8 @@ async function handleRequest(request, response) {
         `activity:${network}`,
         () => globalActivityPayload(network),
         READ_CACHE_CONTROL,
+        ACTIVITY_CACHE_TTL_MS,
+        ACTIVITY_CACHE_STALE_MS,
       );
       return;
     }

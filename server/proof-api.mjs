@@ -110,7 +110,16 @@ function jsonResponse(
   payload,
   cacheControl = "no-store",
 ) {
-  const body = JSON.stringify(payload);
+  writeJsonBody(response, statusCode, JSON.stringify(payload), cacheControl);
+}
+
+function writeJsonBody(
+  response,
+  statusCode,
+  body,
+  cacheControl = "no-store",
+  cacheStatus = "",
+) {
   response.writeHead(statusCode, {
     "Access-Control-Allow-Headers":
       "Accept, Authorization, Cache-Control, Content-Type",
@@ -119,6 +128,7 @@ function jsonResponse(
     "Cache-Control": cacheControl,
     "Content-Length": Buffer.byteLength(body),
     "Content-Type": "application/json; charset=utf-8",
+    ...(cacheStatus ? { "X-PoW-Cache": cacheStatus } : {}),
   });
   response.end(body);
 }
@@ -186,6 +196,77 @@ async function cachedPayload(cacheKey, producer, ttlMs = RESPONSE_CACHE_TTL_MS) 
     staleUntil: now + RESPONSE_CACHE_STALE_MS,
   });
   return promise;
+}
+
+async function cachedJsonResponse(
+  response,
+  cacheKey,
+  producer,
+  cacheControl = READ_CACHE_CONTROL,
+  ttlMs = RESPONSE_CACHE_TTL_MS,
+) {
+  const jsonKey = `json:${cacheKey}`;
+  const now = Date.now();
+  const cached = RESPONSE_CACHE.get(jsonKey);
+  if (cached?.body && now < cached.expiresAt) {
+    writeJsonBody(response, 200, cached.body, cacheControl, "HIT");
+    return;
+  }
+
+  if (cached?.body && now < cached.staleUntil) {
+    if (!cached.promise) {
+      cached.promise = producer()
+        .then((payload) => {
+          const body = JSON.stringify(payload);
+          RESPONSE_CACHE.set(jsonKey, {
+            body,
+            expiresAt: Date.now() + ttlMs,
+            staleUntil: Date.now() + RESPONSE_CACHE_STALE_MS,
+          });
+          return body;
+        })
+        .catch((error) => {
+          RESPONSE_CACHE.set(jsonKey, {
+            ...cached,
+            promise: null,
+          });
+          console.error(`JSON cache refresh failed for ${cacheKey}:`, error);
+          return cached.body;
+        });
+      RESPONSE_CACHE.set(jsonKey, cached);
+    }
+    writeJsonBody(response, 200, cached.body, cacheControl, "STALE");
+    return;
+  }
+
+  if (cached?.promise) {
+    const body = await cached.promise;
+    writeJsonBody(response, 200, body, cacheControl, "MISS-COALESCED");
+    return;
+  }
+
+  const promise = producer()
+    .then((payload) => {
+      const body = JSON.stringify(payload);
+      RESPONSE_CACHE.set(jsonKey, {
+        body,
+        expiresAt: Date.now() + ttlMs,
+        staleUntil: Date.now() + RESPONSE_CACHE_STALE_MS,
+      });
+      return body;
+    })
+    .catch((error) => {
+      RESPONSE_CACHE.delete(jsonKey);
+      throw error;
+    });
+  RESPONSE_CACHE.set(jsonKey, {
+    body: cached?.body,
+    expiresAt: now + ttlMs,
+    promise,
+    staleUntil: now + RESPONSE_CACHE_STALE_MS,
+  });
+  const body = await promise;
+  writeJsonBody(response, 200, body, cacheControl, "MISS");
 }
 
 function networkFromSearch(searchParams) {
@@ -4299,46 +4380,40 @@ async function handleRequest(request, response) {
     const network = networkFromSearch(url.searchParams);
 
     if (url.pathname === "/api/v1/registry" || url.pathname === "/api/v1/ids") {
-      jsonResponse(
+      await cachedJsonResponse(
         response,
-        200,
-        await cachedPayload(`registry:${network}`, () =>
-          registryPayload(network),
-        ),
+        `registry:${network}`,
+        () => registryPayload(network),
         READ_CACHE_CONTROL,
       );
       return;
     }
 
     if (url.pathname === "/api/v1/activity" || url.pathname === "/api/v1/log") {
-      jsonResponse(
+      await cachedJsonResponse(
         response,
-        200,
-        await cachedPayload(`activity:${network}`, () =>
-          globalActivityPayload(network),
-        ),
+        `activity:${network}`,
+        () => globalActivityPayload(network),
         READ_CACHE_CONTROL,
       );
       return;
     }
 
     if (url.pathname === "/api/v1/pay2speak") {
-      jsonResponse(
+      await cachedJsonResponse(
         response,
-        200,
-        await cachedPayload(`pay2speak:${network}`, () =>
-          pay2SpeakPayload(network),
-        ),
+        `pay2speak:${network}`,
+        () => pay2SpeakPayload(network),
         READ_CACHE_CONTROL,
       );
       return;
     }
 
     if (url.pathname === "/api/v1/token") {
-      jsonResponse(
+      await cachedJsonResponse(
         response,
-        200,
-        await cachedPayload(`token:${network}`, () => tokenPayload(network)),
+        `token:${network}`,
+        () => tokenPayload(network),
         READ_CACHE_CONTROL,
       );
       return;

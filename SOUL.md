@@ -87,8 +87,8 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Wallet signing stays local.
 - Node/API infrastructure reads, indexes, verifies, and broadcasts already-signed txs. It does not custody.
 - Every tx-backed app action should be inspectable from an activity surface with clear labels for confirmed, pending, txid, listing txid, and UTXO references where relevant.
-- Merged apps should be treated as normal apps across public links, local route maps, GitHub docs, and Growth inputs.
 - Every new product should enter the growth model with the same shape: real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace accounting.
+- Merged apps should be treated as normal apps across public links, local route maps, GitHub docs, and Growth inputs.
 - Attachments are small and verified by size/hash.
 - Confirmed chain history is canonical; pending status can become dropped.
 - Local state is portable through backups, not server accounts.

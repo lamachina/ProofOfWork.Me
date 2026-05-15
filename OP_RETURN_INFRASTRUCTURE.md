@@ -23,14 +23,15 @@ proofofwork.me              -> permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           -> ID registry app
 computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
-browser.proofofwork.me      -> public HTML browser and confirmed-page wallet-intent surface by txid
+browser.proofofwork.me      -> public HTML browser by txid
 marketplace.proofofwork.me  -> standalone ID marketplace
 pay2speak.proofofwork.me    -> standalone X Space crowdfunding app
+token.proofofwork.me        -> standalone token creation and mint app
 log.proofofwork.me          -> public Bitcoin Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, Token, Log, and Growth from any production surface. Social links should include X, YouTube, GitHub, and Discord.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -88,6 +89,7 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 /?browser=1
 /?marketplace=1
 /?pay2speak=1
+/?token=1
 /?log=1
 /?growth=1
 ```
@@ -102,6 +104,7 @@ VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run bui
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://marketplace.proofofwork.me npm run build
 VITE_PAY2SPEAK_ONLY=1 VITE_POW_API_BASE=https://pay2speak.proofofwork.me npm run build
+VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://token.proofofwork.me npm run build
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
@@ -115,6 +118,7 @@ GET /api/v1/log?network=livenet
 GET /api/v1/ids?network=livenet
 GET /api/v1/ids/:id?network=livenet
 GET /api/v1/pay2speak?network=livenet
+GET /api/v1/token?network=livenet
 GET /api/v1/address/:address/mail?network=livenet
 GET /api/v1/tx/:txid?network=livenet
 GET /api/v1/tx/:txid/status?network=livenet
@@ -140,7 +144,7 @@ The log endpoint:
 
 The Growth app:
 
-- Reads the same registry, log, and Pay2Speak endpoints as Log, Marketplace, and Pay2Speak.
+- Reads the same registry, log, and Pay2Speak endpoints as the public app surfaces.
 - Compares modeled Bitcoin Computer network value to confirmed chain-derived value in sats and USD.
 - Auto-refreshes confirmed registry, log, file, marketplace, and Pay2Speak metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
@@ -155,6 +159,22 @@ The Pay2Speak endpoint:
 - Counts valid funding by gross donor spend, using the required split before OP_RETURN: below 5,460 sats, 1,000 sats to registry and the remainder to creator; at or above 5,460 sats, 10% to registry and 90% to creator.
 - Exposes optional questions decoded from base64url and ranked by attached gross sats.
 - Treats pending Pay2Speak records as visibility only; confirmed records are canonical.
+
+The token endpoint:
+
+- Scans `tokens@proofofwork.me` at `1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn` for token creation records.
+- Uses tx `7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19` as the current ID record for the token index.
+- Reads confirmed and pending `pwt1:` records.
+- Reconstructs token definitions from `pwt1:create:<ticker>:<max-supply>:<mint-amount>:<mint-price-sats>:<token-registry-address>` transactions that pay at least 546 sats to `tokens@proofofwork.me` before OP_RETURN.
+- Lets the token creation UI accept either a raw Bitcoin address or a confirmed ProofOfWork ID for the token registry. The chain record stores the resolved Bitcoin address so token indexing does not depend on future ID receiver changes.
+- Defines the token id as the creation txid, allowing repeated tickers while keeping mints unambiguous.
+- Reconstructs mints from `pwt1:mint:<token-create-txid>:<amount>` transactions found on each token's own registry address.
+- Requires mint payments to the token registry before OP_RETURN at the owner-set mint price, with a 546 sat minimum for token mint settings.
+- Credits confirmed mint balances to the first input address.
+- Keeps launch mint-first. Transfers, listings, marketplace actions, and other token mutations are not live yet.
+- Token UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per token and per mint from BTC/USD.
+- WORK defaults are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 sat per WORK. These are editable create-form defaults, not hardcoded limits for other tokens.
+- Treats pending token records as visibility only; confirmed records are canonical.
 
 The mail endpoint:
 
@@ -267,6 +287,20 @@ Mainnet Pay2Speak registry:
 bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4
 ```
 
+Tokens:
+
+```text
+pwt1:create:<ticker>:<max-supply>:<mint-amount>:<mint-price-sats>:<token-registry-address>
+pwt1:mint:<token-create-txid>:<amount>
+```
+
+Mainnet token creation index:
+
+```text
+tokens@proofofwork.me
+1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn
+```
+
 ## Launch Rule
 
 For production, ID resolution should prefer the ProofOfWork API over public mempool.space. If the API is unavailable, it is safer to fail closed than to route or register IDs from incomplete public API state.
@@ -279,7 +313,7 @@ After changing the API or production build, verify:
 
 - `/health` returns `service: proofofwork-op-return-api`.
 - ID registry count matches the node-backed API and includes pending records when visible.
-- `bitcoin@proofofwork.me` resolves only if confirmed.
+- `tokens@proofofwork.me` resolves to the expected token index address.
 - Duplicate/pending IDs cannot be routed.
 - Sent, inbox, incoming, files, outbox, and dropped status all work through the API.
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.

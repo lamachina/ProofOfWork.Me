@@ -46,10 +46,25 @@ const BLOCK_TXID_FETCH_CONCURRENCY = Number(
 const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
 const PAY2SPEAK_PROTOCOL_PREFIX = "pws1:";
+const TOKEN_PROTOCOL_PREFIX = "pwt1:";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
 const PAY2SPEAK_REGISTRY_PRICE_SATS = 1000;
 const PAY2SPEAK_SPLIT_THRESHOLD_SATS = 5460;
+const TOKEN_CREATE_ACTION = "create";
+const TOKEN_MINT_ACTION = "mint";
+const TOKEN_CREATION_PRICE_SATS = 546;
+const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
+const TOKEN_INDEX_ID = "tokens@proofofwork.me";
+const TOKEN_INDEX_TXID =
+  "7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19";
+const WORK_TOKEN_TICKER = "WORK";
+const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
+const WORK_TOKEN_MINT_AMOUNT = 1000;
+const WORK_TOKEN_MINT_PRICE_SATS = 1000;
+const WORK_TOKEN_PRICE_SATS_PER_WORK = 1;
+const WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS =
+  "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
 const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
 const ID_SALE_AUTH_VERSION_ANCHORED = "pwid-sale-v2";
 const ID_SALE_AUTH_VERSION = "pwid-sale-v3";
@@ -67,6 +82,9 @@ const ID_REGISTRY_ADDRESSES = {
 };
 const PAY2SPEAK_REGISTRY_ADDRESSES = {
   livenet: "bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4",
+};
+const TOKEN_INDEX_ADDRESSES = {
+  livenet: "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn",
 };
 
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
@@ -143,6 +161,10 @@ function registryAddressForNetwork(network) {
 
 function pay2SpeakRegistryAddressForNetwork(network) {
   return PAY2SPEAK_REGISTRY_ADDRESSES[network] ?? "";
+}
+
+function tokenIndexAddressForNetwork(network) {
+  return TOKEN_INDEX_ADDRESSES[network] ?? "";
 }
 
 async function fetchJson(url) {
@@ -672,7 +694,8 @@ function proofProtocolDataBytesForVout(vout) {
       (message) =>
         message.startsWith(PROTOCOL_PREFIX) ||
         message.startsWith(ID_PROTOCOL_PREFIX) ||
-        message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX),
+        message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX) ||
+        message.startsWith(TOKEN_PROTOCOL_PREFIX),
     )
     .reduce((total, message) => total + Buffer.byteLength(message, "utf8"), 0);
 }
@@ -1021,6 +1044,320 @@ function pay2SpeakPaymentAmountBeforeProtocol(vout, address) {
 
     return total;
   }, 0);
+}
+
+function firstTokenOutputIndex(vout) {
+  return vout.findIndex((output) => {
+    if (output.scriptpubkey_type !== "op_return") {
+      return false;
+    }
+
+    return decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).length > 0;
+  });
+}
+
+function tokenPaymentAmountBeforeProtocol(vout, address) {
+  const protocolIndex = firstTokenOutputIndex(vout);
+  return vout.reduce((total, output, index) => {
+    if (
+      output.scriptpubkey_address === address &&
+      typeof output.value === "number" &&
+      output.value > 0 &&
+      (protocolIndex === -1 || index < protocolIndex)
+    ) {
+      return total + output.value;
+    }
+
+    return total;
+  }, 0);
+}
+
+function normalizeTokenTicker(value) {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/gu, "")
+    .slice(0, 12);
+}
+
+function parseTokenPayload(message, network) {
+  if (!message.startsWith(TOKEN_PROTOCOL_PREFIX)) {
+    return null;
+  }
+
+  const parts = message.slice(TOKEN_PROTOCOL_PREFIX.length).split(":");
+  if (parts.length === 6 && parts[0] === TOKEN_CREATE_ACTION) {
+    const ticker = normalizeTokenTicker(parts[1]);
+    const maxSupply = Number(parts[2]);
+    const mintAmount = Number(parts[3]);
+    const mintPriceSats = Number(parts[4]);
+    const registryAddress = String(parts[5] ?? "").trim();
+    if (
+      !/^[A-Z0-9]{1,12}$/u.test(ticker) ||
+      !Number.isSafeInteger(maxSupply) ||
+      maxSupply < 1 ||
+      !Number.isSafeInteger(mintAmount) ||
+      mintAmount < 1 ||
+      mintAmount > maxSupply ||
+      !Number.isSafeInteger(mintPriceSats) ||
+      mintPriceSats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+      !isValidBitcoinAddress(registryAddress, network)
+    ) {
+      return null;
+    }
+
+    return {
+      kind: "create",
+      maxSupply,
+      mintAmount,
+      mintPriceSats,
+      registryAddress,
+      ticker,
+    };
+  }
+
+  if (parts.length === 3 && parts[0] === TOKEN_MINT_ACTION) {
+    const tokenId = String(parts[1] ?? "").toLowerCase();
+    const amount = Number(parts[2]);
+    if (
+      !/^[0-9a-f]{64}$/u.test(tokenId) ||
+      !Number.isSafeInteger(amount) ||
+      amount < 1
+    ) {
+      return null;
+    }
+
+    return { amount, kind: "mint", tokenId };
+  }
+
+  return null;
+}
+
+function emptyTokenState() {
+  return {
+    creationSats: 0,
+    confirmedSupply: 0,
+    holders: [],
+    mints: [],
+    pendingSupply: 0,
+    tokens: [],
+  };
+}
+
+function tokenTransactionTime(tx) {
+  return typeof tx.status?.block_time === "number"
+    ? tx.status.block_time * 1000
+    : Date.now();
+}
+
+function tokenProtocolSortedTransactions(txs) {
+  return txs.slice().sort((left, right) => {
+    const leftConfirmed = transactionConfirmed(left);
+    const rightConfirmed = transactionConfirmed(right);
+    if (leftConfirmed !== rightConfirmed) {
+      return Number(rightConfirmed) - Number(leftConfirmed);
+    }
+
+    return (
+      (transactionBlockHeight(left) ?? Number.MAX_SAFE_INTEGER) -
+        (transactionBlockHeight(right) ?? Number.MAX_SAFE_INTEGER) ||
+      (transactionBlockIndex(left) ?? Number.MAX_SAFE_INTEGER) -
+        (transactionBlockIndex(right) ?? Number.MAX_SAFE_INTEGER) ||
+      transactionTxid(left).localeCompare(transactionTxid(right))
+    );
+  });
+}
+
+function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
+  const tokens = [];
+  let creationSats = 0;
+
+  for (const tx of tokenProtocolSortedTransactions(txs)) {
+    const txid = transactionTxid(tx);
+    if (!txid) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin) ? tx.vin : [];
+    const vout = Array.isArray(tx.vout) ? tx.vout : [];
+    const actorAddress = transactionInputAddresses(vin)[0] ?? "";
+    if (!isValidBitcoinAddress(actorAddress, network)) {
+      continue;
+    }
+
+    const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+    if (messages.length === 0) {
+      continue;
+    }
+
+    let remainingCreationSats = tokenPaymentAmountBeforeProtocol(
+      vout,
+      indexAddress,
+    );
+    const confirmed = transactionConfirmed(tx);
+    const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+
+    for (const message of messages) {
+      const parsed = parseTokenPayload(message, network);
+      if (
+        !parsed ||
+        parsed.kind !== "create" ||
+        remainingCreationSats < TOKEN_CREATION_PRICE_SATS ||
+        tokens.some((token) => token.tokenId === txid)
+      ) {
+        continue;
+      }
+
+      remainingCreationSats -= TOKEN_CREATION_PRICE_SATS;
+      creationSats += TOKEN_CREATION_PRICE_SATS;
+      tokens.push({
+        confirmed,
+        createdAt,
+        creationFeeSats: TOKEN_CREATION_PRICE_SATS,
+        creatorAddress: actorAddress,
+        maxSupply: parsed.maxSupply,
+        mintAmount: parsed.mintAmount,
+        mintPriceSats: parsed.mintPriceSats,
+        network,
+        registryAddress: parsed.registryAddress,
+        ticker: parsed.ticker,
+        tokenId: txid,
+        txid,
+      });
+    }
+  }
+
+  return {
+    creationSats,
+    tokens: tokens.sort(
+      (left, right) =>
+        Number(left.confirmed) - Number(right.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    ),
+  };
+}
+
+function tokenStateFromTransactions(indexTxs, registryTxsByAddress, indexAddress, network) {
+  const { creationSats, tokens } = tokenDefinitionsFromTransactions(
+    indexTxs,
+    indexAddress,
+    network,
+  );
+  const tokensById = new Map(tokens.map((token) => [token.tokenId, token]));
+  const tokenSupply = new Map();
+  const balances = new Map();
+  const mints = [];
+  let confirmedSupply = 0;
+  let pendingSupply = 0;
+
+  for (const token of tokens) {
+    const txs = registryTxsByAddress.get(token.registryAddress) ?? [];
+    for (const tx of tokenProtocolSortedTransactions(txs)) {
+      const txid = transactionTxid(tx);
+      if (!txid) {
+        continue;
+      }
+
+      const vin = Array.isArray(tx.vin) ? tx.vin : [];
+      const vout = Array.isArray(tx.vout) ? tx.vout : [];
+      const actorAddress = transactionInputAddresses(vin)[0] ?? "";
+      if (!isValidBitcoinAddress(actorAddress, network)) {
+        continue;
+      }
+
+      const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+      if (messages.length === 0) {
+        continue;
+      }
+
+      let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
+        vout,
+        token.registryAddress,
+      );
+      const confirmed = transactionConfirmed(tx);
+      const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+
+      for (const message of messages) {
+        const parsed = parseTokenPayload(message, network);
+        if (!parsed || parsed.kind !== "mint") {
+          continue;
+        }
+
+        const mintedToken = tokensById.get(parsed.tokenId);
+        if (
+          !mintedToken ||
+          mintedToken.registryAddress !== token.registryAddress ||
+          parsed.amount !== mintedToken.mintAmount ||
+          remainingRegistrySats < mintedToken.mintPriceSats
+        ) {
+          continue;
+        }
+
+        const currentSupply = tokenSupply.get(mintedToken.tokenId) ?? {
+          confirmed: 0,
+          pending: 0,
+        };
+        if (
+          currentSupply.confirmed + currentSupply.pending + parsed.amount >
+          mintedToken.maxSupply
+        ) {
+          continue;
+        }
+
+        remainingRegistrySats -= mintedToken.mintPriceSats;
+        if (confirmed) {
+          currentSupply.confirmed += parsed.amount;
+          confirmedSupply += parsed.amount;
+          const balanceKey = `${mintedToken.tokenId}:${actorAddress}`;
+          balances.set(
+            balanceKey,
+            (balances.get(balanceKey) ?? 0) + parsed.amount,
+          );
+        } else {
+          currentSupply.pending += parsed.amount;
+          pendingSupply += parsed.amount;
+        }
+        tokenSupply.set(mintedToken.tokenId, currentSupply);
+
+        mints.push({
+          amount: parsed.amount,
+          confirmed,
+          createdAt,
+          minterAddress: actorAddress,
+          network,
+          paidSats: mintedToken.mintPriceSats,
+          registryAddress: mintedToken.registryAddress,
+          ticker: mintedToken.ticker,
+          tokenId: mintedToken.tokenId,
+          txid,
+        });
+      }
+    }
+  }
+
+  return {
+    creationSats,
+    confirmedSupply,
+    holders: [...balances.entries()]
+      .map(([key, balance]) => ({
+        address: String(key).split(":").slice(1).join(":"),
+        balance,
+      }))
+      .sort(
+        (left, right) =>
+          right.balance - left.balance ||
+          left.address.localeCompare(right.address),
+      ),
+    mints: mints.sort(
+      (left, right) =>
+        Number(left.confirmed) - Number(right.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    ),
+    pendingSupply,
+    tokens,
+  };
 }
 
 function normalizeXHandle(value) {
@@ -3688,6 +4025,83 @@ async function pay2SpeakPayload(network) {
   };
 }
 
+async function tokenPayload(network) {
+  const indexAddress = tokenIndexAddressForNetwork(network);
+  if (!indexAddress) {
+    return {
+      ...emptyTokenState(),
+      creationPriceSats: TOKEN_CREATION_PRICE_SATS,
+      indexedAt: new Date().toISOString(),
+      indexAddress: "",
+      indexId: TOKEN_INDEX_ID,
+      indexTxid: TOKEN_INDEX_TXID,
+      minMutationPriceSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+      network,
+      workDefaults: {
+        maxSupply: WORK_TOKEN_MAX_SUPPLY,
+        mintAmount: WORK_TOKEN_MINT_AMOUNT,
+        mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+        priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
+        registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+        ticker: WORK_TOKEN_TICKER,
+      },
+    };
+  }
+
+  const indexTxs = await fetchRegistryTransactions(indexAddress, network);
+  const { tokens } = tokenDefinitionsFromTransactions(
+    indexTxs,
+    indexAddress,
+    network,
+  );
+  const registryAddresses = [
+    ...new Set(tokens.map((token) => token.registryAddress).filter(Boolean)),
+  ];
+  const registryEntries = await Promise.all(
+    registryAddresses.map(async (registryAddress) => [
+      registryAddress,
+      await fetchRegistryTransactions(registryAddress, network),
+    ]),
+  );
+  const state = tokenStateFromTransactions(
+    indexTxs,
+    new Map(registryEntries),
+    indexAddress,
+    network,
+  );
+  return {
+    ...state,
+    creationPriceSats: TOKEN_CREATION_PRICE_SATS,
+    indexedAt: new Date().toISOString(),
+    indexAddress,
+    indexId: TOKEN_INDEX_ID,
+    indexTxid: TOKEN_INDEX_TXID,
+    minMutationPriceSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    network,
+    source: mempoolBase(network),
+    stats: {
+      confirmedMints: state.mints.filter((mint) => mint.confirmed).length,
+      confirmedTokens: state.tokens.filter((token) => token.confirmed).length,
+      creationSats: state.creationSats,
+      holders: state.holders.length,
+      pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
+      pendingTokens: state.tokens.filter((token) => !token.confirmed).length,
+      registries: registryAddresses.length,
+      transactions:
+        indexTxs.length +
+        registryEntries.reduce((total, [, txs]) => total + txs.length, 0),
+    },
+    workDefaults: {
+      maxSupply: WORK_TOKEN_MAX_SUPPLY,
+      mintAmount: WORK_TOKEN_MINT_AMOUNT,
+      mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+      priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
+      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      ticker: WORK_TOKEN_TICKER,
+    },
+  };
+}
+
 async function mailPayload(address, network) {
   const txs = await fetchAddressTransactions(address, network);
   const inboxMessages = inboxMessagesFromTransactions(txs, address, network);
@@ -3843,6 +4257,16 @@ async function handleRequest(request, response) {
         response,
         200,
         await pay2SpeakPayload(network),
+        "public, max-age=15",
+      );
+      return;
+    }
+
+    if (url.pathname === "/api/v1/token") {
+      jsonResponse(
+        response,
+        200,
+        await tokenPayload(network),
         "public, max-age=15",
       );
       return;

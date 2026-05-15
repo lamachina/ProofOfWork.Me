@@ -14,6 +14,7 @@ import { Buffer } from "buffer";
 import {
   Archive,
   AtSign,
+  ArrowLeft,
   ArrowUpRight,
   CheckCircle2,
   Clock,
@@ -369,6 +370,48 @@ type Pay2SpeakState = {
   questions: Pay2SpeakQuestion[];
 };
 
+type PowTokenDefinition = {
+  confirmed: boolean;
+  createdAt: string;
+  creatorAddress: string;
+  creationFeeSats: number;
+  maxSupply: number;
+  mintAmount: number;
+  mintPriceSats: number;
+  network: BitcoinNetwork;
+  registryAddress: string;
+  ticker: string;
+  tokenId: string;
+  txid: string;
+};
+
+type PowTokenMint = {
+  amount: number;
+  confirmed: boolean;
+  createdAt: string;
+  minterAddress: string;
+  network: BitcoinNetwork;
+  paidSats: number;
+  registryAddress: string;
+  ticker: string;
+  tokenId: string;
+  txid: string;
+};
+
+type PowTokenHolder = {
+  address: string;
+  balance: number;
+};
+
+type PowTokenState = {
+  creationSats: number;
+  confirmedSupply: number;
+  holders: PowTokenHolder[];
+  mints: PowTokenMint[];
+  pendingSupply: number;
+  tokens: PowTokenDefinition[];
+};
+
 type PowIdMarketplaceStats = {
   confirmedSales: number;
   confirmedVolumeSats: number;
@@ -674,6 +717,11 @@ type Pay2SpeakApiResponse = Partial<Pay2SpeakState> & {
   registryAddress?: string;
 };
 
+type PowTokenApiResponse = Partial<PowTokenState> & {
+  registryAddress?: string;
+  reserveAddress?: string;
+};
+
 type PowActivityApiResponse = {
   activity?: PowActivityItem[];
   stats?: {
@@ -725,6 +773,7 @@ const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 const BROWSER_APP_URL = "https://browser.proofofwork.me";
 const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
 const PAY2SPEAK_APP_URL = "https://pay2speak.proofofwork.me";
+const TOKEN_APP_URL = "https://token.proofofwork.me";
 const LOG_APP_URL = "https://log.proofofwork.me";
 const GROWTH_APP_URL = "https://growth.proofofwork.me";
 const LOCAL_HOME_APP_URL = HOME_APP_URL;
@@ -734,6 +783,7 @@ const LOCAL_DESKTOP_APP_URL = "/?desktop=1";
 const LOCAL_BROWSER_APP_URL = "/?browser=1";
 const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
 const LOCAL_PAY2SPEAK_APP_URL = "/?pay2speak=1";
+const LOCAL_TOKEN_APP_URL = "/?token=1";
 const LOCAL_LOG_APP_URL = "/?log=1";
 const LOCAL_GROWTH_APP_URL = "/?growth=1";
 const LANDING_TESTIMONIAL_TXID = "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
@@ -781,6 +831,37 @@ const PAY2SPEAK_SPLIT_THRESHOLD_SATS = 5460;
 const PAY2SPEAK_REGISTRY_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
   livenet: "bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4",
 };
+const TOKEN_PROTOCOL_PREFIX = "pwt1:";
+const TOKEN_CREATE_ACTION = "create";
+const TOKEN_MINT_ACTION = "mint";
+const TOKEN_CREATION_PRICE_SATS = 546;
+const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
+const TOKEN_INDEX_ID = "tokens@proofofwork.me";
+const TOKEN_INDEX_TXID =
+  "7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19";
+const TOKEN_INDEX_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
+  livenet: "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn",
+};
+const WORK_TOKEN_TICKER = "WORK";
+const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
+const WORK_TOKEN_MINT_AMOUNT = 1000;
+const WORK_TOKEN_MINT_PRICE_SATS = 1000;
+const WORK_TOKEN_DEFAULT_REGISTRY_ID = "work@proofofwork.me";
+const WORK_TOKEN_REGISTRY_TXID =
+  "ec249a2b023e9f7ec173d717ae06f331942cb7893dcc19a1a490936a93b35422";
+const WORK_TOKEN_REGISTRY_ADDRESS = "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
+const WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS =
+  WORK_TOKEN_DEFAULT_REGISTRY_ID;
+const WORK_TOKEN_REGISTRY_RECORD: PowIdRecord = {
+  amountSats: ID_REGISTRATION_PRICE_SATS,
+  confirmed: true,
+  createdAt: "2026-05-14T22:37:33.000Z",
+  id: "work",
+  network: "livenet",
+  ownerAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+  receiveAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+  txid: WORK_TOKEN_REGISTRY_TXID,
+};
 const ESTIMATED_INPUT_VBYTES = 160;
 const DUST_SATS = 546;
 const DEFAULT_AMOUNT_SATS = 546;
@@ -808,6 +889,11 @@ const APP_LINKS = [
     href: PAY2SPEAK_APP_URL,
     label: "Pay2Speak",
     localHref: LOCAL_PAY2SPEAK_APP_URL,
+  },
+  {
+    href: TOKEN_APP_URL,
+    label: "Token",
+    localHref: LOCAL_TOKEN_APP_URL,
   },
   { href: LOG_APP_URL, label: "Log", localHref: LOCAL_LOG_APP_URL },
   { href: GROWTH_APP_URL, label: "Growth", localHref: LOCAL_GROWTH_APP_URL },
@@ -1237,6 +1323,23 @@ function isPay2SpeakRoute() {
   );
 }
 
+function isTokenRoute() {
+  if (import.meta.env.VITE_TOKEN_ONLY === "1") {
+    return true;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  return (
+    hostname === "token.proofofwork.me" ||
+    window.location.search.includes("token=1")
+  );
+}
+
+function tokenRouteTarget() {
+  const params = new URLSearchParams(window.location.search);
+  return (params.get("asset") ?? params.get("ticker") ?? "").trim();
+}
+
 function pay2SpeakCreatorRouteAddress() {
   const params = new URLSearchParams(window.location.search);
   return (params.get("creator") ?? "").trim();
@@ -1577,6 +1680,62 @@ function mempoolTxUrl(txid: string, network: BitcoinNetwork) {
   return `${mempoolBase(network)}/tx/${txid}`;
 }
 
+function satsToUsd(sats: number, btcUsd: number) {
+  return (sats / 100_000_000) * btcUsd;
+}
+
+function tokenUsd(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "$0";
+  }
+
+  if (value < 0.000001) {
+    return "<$0.000001";
+  }
+
+  if (value < 0.01) {
+    return `$${value.toFixed(6)}`;
+  }
+
+  return value.toLocaleString(undefined, {
+    currency: "USD",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    style: "currency",
+  });
+}
+
+function tokenSatsPerUnit(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0";
+  }
+
+  if (Number.isInteger(value)) {
+    return value.toLocaleString();
+  }
+
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: 8,
+  });
+}
+
+async function fetchBtcUsdPrice() {
+  const response = await fetch(`${mempoolBase("livenet")}/api/v1/prices`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error(`BTC/USD price lookup returned ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { USD?: number; usd?: number };
+  const usd = Number(payload.USD ?? payload.usd);
+  if (!Number.isFinite(usd) || usd <= 0) {
+    throw new Error("BTC/USD price is unavailable.");
+  }
+
+  return usd;
+}
+
 function proofApiUrl(path: string, network: BitcoinNetwork) {
   const separator = path.includes("?") ? "&" : "?";
   return `${POW_API_BASE}${path}${separator}network=${encodeURIComponent(network)}`;
@@ -1666,6 +1825,10 @@ function registryAddressForNetwork(network: BitcoinNetwork) {
 
 function pay2SpeakRegistryAddressForNetwork(network: BitcoinNetwork) {
   return PAY2SPEAK_REGISTRY_ADDRESSES[network] ?? "";
+}
+
+function tokenIndexAddressForNetwork(network: BitcoinNetwork) {
+  return TOKEN_INDEX_ADDRESSES[network] ?? "";
 }
 
 function pay2SpeakTitle(handle: string, spaceNumber: number) {
@@ -4490,7 +4653,9 @@ function proofProtocolDataBytesForVout(vout: Array<Record<string, unknown>>) {
     .filter(
       (message) =>
         message.startsWith(PROTOCOL_PREFIX) ||
-        message.startsWith(ID_PROTOCOL_PREFIX),
+        message.startsWith(ID_PROTOCOL_PREFIX) ||
+        message.startsWith(PAY2SPEAK_PROTOCOL_PREFIX) ||
+        message.startsWith(TOKEN_PROTOCOL_PREFIX),
     )
     .reduce(
       (total, message) => total + new TextEncoder().encode(message).byteLength,
@@ -4851,6 +5016,438 @@ function pay2SpeakPaymentAmountBeforeProtocol(
 
     return total;
   }, 0);
+}
+
+function firstTokenOutputIndex(vout: Array<Record<string, unknown>>) {
+  return vout.findIndex((output) => {
+    if (output.scriptpubkey_type !== "op_return") {
+      return false;
+    }
+
+    return decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX).length > 0;
+  });
+}
+
+function tokenPaymentAmountBeforeProtocol(
+  vout: Array<Record<string, unknown>>,
+  address: string,
+) {
+  const protocolIndex = firstTokenOutputIndex(vout);
+  return vout.reduce((total, output, index) => {
+    if (
+      output.scriptpubkey_address === address &&
+      typeof output.value === "number" &&
+      output.value > 0 &&
+      (protocolIndex === -1 || index < protocolIndex)
+    ) {
+      return total + output.value;
+    }
+
+    return total;
+  }, 0);
+}
+
+function normalizeTokenTicker(value: string) {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/gu, "")
+    .slice(0, 12);
+}
+
+function buildTokenCreatePayload({
+  maxSupply,
+  mintAmount,
+  mintPriceSats,
+  registryAddress,
+  ticker,
+}: {
+  maxSupply: number;
+  mintAmount: number;
+  mintPriceSats: number;
+  registryAddress: string;
+  ticker: string;
+}) {
+  return [
+    `${TOKEN_PROTOCOL_PREFIX}${TOKEN_CREATE_ACTION}`,
+    normalizeTokenTicker(ticker),
+    Math.floor(maxSupply),
+    Math.floor(mintAmount),
+    Math.floor(mintPriceSats),
+    registryAddress.trim(),
+  ].join(":");
+}
+
+function buildTokenMintPayload(tokenId: string, amount: number) {
+  return [
+    `${TOKEN_PROTOCOL_PREFIX}${TOKEN_MINT_ACTION}`,
+    tokenId.trim().toLowerCase(),
+    Math.floor(amount),
+  ].join(":");
+}
+
+function parseTokenPayload(message: string, network: BitcoinNetwork) {
+  if (!message.startsWith(TOKEN_PROTOCOL_PREFIX)) {
+    return null;
+  }
+
+  const parts = message.slice(TOKEN_PROTOCOL_PREFIX.length).split(":");
+  if (parts.length === 6 && parts[0] === TOKEN_CREATE_ACTION) {
+    const ticker = normalizeTokenTicker(String(parts[1] ?? ""));
+    const maxSupply = Number(parts[2]);
+    const mintAmount = Number(parts[3]);
+    const mintPriceSats = Number(parts[4]);
+    const registryAddress = String(parts[5] ?? "").trim();
+    if (
+      !/^[A-Z0-9]{1,12}$/u.test(ticker) ||
+      !Number.isSafeInteger(maxSupply) ||
+      maxSupply < 1 ||
+      !Number.isSafeInteger(mintAmount) ||
+      mintAmount < 1 ||
+      mintAmount > maxSupply ||
+      !Number.isSafeInteger(mintPriceSats) ||
+      mintPriceSats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+      !isValidBitcoinAddress(registryAddress, network)
+    ) {
+      return null;
+    }
+
+    return {
+      kind: "create" as const,
+      maxSupply,
+      mintAmount,
+      mintPriceSats,
+      registryAddress,
+      ticker,
+    };
+  }
+
+  if (parts.length === 3 && parts[0] === TOKEN_MINT_ACTION) {
+    const tokenId = String(parts[1] ?? "").toLowerCase();
+    const amount = Number(parts[2]);
+    if (
+      !/^[0-9a-f]{64}$/u.test(tokenId) ||
+      !Number.isSafeInteger(amount) ||
+      amount < 1
+    ) {
+      return null;
+    }
+
+    return { amount, kind: "mint" as const, tokenId };
+  }
+
+  return null;
+}
+
+function emptyTokenState(): PowTokenState {
+  return {
+    creationSats: 0,
+    confirmedSupply: 0,
+    holders: [],
+    mints: [],
+    pendingSupply: 0,
+    tokens: [],
+  };
+}
+
+function tokenTransactionTime(tx: Record<string, unknown>) {
+  const status = tx.status as Record<string, unknown> | undefined;
+  return typeof status?.block_time === "number"
+    ? status.block_time * 1000
+    : Date.now();
+}
+
+function tokenProtocolSortedTransactions(txs: Array<Record<string, unknown>>) {
+  return txs.slice().sort((left, right) => {
+    const leftConfirmed = transactionConfirmed(left);
+    const rightConfirmed = transactionConfirmed(right);
+    if (leftConfirmed !== rightConfirmed) {
+      return Number(rightConfirmed) - Number(leftConfirmed);
+    }
+
+    return (
+      (transactionBlockHeight(left) ?? Number.MAX_SAFE_INTEGER) -
+        (transactionBlockHeight(right) ?? Number.MAX_SAFE_INTEGER) ||
+      (transactionBlockIndex(left) ?? Number.MAX_SAFE_INTEGER) -
+        (transactionBlockIndex(right) ?? Number.MAX_SAFE_INTEGER) ||
+      String(transactionTxid(left)).localeCompare(String(transactionTxid(right)))
+    );
+  });
+}
+
+function tokenDefinitionsFromTransactions(
+  txs: Array<Record<string, unknown>>,
+  indexAddress: string,
+  targetNetwork: BitcoinNetwork,
+): { creationSats: number; tokens: PowTokenDefinition[] } {
+  const tokens: PowTokenDefinition[] = [];
+  let creationSats = 0;
+
+  for (const tx of tokenProtocolSortedTransactions(txs)) {
+    const txid = transactionTxid(tx);
+    if (!txid) {
+      continue;
+    }
+
+    const vin = Array.isArray(tx.vin)
+      ? (tx.vin as Array<Record<string, unknown>>)
+      : [];
+    const vout = Array.isArray(tx.vout)
+      ? (tx.vout as Array<Record<string, unknown>>)
+      : [];
+    const actorAddress = transactionInputAddresses(vin)[0] ?? "";
+    if (!isValidBitcoinAddress(actorAddress, targetNetwork)) {
+      continue;
+    }
+
+    const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+    if (messages.length === 0) {
+      continue;
+    }
+
+    let remainingCreationSats = tokenPaymentAmountBeforeProtocol(vout, indexAddress);
+    const confirmed = transactionConfirmed(tx);
+    const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+
+    for (const message of messages) {
+      const parsed = parseTokenPayload(message, targetNetwork);
+      if (
+        !parsed ||
+        parsed.kind !== "create" ||
+        remainingCreationSats < TOKEN_CREATION_PRICE_SATS ||
+        tokens.some((token) => token.tokenId === txid)
+      ) {
+        continue;
+      }
+
+      remainingCreationSats -= TOKEN_CREATION_PRICE_SATS;
+      creationSats += TOKEN_CREATION_PRICE_SATS;
+      tokens.push({
+        confirmed,
+        createdAt,
+        creatorAddress: actorAddress,
+        creationFeeSats: TOKEN_CREATION_PRICE_SATS,
+        maxSupply: parsed.maxSupply,
+        mintAmount: parsed.mintAmount,
+        mintPriceSats: parsed.mintPriceSats,
+        network: targetNetwork,
+        registryAddress: parsed.registryAddress,
+        ticker: parsed.ticker,
+        tokenId: txid,
+        txid,
+      });
+    }
+  }
+
+  return {
+    creationSats,
+    tokens: tokens.sort(compareTokensByConfirmation),
+  };
+}
+
+function tokenStateFromTransactions(
+  indexTxs: Array<Record<string, unknown>>,
+  registryTxsByAddress: Map<string, Array<Record<string, unknown>>>,
+  indexAddress: string,
+  targetNetwork: BitcoinNetwork,
+): PowTokenState {
+  const { creationSats, tokens } = tokenDefinitionsFromTransactions(
+    indexTxs,
+    indexAddress,
+    targetNetwork,
+  );
+  const tokensById = new Map(tokens.map((token) => [token.tokenId, token]));
+  const tokenSupply = new Map<string, { confirmed: number; pending: number }>();
+  const balances = new Map<string, number>();
+  const mints: PowTokenMint[] = [];
+  let confirmedSupply = 0;
+  let pendingSupply = 0;
+
+  for (const token of tokens) {
+    const txs = registryTxsByAddress.get(token.registryAddress) ?? [];
+    for (const tx of tokenProtocolSortedTransactions(txs)) {
+      const txid = transactionTxid(tx);
+      if (!txid) {
+        continue;
+      }
+
+      const vin = Array.isArray(tx.vin)
+        ? (tx.vin as Array<Record<string, unknown>>)
+        : [];
+      const vout = Array.isArray(tx.vout)
+        ? (tx.vout as Array<Record<string, unknown>>)
+        : [];
+      const actorAddress = transactionInputAddresses(vin)[0] ?? "";
+      if (!isValidBitcoinAddress(actorAddress, targetNetwork)) {
+        continue;
+      }
+
+      const messages = decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX);
+      if (messages.length === 0) {
+        continue;
+      }
+
+      let remainingRegistrySats = tokenPaymentAmountBeforeProtocol(
+        vout,
+        token.registryAddress,
+      );
+      const confirmed = transactionConfirmed(tx);
+      const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
+
+      for (const message of messages) {
+        const parsed = parseTokenPayload(message, targetNetwork);
+        if (!parsed || parsed.kind !== "mint") {
+          continue;
+        }
+
+        const mintedToken = tokensById.get(parsed.tokenId);
+        if (
+          !mintedToken ||
+          mintedToken.registryAddress !== token.registryAddress ||
+          parsed.amount !== mintedToken.mintAmount ||
+          remainingRegistrySats < mintedToken.mintPriceSats
+        ) {
+          continue;
+        }
+
+        const currentSupply = tokenSupply.get(mintedToken.tokenId) ?? {
+          confirmed: 0,
+          pending: 0,
+        };
+        if (
+          currentSupply.confirmed + currentSupply.pending + parsed.amount >
+          mintedToken.maxSupply
+        ) {
+          continue;
+        }
+
+        remainingRegistrySats -= mintedToken.mintPriceSats;
+        if (confirmed) {
+          currentSupply.confirmed += parsed.amount;
+          confirmedSupply += parsed.amount;
+          balances.set(
+            `${mintedToken.tokenId}:${actorAddress}`,
+            (balances.get(`${mintedToken.tokenId}:${actorAddress}`) ?? 0) +
+              parsed.amount,
+          );
+        } else {
+          currentSupply.pending += parsed.amount;
+          pendingSupply += parsed.amount;
+        }
+        tokenSupply.set(mintedToken.tokenId, currentSupply);
+
+        mints.push({
+          amount: parsed.amount,
+          confirmed,
+          createdAt,
+          minterAddress: actorAddress,
+          network: targetNetwork,
+          paidSats: mintedToken.mintPriceSats,
+          registryAddress: mintedToken.registryAddress,
+          ticker: mintedToken.ticker,
+          tokenId: mintedToken.tokenId,
+          txid,
+        });
+      }
+    }
+  }
+
+  return {
+    creationSats,
+    confirmedSupply,
+    holders: [...balances.entries()]
+      .map(([key, balance]) => ({ address: key.split(":").slice(1).join(":"), balance }))
+      .sort(
+        (left, right) =>
+          right.balance - left.balance ||
+          left.address.localeCompare(right.address),
+      ),
+    mints: mints.sort(
+      (left, right) =>
+        Number(right.confirmed) - Number(left.confirmed) ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+        left.txid.localeCompare(right.txid),
+    ),
+    pendingSupply,
+    tokens,
+  };
+}
+
+function tokenLedgerFor(
+  token: PowTokenDefinition | undefined,
+  mints: PowTokenMint[],
+) {
+  const balances = new Map<string, number>();
+  let confirmedSupply = 0;
+  let pendingSupply = 0;
+  const tokenMints = token
+    ? mints.filter((mint) => mint.tokenId === token.tokenId)
+    : [];
+
+  tokenMints.forEach((mint) => {
+    if (mint.confirmed) {
+      confirmedSupply += mint.amount;
+      balances.set(
+        mint.minterAddress,
+        (balances.get(mint.minterAddress) ?? 0) + mint.amount,
+      );
+    } else {
+      pendingSupply += mint.amount;
+    }
+  });
+
+  return {
+    confirmedSupply,
+    holders: [...balances.entries()]
+      .map(([holderAddress, balance]) => ({ address: holderAddress, balance }))
+      .sort(
+        (left, right) =>
+          right.balance - left.balance ||
+          left.address.localeCompare(right.address),
+      ),
+    mints: tokenMints,
+    pendingSupply,
+  };
+}
+
+function compareTokensByConfirmation(
+  left: PowTokenDefinition,
+  right: PowTokenDefinition,
+) {
+  if (left.confirmed !== right.confirmed) {
+    return Number(right.confirmed) - Number(left.confirmed);
+  }
+
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    left.txid.localeCompare(right.txid)
+  );
+}
+
+function tokenDetailHref(token: PowTokenDefinition) {
+  return appHref(
+    `${TOKEN_APP_URL}/?asset=${encodeURIComponent(token.tokenId)}`,
+    `/?token=1&asset=${encodeURIComponent(token.tokenId)}`,
+  );
+}
+
+function tokenProgressPercent(confirmedSupply: number, maxSupply: number) {
+  if (!Number.isFinite(maxSupply) || maxSupply <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, (confirmedSupply / maxSupply) * 100));
+}
+
+function tokenProgressLabel(confirmedSupply: number, maxSupply: number) {
+  const progress = tokenProgressPercent(confirmedSupply, maxSupply);
+  if (progress > 0 && progress < 0.01) {
+    return "<0.01%";
+  }
+
+  return `${progress.toLocaleString(undefined, {
+    maximumFractionDigits: progress < 1 ? 2 : 1,
+  })}%`;
 }
 
 function normalizeXHandle(value: string) {
@@ -7497,6 +8094,58 @@ async function fetchPay2SpeakState(
   return pay2SpeakStateFromTransactions(txs, registryAddress, targetNetwork);
 }
 
+async function fetchTokenState(
+  targetNetwork: BitcoinNetwork,
+): Promise<PowTokenState> {
+  const indexAddress = tokenIndexAddressForNetwork(targetNetwork);
+  if (!indexAddress) {
+    return emptyTokenState();
+  }
+
+  if (POW_API_BASE) {
+    const payload = await fetchProofApiJson<PowTokenApiResponse>(
+      "/api/v1/token",
+      targetNetwork,
+    );
+    return {
+      creationSats: Number.isSafeInteger(payload.creationSats)
+        ? Number(payload.creationSats)
+        : 0,
+      confirmedSupply: Number.isSafeInteger(payload.confirmedSupply)
+        ? Number(payload.confirmedSupply)
+        : 0,
+      holders: Array.isArray(payload.holders) ? payload.holders : [],
+      mints: Array.isArray(payload.mints) ? payload.mints : [],
+      pendingSupply: Number.isSafeInteger(payload.pendingSupply)
+        ? Number(payload.pendingSupply)
+        : 0,
+      tokens: Array.isArray(payload.tokens) ? payload.tokens : [],
+    };
+  }
+
+  const indexTxs = await fetchRegistryTransactions(indexAddress, targetNetwork);
+  const { tokens } = tokenDefinitionsFromTransactions(
+    indexTxs,
+    indexAddress,
+    targetNetwork,
+  );
+  const registryAddresses = [
+    ...new Set(tokens.map((token) => token.registryAddress).filter(Boolean)),
+  ];
+  const registryEntries = await Promise.all(
+    registryAddresses.map(async (registryAddress) => [
+      registryAddress,
+      await fetchRegistryTransactions(registryAddress, targetNetwork),
+    ] as const),
+  );
+  return tokenStateFromTransactions(
+    indexTxs,
+    new Map(registryEntries),
+    indexAddress,
+    targetNetwork,
+  );
+}
+
 async function fetchUtxos(
   ownerAddress: string,
   ownerNetwork: BitcoinNetwork,
@@ -8745,6 +9394,7 @@ export default function App() {
   const browserRoute = isBrowserRoute();
   const marketplaceMode = isMarketplaceRoute();
   const pay2SpeakMode = isPay2SpeakRoute();
+  const tokenMode = isTokenRoute();
   const pay2SpeakCreatorAddress = pay2SpeakCreatorRouteAddress();
   const activityMode = isActivityRoute();
   const growthMode = isGrowthRoute();
@@ -8752,6 +9402,7 @@ export default function App() {
     idLaunchMode ||
     marketplaceMode ||
     pay2SpeakMode ||
+    tokenMode ||
     activityMode ||
     growthMode;
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
@@ -8810,6 +9461,27 @@ export default function App() {
   const [pay2SpeakContributionSats, setPay2SpeakContributionSats] =
     useState(5460);
   const [pay2SpeakQuestion, setPay2SpeakQuestion] = useState("");
+  const [tokenDefinitions, setTokenDefinitions] = useState<
+    PowTokenDefinition[]
+  >([]);
+  const [tokenMints, setTokenMints] = useState<PowTokenMint[]>([]);
+  const [tokenCreationSats, setTokenCreationSats] = useState(0);
+  const [tokenSelectedId, setTokenSelectedId] = useState(() =>
+    tokenRouteTarget(),
+  );
+  const [tokenDetailTarget, setTokenDetailTarget] = useState(() =>
+    tokenRouteTarget(),
+  );
+  const [tokenCreateTicker, setTokenCreateTicker] = useState("");
+  const [tokenCreateMaxSupply, setTokenCreateMaxSupply] = useState(0);
+  const [tokenCreateMintAmount, setTokenCreateMintAmount] = useState(0);
+  const [tokenCreateMintPriceSats, setTokenCreateMintPriceSats] = useState(0);
+  const [tokenCreateRegistryAddress, setTokenCreateRegistryAddress] =
+    useState("");
+  const [tokenBtcUsd, setTokenBtcUsd] = useState(
+    GROWTH_MODEL_INPUTS.currentBtcUsd,
+  );
+  const [tokenAction, setTokenAction] = useState<"" | "create" | "mint">("");
   const [mailPreferences, setMailPreferences] = useState<MailPreferences>(() =>
     loadMailPreferences(),
   );
@@ -9265,6 +9937,7 @@ export default function App() {
     [idListings, idSelectedListingId, network],
   );
   const pay2SpeakRegistryAddress = pay2SpeakRegistryAddressForNetwork(network);
+  const tokenIndexAddress = tokenIndexAddressForNetwork(network);
   const normalizedPay2SpeakHandle = normalizeXHandle(pay2SpeakHandle);
   const selectedPay2SpeakCampaign = useMemo(
     () =>
@@ -9332,6 +10005,120 @@ export default function App() {
       return undefined;
     }
   }, [pay2SpeakContributionSats]);
+  const normalizedTokenTicker = normalizeTokenTicker(tokenCreateTicker);
+  const tokenRegistryRecords = useMemo(() => {
+    if (network !== "livenet") {
+      return idRegistry;
+    }
+
+    return idRegistry.some(
+      (record) =>
+        record.network === "livenet" &&
+        record.id === WORK_TOKEN_REGISTRY_RECORD.id &&
+        record.confirmed,
+    )
+      ? idRegistry
+      : [WORK_TOKEN_REGISTRY_RECORD, ...idRegistry];
+  }, [idRegistry, network]);
+  const tokenRegistryResolution = useMemo(
+    () =>
+      resolveRecipientInput(
+        tokenCreateRegistryAddress,
+        network,
+        tokenRegistryRecords,
+        registryAddress,
+      ),
+    [
+      network,
+      registryAddress,
+      tokenCreateRegistryAddress,
+      tokenRegistryRecords,
+    ],
+  );
+  const tokenResolvedRegistryAddress = tokenRegistryResolution.paymentAddress;
+  const tokenCreatePayload = useMemo(
+    () =>
+      normalizedTokenTicker &&
+      Number.isSafeInteger(Math.floor(tokenCreateMaxSupply)) &&
+      Math.floor(tokenCreateMaxSupply) >= 1 &&
+      Number.isSafeInteger(Math.floor(tokenCreateMintAmount)) &&
+      Math.floor(tokenCreateMintAmount) >= 1 &&
+      Math.floor(tokenCreateMintAmount) <= Math.floor(tokenCreateMaxSupply) &&
+      Number.isSafeInteger(Math.floor(tokenCreateMintPriceSats)) &&
+      Math.floor(tokenCreateMintPriceSats) >= TOKEN_MIN_MUTATION_PRICE_SATS &&
+      tokenResolvedRegistryAddress
+        ? buildTokenCreatePayload({
+            maxSupply: tokenCreateMaxSupply,
+            mintAmount: tokenCreateMintAmount,
+            mintPriceSats: tokenCreateMintPriceSats,
+            registryAddress: tokenResolvedRegistryAddress,
+            ticker: normalizedTokenTicker,
+          })
+        : "",
+    [
+      normalizedTokenTicker,
+      tokenCreateMaxSupply,
+      tokenCreateMintAmount,
+      tokenCreateMintPriceSats,
+      tokenResolvedRegistryAddress,
+    ],
+  );
+  const tokenCreateBytes = useMemo(
+    () =>
+      tokenCreatePayload ? dataCarrierBytesForPayload(tokenCreatePayload) : 0,
+    [tokenCreatePayload],
+  );
+  const orderedTokenDefinitions = useMemo(
+    () => tokenDefinitions.slice().sort(compareTokensByConfirmation),
+    [tokenDefinitions],
+  );
+  const selectedToken = useMemo(
+    () => {
+      const selectedTicker = normalizeTokenTicker(tokenSelectedId);
+      return (
+        orderedTokenDefinitions.find(
+          (token) =>
+            token.tokenId === tokenSelectedId ||
+            (selectedTicker && token.ticker === selectedTicker),
+        ) ??
+        orderedTokenDefinitions.find(
+          (token) => token.ticker === WORK_TOKEN_TICKER,
+        ) ??
+        orderedTokenDefinitions[0]
+      );
+    },
+    [orderedTokenDefinitions, tokenSelectedId],
+  );
+  const tokenDetailToken = useMemo(() => {
+    const detailTicker = normalizeTokenTicker(tokenDetailTarget);
+    return (
+      orderedTokenDefinitions.find(
+        (token) =>
+          token.tokenId === tokenDetailTarget ||
+          (detailTicker && token.ticker === detailTicker),
+      ) ?? undefined
+    );
+  }, [orderedTokenDefinitions, tokenDetailTarget]);
+  const tokenDetailLedger = useMemo(
+    () => tokenLedgerFor(tokenDetailToken, tokenMints),
+    [tokenDetailToken, tokenMints],
+  );
+  const selectedTokenLedger = useMemo(
+    () => tokenLedgerFor(selectedToken, tokenMints),
+    [selectedToken, tokenMints],
+  );
+  const tokenMintPayload = useMemo(
+    () =>
+      selectedToken
+        ? buildTokenMintPayload(selectedToken.tokenId, selectedToken.mintAmount)
+        : "",
+    [selectedToken],
+  );
+  const tokenMintBytes = useMemo(
+    () =>
+      tokenMintPayload ? dataCarrierBytesForPayload(tokenMintPayload) : 0,
+    [tokenMintPayload],
+  );
   const canCreatePay2SpeakCampaign =
     Boolean(
       address &&
@@ -9356,6 +10143,39 @@ export default function App() {
       pay2SpeakFundingPayload,
     ) &&
     pay2SpeakFundingBytes <= MAX_DATA_CARRIER_BYTES &&
+    !busy;
+  const canMintToken =
+    Boolean(
+      address &&
+      network === "livenet" &&
+      selectedToken &&
+      tokenMintPayload &&
+      selectedToken.registryAddress,
+    ) &&
+    selectedTokenLedger.confirmedSupply +
+      selectedTokenLedger.pendingSupply +
+      (selectedToken?.mintAmount ?? 0) <=
+      (selectedToken?.maxSupply ?? 0) &&
+    tokenMintBytes <= MAX_DATA_CARRIER_BYTES &&
+    !busy;
+  const canCreateToken =
+    Boolean(
+      address &&
+      network === "livenet" &&
+      tokenIndexAddress &&
+      tokenCreatePayload &&
+      /^[A-Z0-9]{1,12}$/u.test(normalizedTokenTicker) &&
+      tokenResolvedRegistryAddress &&
+      !tokenRegistryResolution.error &&
+      Number.isSafeInteger(Math.floor(tokenCreateMaxSupply)) &&
+      Math.floor(tokenCreateMaxSupply) >= 1 &&
+      Number.isSafeInteger(Math.floor(tokenCreateMintAmount)) &&
+      Math.floor(tokenCreateMintAmount) >= 1 &&
+      Math.floor(tokenCreateMintAmount) <= Math.floor(tokenCreateMaxSupply) &&
+      Number.isSafeInteger(Math.floor(tokenCreateMintPriceSats)) &&
+      Math.floor(tokenCreateMintPriceSats) >= TOKEN_MIN_MUTATION_PRICE_SATS,
+    ) &&
+    tokenCreateBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
   const idPurchasePayload = useMemo(() => {
     if (!selectedMarketplaceListing || !idPurchaseOwnerAddress.trim()) {
@@ -9629,7 +10449,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (activityMode || growthMode) {
+    if (activityMode || growthMode || tokenMode) {
       return;
     }
 
@@ -9646,7 +10466,7 @@ export default function App() {
       }
       void refreshIds(true);
     }
-  }, [activeFolder, activityMode, growthMode, network]);
+  }, [activeFolder, activityMode, growthMode, network, tokenMode]);
 
   useEffect(() => {
     if (!mainnetRegistryMode) {
@@ -9658,13 +10478,13 @@ export default function App() {
       return;
     }
 
-    if (pay2SpeakMode) {
+    if (pay2SpeakMode || tokenMode) {
       return;
     }
 
     setActiveFolder("ids");
     void refreshIds(true);
-  }, [mainnetRegistryMode, network, pay2SpeakMode]);
+  }, [mainnetRegistryMode, network, pay2SpeakMode, tokenMode]);
 
   useEffect(() => {
     if (!pay2SpeakMode || network !== "livenet") {
@@ -9674,6 +10494,37 @@ export default function App() {
     setActiveFolder("pay2speak");
     void refreshPay2Speak(true);
   }, [pay2SpeakMode, network]);
+
+  useEffect(() => {
+    if (!tokenMode || network !== "livenet") {
+      return;
+    }
+
+    void refreshToken(true);
+  }, [network, tokenMode]);
+
+  useEffect(() => {
+    if (!tokenMode) {
+      return;
+    }
+
+    let canceled = false;
+    fetchBtcUsdPrice()
+      .then((usd) => {
+        if (!canceled) {
+          setTokenBtcUsd(usd);
+        }
+      })
+      .catch(() => {
+        if (!canceled) {
+          setTokenBtcUsd(GROWTH_MODEL_INPUTS.currentBtcUsd);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [tokenMode]);
 
   useEffect(() => {
     if (!growthMode || network !== "livenet") {
@@ -9711,7 +10562,8 @@ export default function App() {
   useEffect(() => {
     if (
       (!needsRegistryResolution(recipient, network) &&
-        !needsRegistryResolution(ccRecipient, network)) ||
+        !needsRegistryResolution(ccRecipient, network) &&
+        !(tokenMode && needsRegistryResolution(tokenCreateRegistryAddress, network))) ||
       !registryAddress
     ) {
       return undefined;
@@ -9732,7 +10584,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [ccRecipient, network, recipient, registryAddress]);
+  }, [ccRecipient, network, recipient, registryAddress, tokenCreateRegistryAddress, tokenMode]);
 
   useEffect(() => {
     if (
@@ -9822,6 +10674,19 @@ export default function App() {
           return;
         }
 
+        if (tokenMode) {
+          await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
+          const state = await fetchTokenState("livenet");
+          setTokenDefinitions(state.tokens);
+          setTokenMints(state.mints);
+          setTokenCreationSats(state.creationSats);
+          setStatus({
+            tone: "good",
+            text: `${shortAddress(nextAddress)} connected. Token mint ready.`,
+          });
+          return;
+        }
+
         if (mainnetRegistryMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
           const state = await fetchIdRegistryState("livenet");
@@ -9885,6 +10750,7 @@ export default function App() {
     mainnetRegistryMode,
     network,
     pay2SpeakMode,
+    tokenMode,
   ]);
 
   function applyDraft(draft: DraftMessage) {
@@ -10650,6 +11516,46 @@ export default function App() {
     }
   }
 
+  async function refreshToken(silent = false) {
+    if (!tokenIndexAddress) {
+      setTokenDefinitions([]);
+      setTokenMints([]);
+      setTokenCreationSats(0);
+      if (!silent) {
+        setStatus({
+          tone: "idle",
+          text: `No token index configured for ${networkLabel(network)}.`,
+        });
+      }
+      return;
+    }
+
+    setBusy(true);
+    if (!silent) {
+      setStatus({ tone: "idle", text: "Scanning token index..." });
+    }
+
+    try {
+      const state = await fetchTokenState(network);
+      setTokenDefinitions(state.tokens);
+      setTokenMints(state.mints);
+      setTokenCreationSats(state.creationSats);
+      if (!silent) {
+        setStatus({
+          tone: "good",
+          text: `Token index loaded. ${state.tokens.length.toLocaleString()} token${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}.`,
+        });
+      }
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Token scan failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function refreshGrowth(silent = false) {
     setBusy(true);
     if (!silent) {
@@ -10657,35 +11563,22 @@ export default function App() {
     }
 
     try {
-      const [registryState, pay2SpeakState, liveActivity] = await Promise.all([
+      const [registryState, pay2SpeakState] = await Promise.all([
         fetchIdRegistryState("livenet"),
         fetchPay2SpeakState("livenet"),
-        fetchGlobalActivity("livenet").catch(() => undefined),
       ]);
-      const activity =
-        liveActivity && liveActivity.length > 0
-          ? liveActivity
-          : registryState.activity;
-
       setIdRegistry(registryState.records);
       setIdListings(registryState.listings);
       setIdPendingEvents(registryState.pendingEvents);
       setIdSales(registryState.sales);
-      setIdActivity(activity);
+      setIdActivity(registryState.activity);
       setPay2SpeakCampaigns(pay2SpeakState.campaigns);
       setPay2SpeakFunding(pay2SpeakState.funding);
       setPay2SpeakQuestions(pay2SpeakState.questions);
-
       if (!silent) {
-        const confirmedIds = registryState.records.filter(
-          (record) => record.confirmed,
-        ).length;
-        const confirmedCampaigns = pay2SpeakState.campaigns.filter(
-          (campaign) => campaign.confirmed,
-        ).length;
         setStatus({
           tone: "good",
-          text: `Growth metrics loaded. ${confirmedIds.toLocaleString()} IDs, ${confirmedCampaigns.toLocaleString()} Pay2Speak campaign${confirmedCampaigns === 1 ? "" : "s"}.`,
+          text: `Growth metrics loaded. ${registryState.records.filter((record) => record.confirmed).length.toLocaleString()} IDs, ${pay2SpeakState.campaigns.length.toLocaleString()} Pay2Speak campaign${pay2SpeakState.campaigns.length === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -10833,6 +11726,18 @@ export default function App() {
           setStatus({
             tone: "good",
             text: `UniSat connected. Pay2Speak ready.`,
+          });
+          return;
+        }
+
+        if (tokenMode) {
+          const state = await fetchTokenState("livenet");
+          setTokenDefinitions(state.tokens);
+          setTokenMints(state.mints);
+          setTokenCreationSats(state.creationSats);
+          setStatus({
+            tone: "good",
+            text: `UniSat connected. Token mint ready.`,
           });
           return;
         }
@@ -12814,6 +13719,279 @@ export default function App() {
     }
   }
 
+  async function createToken(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (network !== "livenet" || !tokenIndexAddress) {
+      setStatus({ tone: "bad", text: "Token creation is mainnet only." });
+      return;
+    }
+
+    const ticker = normalizedTokenTicker;
+    const maxSupply = Math.floor(tokenCreateMaxSupply);
+    const mintAmount = Math.floor(tokenCreateMintAmount);
+    const mintPriceSats = Math.floor(tokenCreateMintPriceSats);
+    const registryAddress = tokenResolvedRegistryAddress;
+    const registryError = tokenRegistryResolution.error?.replace(
+      "before sending to this ID",
+      "before using it as a token registry",
+    );
+    if (
+      !ticker ||
+      !Number.isSafeInteger(maxSupply) ||
+      maxSupply < 1 ||
+      !Number.isSafeInteger(mintAmount) ||
+      mintAmount < 1 ||
+      mintAmount > maxSupply ||
+      !Number.isSafeInteger(mintPriceSats) ||
+      mintPriceSats < TOKEN_MIN_MUTATION_PRICE_SATS ||
+      !registryAddress ||
+      tokenRegistryResolution.error
+    ) {
+      setStatus({
+        tone: "bad",
+        text: registryError || "Token creation fields are invalid.",
+      });
+      return;
+    }
+
+    if (tokenCreateBytes > MAX_DATA_CARRIER_BYTES) {
+      setStatus({
+        tone: "bad",
+        text: "Token create OP_RETURN is over 100 KB.",
+      });
+      return;
+    }
+
+    setTokenAction("create");
+    setBusy(true);
+    setStatus({ tone: "idle", text: `Creating ${ticker} token...` });
+
+    try {
+      const currentNetwork = await getWalletNetwork(window.unisat);
+      if (currentNetwork !== "livenet") {
+        await switchWalletNetwork(window.unisat, "livenet");
+      }
+
+      const paymentPsbt = await buildPaymentPsbt({
+        amountSats: TOKEN_CREATION_PRICE_SATS,
+        feeRate,
+        fromAddress: address,
+        network: "livenet",
+        protocolPayloads: [
+          buildTokenCreatePayload({
+            maxSupply,
+            mintAmount,
+            mintPriceSats,
+            registryAddress,
+            ticker,
+          }),
+        ],
+        requireConfirmedUtxos: true,
+        toAddress: tokenIndexAddress,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network: "livenet",
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+      const token: PowTokenDefinition = {
+        confirmed: false,
+        createdAt: new Date().toISOString(),
+        creatorAddress: address,
+        creationFeeSats: TOKEN_CREATION_PRICE_SATS,
+        maxSupply,
+        mintAmount,
+        mintPriceSats,
+        network: "livenet",
+        registryAddress,
+        ticker,
+        tokenId: txid,
+        txid,
+      };
+
+      setTokenDefinitions((current) =>
+        current.some((item) => item.tokenId === txid)
+          ? current
+          : [token, ...current],
+      );
+      setTokenCreationSats((current) => current + TOKEN_CREATION_PRICE_SATS);
+      setTokenSelectedId(txid);
+      setStatus({
+        tone: "good",
+        text: `${ticker} create broadcast: ${shortAddress(txid)}.`,
+      });
+      await refreshToken(true);
+      setTokenDefinitions((current) =>
+        current.some((item) => item.tokenId === txid)
+          ? current
+          : [token, ...current],
+      );
+      setTokenSelectedId(txid);
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Token creation failed."),
+      });
+    } finally {
+      setTokenAction("");
+      setBusy(false);
+    }
+  }
+
+  async function mintToken(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (network !== "livenet" || !selectedToken) {
+      setStatus({ tone: "bad", text: "Select a mainnet token first." });
+      return;
+    }
+
+    if (tokenMintBytes > MAX_DATA_CARRIER_BYTES) {
+      setStatus({
+        tone: "bad",
+        text: "Token mint OP_RETURN is over 100 KB.",
+      });
+      return;
+    }
+
+    setTokenAction("mint");
+    setBusy(true);
+    setStatus({ tone: "idle", text: `Checking ${selectedToken.ticker} supply...` });
+
+    try {
+      const latestState = await fetchTokenState("livenet");
+      setTokenDefinitions(latestState.tokens);
+      setTokenMints(latestState.mints);
+      setTokenCreationSats(latestState.creationSats);
+      const latestToken =
+        latestState.tokens.find((token) => token.tokenId === selectedToken.tokenId) ??
+        selectedToken;
+      const latestLedger = tokenLedgerFor(latestToken, latestState.mints);
+
+      if (
+        latestLedger.confirmedSupply +
+          latestLedger.pendingSupply +
+          latestToken.mintAmount >
+        latestToken.maxSupply
+      ) {
+        setStatus({
+          tone: "bad",
+          text: "Mint would exceed token max supply.",
+        });
+        return;
+      }
+
+      const currentNetwork = await getWalletNetwork(window.unisat);
+      if (currentNetwork !== "livenet") {
+        await switchWalletNetwork(window.unisat, "livenet");
+      }
+
+      setStatus({
+        tone: "idle",
+        text: `Minting ${latestToken.mintAmount.toLocaleString()} ${latestToken.ticker}...`,
+      });
+      const paymentPsbt = await buildPaymentPsbt({
+        amountSats: latestToken.mintPriceSats,
+        feeRate,
+        fromAddress: address,
+        network: "livenet",
+        protocolPayloads: [
+          buildTokenMintPayload(latestToken.tokenId, latestToken.mintAmount),
+        ],
+        requireConfirmedUtxos: true,
+        toAddress: latestToken.registryAddress,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network: "livenet",
+        psbtHex: paymentPsbt.psbtHex,
+        wallet: window.unisat,
+      });
+      const mint: PowTokenMint = {
+        amount: latestToken.mintAmount,
+        confirmed: false,
+        createdAt: new Date().toISOString(),
+        minterAddress: address,
+        network: "livenet",
+        paidSats: latestToken.mintPriceSats,
+        registryAddress: latestToken.registryAddress,
+        ticker: latestToken.ticker,
+        tokenId: latestToken.tokenId,
+        txid,
+      };
+
+      setTokenMints((current) =>
+        current.some((item) => item.txid === txid) ? current : [mint, ...current],
+      );
+      setStatus({
+        tone: "good",
+        text: `${latestToken.mintAmount.toLocaleString()} ${latestToken.ticker} mint broadcast: ${shortAddress(txid)}.`,
+      });
+      await refreshToken(true);
+      setTokenMints((current) =>
+        current.some((item) => item.txid === txid) ? current : [mint, ...current],
+      );
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Token mint failed."),
+      });
+    } finally {
+      setTokenAction("");
+      setBusy(false);
+    }
+  }
+
   if (landingMode) {
     return (
       <LandingApp
@@ -12965,6 +14143,61 @@ export default function App() {
         targetSats={pay2SpeakTargetSats}
         theme={theme}
         onRefresh={() => void refreshPay2Speak()}
+      />
+    );
+  }
+
+  if (tokenMode) {
+    return (
+      <TokenApp
+        address={address}
+        busy={busy}
+        canCreate={canCreateToken}
+        canMint={canMintToken}
+        confirmedSupply={selectedTokenLedger.confirmedSupply}
+        connectWallet={connectWallet}
+        createBytes={tokenCreateBytes}
+        creatingToken={tokenAction === "create"}
+        createMaxSupply={tokenCreateMaxSupply}
+        createMintAmount={tokenCreateMintAmount}
+        createMintPriceSats={tokenCreateMintPriceSats}
+        createRegistryAddress={tokenCreateRegistryAddress}
+        createRegistryResolution={tokenRegistryResolution}
+        createTicker={tokenCreateTicker}
+        creationSats={tokenCreationSats}
+        createToken={createToken}
+        detailConfirmedSupply={tokenDetailLedger.confirmedSupply}
+        detailHolders={tokenDetailLedger.holders}
+        detailMints={tokenDetailLedger.mints}
+        detailPendingSupply={tokenDetailLedger.pendingSupply}
+        detailToken={tokenDetailToken}
+        disconnectWallet={disconnectWallet}
+        feeRate={feeRate}
+        btcUsd={tokenBtcUsd}
+        hasUnisat={hasUnisat}
+        holders={selectedTokenLedger.holders}
+        mintBytes={tokenMintBytes}
+        mintingToken={tokenAction === "mint"}
+        mints={selectedTokenLedger.mints}
+        pendingSupply={selectedTokenLedger.pendingSupply}
+        selectedToken={selectedToken}
+        selectedTokenId={selectedToken?.tokenId ?? ""}
+        setFeeRate={setFeeRate}
+        setCreateMaxSupply={setTokenCreateMaxSupply}
+        setCreateMintAmount={setTokenCreateMintAmount}
+        setCreateMintPriceSats={setTokenCreateMintPriceSats}
+        setCreateRegistryAddress={setTokenCreateRegistryAddress}
+        setCreateTicker={setTokenCreateTicker}
+        setSelectedTokenId={setTokenSelectedId}
+        setTokenDetailTarget={setTokenDetailTarget}
+        setTheme={setTheme}
+        status={status}
+        tokenDetailTarget={tokenDetailTarget}
+        tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
+        tokens={orderedTokenDefinitions}
+        submitMint={mintToken}
+        theme={theme}
+        onRefresh={() => void refreshToken()}
       />
     );
   }
@@ -15150,6 +16383,1017 @@ function ActivityFeed({ items }: { items: PowActivityItem[] }) {
   );
 }
 
+type TokenAppProps = {
+  address: string;
+  busy: boolean;
+  canCreate: boolean;
+  canMint: boolean;
+  confirmedSupply: number;
+  connectWallet: () => void;
+  createBytes: number;
+  creatingToken: boolean;
+  createMaxSupply: number;
+  createMintAmount: number;
+  createMintPriceSats: number;
+  createRegistryAddress: string;
+  createRegistryResolution: RecipientResolution;
+  createTicker: string;
+  creationSats: number;
+  createToken: (event: FormEvent<HTMLFormElement>) => void;
+  detailConfirmedSupply: number;
+  detailHolders: PowTokenHolder[];
+  detailMints: PowTokenMint[];
+  detailPendingSupply: number;
+  detailToken: PowTokenDefinition | undefined;
+  disconnectWallet: () => void;
+  feeRate: number;
+  btcUsd: number;
+  hasUnisat: boolean;
+  holders: PowTokenHolder[];
+  mintBytes: number;
+  mintingToken: boolean;
+  mints: PowTokenMint[];
+  pendingSupply: number;
+  selectedToken: PowTokenDefinition | undefined;
+  selectedTokenId: string;
+  setFeeRate: (value: number) => void;
+  setCreateMaxSupply: (value: number) => void;
+  setCreateMintAmount: (value: number) => void;
+  setCreateMintPriceSats: (value: number) => void;
+  setCreateRegistryAddress: (value: string) => void;
+  setCreateTicker: (value: string) => void;
+  setSelectedTokenId: (value: string) => void;
+  setTokenDetailTarget: (value: string) => void;
+  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
+  status: { tone: StatusTone; text: string };
+  tokenDetailTarget: string;
+  tokenIndexAddress: string;
+  tokens: PowTokenDefinition[];
+  submitMint: (event: FormEvent<HTMLFormElement>) => void;
+  theme: ThemeMode;
+  onRefresh: () => void;
+};
+
+function TokenApp({
+  address,
+  busy,
+  connectWallet,
+  disconnectWallet,
+  hasUnisat,
+  setTheme,
+  status,
+  theme,
+  ...workspaceProps
+}: TokenAppProps) {
+  return (
+    <main className="id-launch-app token-public-app">
+      <header className="id-launch-topbar">
+        <a
+          className="brand"
+          href={HOME_APP_URL}
+          aria-label="ProofOfWork.Me home"
+        >
+          <div className="brand-mark" aria-hidden="true">
+            PoW
+          </div>
+          <div>
+            <h1>Tokens</h1>
+            <span>ProofOfWork token factory</span>
+          </div>
+        </a>
+
+        <DomainNav compact />
+
+        <div className="topbar-controls">
+          <button
+            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
+            className="icon-button"
+            onClick={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            type="button"
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          {address ? (
+            <button
+              className="secondary small"
+              disabled={busy}
+              onClick={disconnectWallet}
+              type="button"
+            >
+              <span className="button-content">
+                <LogOut size={15} />
+                <span>{shortAddress(address)}</span>
+              </span>
+            </button>
+          ) : hasUnisat ? (
+            <button
+              className="primary small"
+              disabled={busy}
+              onClick={connectWallet}
+              type="button"
+            >
+              <span className="button-content">
+                <Wallet size={15} />
+                <span>Connect</span>
+              </span>
+            </button>
+          ) : (
+            <a
+              className="primary small link-button"
+              href={UNISAT_DOWNLOAD_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="button-content">
+                <Wallet size={15} />
+                <span>UniSat</span>
+              </span>
+            </a>
+          )}
+        </div>
+      </header>
+
+      {status.tone !== "idle" ? (
+        <div className={`status ${status.tone}`}>
+          <span className="status-dot" aria-hidden="true" />
+          <span>{status.text}</span>
+        </div>
+      ) : null}
+
+      <TokenWorkspace address={address} busy={busy} {...workspaceProps} />
+      <SocialFooter />
+    </main>
+  );
+}
+
+function TokenWorkspace({
+  address,
+  busy,
+  canCreate,
+  canMint,
+  confirmedSupply,
+  createBytes,
+  creatingToken,
+  createMaxSupply,
+  createMintAmount,
+  createMintPriceSats,
+  createRegistryAddress,
+  createRegistryResolution,
+  createTicker,
+  creationSats,
+  createToken,
+  detailConfirmedSupply,
+  detailHolders,
+  detailMints,
+  detailPendingSupply,
+  detailToken,
+  feeRate,
+  btcUsd,
+  holders,
+  mintBytes,
+  mintingToken,
+  mints,
+  pendingSupply,
+  selectedToken,
+  selectedTokenId,
+  setFeeRate,
+  setCreateMaxSupply,
+  setCreateMintAmount,
+  setCreateMintPriceSats,
+  setCreateRegistryAddress,
+  setCreateTicker,
+  setSelectedTokenId,
+  setTokenDetailTarget,
+  submitMint,
+  tokenDetailTarget,
+  tokenIndexAddress,
+  tokens,
+  onRefresh,
+}: Omit<
+  TokenAppProps,
+  | "connectWallet"
+  | "disconnectWallet"
+  | "hasUnisat"
+  | "setTheme"
+  | "status"
+  | "theme"
+>) {
+  const holderBalance =
+    holders.find((holder) => holder.address === address)?.balance ?? 0;
+  const confirmedTokenCount = tokens.filter((token) => token.confirmed).length;
+  const pendingTokenCount = tokens.length - confirmedTokenCount;
+  const selectedPricePerToken =
+    selectedToken && selectedToken.mintAmount > 0
+      ? selectedToken.mintPriceSats / selectedToken.mintAmount
+      : 0;
+  const createTickerLabel = normalizeTokenTicker(createTicker) || "TOKEN";
+  const createPricePerToken =
+    createMintAmount > 0 ? createMintPriceSats / createMintAmount : 0;
+  const createHasMintPreview =
+    createMintAmount > 0 && createMintPriceSats > 0;
+  const createMintUsd = satsToUsd(createMintPriceSats, btcUsd);
+  const createUnitUsd = satsToUsd(createPricePerToken, btcUsd);
+  const selectedMintUsd = satsToUsd(selectedToken?.mintPriceSats ?? 0, btcUsd);
+  const selectedUnitUsd = satsToUsd(selectedPricePerToken, btcUsd);
+  const createRegistryNote = createRegistryAddress.trim()
+    ? createRegistryResolution.error
+      ? createRegistryResolution.error.replace(
+          "before sending to this ID",
+          "before using it as a token registry",
+        )
+      : createRegistryResolution.isId
+        ? `${createRegistryResolution.displayRecipient} resolves to ${shortAddress(createRegistryResolution.paymentAddress)}.`
+        : "Raw Bitcoin registry address."
+    : "";
+  const applyWorkDefaults = () => {
+    setCreateTicker(WORK_TOKEN_TICKER);
+    setCreateMaxSupply(WORK_TOKEN_MAX_SUPPLY);
+    setCreateMintAmount(WORK_TOKEN_MINT_AMOUNT);
+    setCreateMintPriceSats(WORK_TOKEN_MINT_PRICE_SATS);
+    setCreateRegistryAddress(WORK_TOKEN_DEFAULT_REGISTRY_ID);
+  };
+  const openTokenDetail = (token: PowTokenDefinition) => {
+    setSelectedTokenId(token.tokenId);
+    setTokenDetailTarget(token.tokenId);
+    window.history.pushState(null, "", tokenDetailHref(token));
+  };
+  const detailMode = Boolean(tokenDetailTarget.trim());
+  const detailPricePerToken =
+    detailToken && detailToken.mintAmount > 0
+      ? detailToken.mintPriceSats / detailToken.mintAmount
+      : 0;
+  const detailRemainingSupply = Math.max(
+    0,
+    (detailToken?.maxSupply ?? 0) - detailConfirmedSupply - detailPendingSupply,
+  );
+  const detailProgress = tokenProgressPercent(
+    detailConfirmedSupply,
+    detailToken?.maxSupply ?? 0,
+  );
+  const detailMintUsd = satsToUsd(detailToken?.mintPriceSats ?? 0, btcUsd);
+  const detailUnitUsd = satsToUsd(detailPricePerToken, btcUsd);
+  const detailTopHolders = detailHolders.slice(0, 12);
+  const detailRecentMints = detailMints.slice(0, 16);
+  const detailConfirmedMintCount = detailMints.filter(
+    (mint) => mint.confirmed,
+  ).length;
+  const detailPendingMintCount = detailMints.length - detailConfirmedMintCount;
+  const detailRegistryLabel =
+    detailToken?.registryAddress === WORK_TOKEN_REGISTRY_ADDRESS
+      ? `${WORK_TOKEN_DEFAULT_REGISTRY_ID} / ${shortAddress(WORK_TOKEN_REGISTRY_ADDRESS)}`
+      : (detailToken?.registryAddress ?? "");
+
+  if (detailMode) {
+    return (
+      <section className="id-launch-main token-detail-page">
+        <div className="token-detail-toolbar">
+          <a
+            className="secondary small"
+            href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
+          >
+            <span className="button-content">
+              <ArrowLeft size={15} />
+              <span>Factory</span>
+            </span>
+          </a>
+          <button className="secondary small" onClick={onRefresh} type="button">
+            <span className="button-content">
+              <RefreshCw size={15} />
+              <span>Refresh</span>
+            </span>
+          </button>
+        </div>
+
+        {detailToken ? (
+          <>
+            <section className="id-launch-card token-detail-hero">
+              <div className="token-detail-title">
+                <div className="empty-icon" aria-hidden="true">
+                  <TrendingUp size={26} />
+                </div>
+                <div>
+                  <p className="eyebrow">Token dashboard</p>
+                  <h2>{detailToken.ticker}</h2>
+                  <p>
+                    Minted by confirmed Bitcoin history. Mints pay the token
+                    registry directly.
+                  </p>
+                </div>
+              </div>
+              <div className="token-detail-actions">
+                <a
+                  className="secondary small"
+                  href={mempoolTxUrl(detailToken.txid, detailToken.network)}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <span className="button-content">
+                    <ArrowUpRight size={15} />
+                    <span>Deploy TX</span>
+                  </span>
+                </a>
+                <a
+                  className="secondary small"
+                  href={
+                    mempoolBase(detailToken.network) +
+                    `/address/${detailToken.registryAddress}`
+                  }
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <span className="button-content">
+                    <ArrowUpRight size={15} />
+                    <span>Registry</span>
+                  </span>
+                </a>
+              </div>
+              <div className="token-progress-block">
+                <div className="token-progress-copy">
+                  <span>Mint progress</span>
+                  <strong>{tokenProgressLabel(detailConfirmedSupply, detailToken.maxSupply)}</strong>
+                </div>
+                <Pay2SpeakProgressBar
+                  label={`${detailToken.ticker} mint progress`}
+                  progress={detailProgress}
+                />
+                <p className="field-note">
+                  {detailConfirmedSupply.toLocaleString()} /{" "}
+                  {detailToken.maxSupply.toLocaleString()} {detailToken.ticker}{" "}
+                  confirmed. {detailRemainingSupply.toLocaleString()} remaining.
+                </p>
+              </div>
+            </section>
+
+            <div className="id-launch-stats token-detail-stats">
+              <div>
+                <strong>{detailToken.maxSupply.toLocaleString()}</strong>
+                <span>Max supply</span>
+              </div>
+              <div>
+                <strong>{detailConfirmedSupply.toLocaleString()}</strong>
+                <span>Confirmed minted</span>
+              </div>
+              <div>
+                <strong>{detailHolders.length.toLocaleString()}</strong>
+                <span>Holders</span>
+              </div>
+              <div>
+                <strong>{detailConfirmedMintCount.toLocaleString()}</strong>
+                <span>Confirmed mints</span>
+              </div>
+            </div>
+
+            <div className="id-launch-grid">
+              <section className="id-launch-card token-mint-panel">
+                <div className="id-card-head">
+                  <div className="empty-icon" aria-hidden="true">
+                    <Wallet size={24} />
+                  </div>
+                  <div>
+                    <h3>Mint {detailToken.ticker}</h3>
+                    <p>
+                      {detailToken.mintAmount.toLocaleString()}{" "}
+                      {detailToken.ticker} for{" "}
+                      {detailToken.mintPriceSats.toLocaleString()} sats.
+                    </p>
+                  </div>
+                </div>
+                <form className="id-form" onSubmit={submitMint}>
+                  <div className="id-launch-stats">
+                    <div>
+                      <span>Mint price</span>
+                      <strong>
+                        {detailToken.mintPriceSats.toLocaleString()} sats
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Amount</span>
+                      <strong>
+                        {detailToken.mintAmount.toLocaleString()}{" "}
+                        {detailToken.ticker}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Unit price</span>
+                      <strong>
+                        {tokenSatsPerUnit(detailPricePerToken)} sat /{" "}
+                        {detailToken.ticker}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>USD/token</span>
+                      <strong>{tokenUsd(detailUnitUsd)}</strong>
+                    </div>
+                  </div>
+                  <p className="field-note">
+                    {tokenUsd(detailMintUsd)} per mint at the current BTC/USD
+                    estimate. Paid to {shortAddress(detailToken.registryAddress)}.
+                  </p>
+                  <button className="primary" disabled={!canMint} type="submit">
+                    <span className="button-content">
+                      <Send size={16} />
+                      <span>{mintingToken ? "Minting" : "Mint"}</span>
+                    </span>
+                  </button>
+                </form>
+              </section>
+
+              <section className="id-launch-card">
+                <div className="id-card-head">
+                  <div className="empty-icon" aria-hidden="true">
+                    <FileText size={24} />
+                  </div>
+                  <div>
+                    <h3>Token facts</h3>
+                    <p>Deployment and registry values for this token.</p>
+                  </div>
+                </div>
+                <dl className="browser-meta">
+                  <div>
+                    <dt>Token id</dt>
+                    <dd>{shortAddress(detailToken.tokenId)}</dd>
+                  </div>
+                  <div>
+                    <dt>Deploy date</dt>
+                    <dd>{formatDate(detailToken.createdAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Registry</dt>
+                    <dd>{detailRegistryLabel}</dd>
+                  </div>
+                  <div>
+                    <dt>Pending mints</dt>
+                    <dd>{detailPendingMintCount.toLocaleString()}</dd>
+                  </div>
+                  <div>
+                    <dt>Limit per mint</dt>
+                    <dd>
+                      {detailToken.mintAmount.toLocaleString()}{" "}
+                      {detailToken.ticker}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Starting price</dt>
+                    <dd>
+                      {tokenSatsPerUnit(detailPricePerToken)} sat /{" "}
+                      {detailToken.ticker}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+            </div>
+
+            <div className="id-launch-grid">
+              <section className="id-launch-card">
+                <div className="id-card-head">
+                  <div className="empty-icon" aria-hidden="true">
+                    <Users size={24} />
+                  </div>
+                  <div>
+                    <h3>Top holders</h3>
+                    <p>Confirmed balances for {detailToken.ticker}.</p>
+                  </div>
+                </div>
+                <div className="id-record-list">
+                  {detailTopHolders.length === 0 ? (
+                    <div className="empty-state">
+                      <h3>No holders yet</h3>
+                      <p>The first confirmed mint will appear here.</p>
+                    </div>
+                  ) : (
+                    detailTopHolders.map((holder) => (
+                      <article className="id-record" key={holder.address}>
+                        <div>
+                          <strong>
+                            {holder.balance.toLocaleString()}{" "}
+                            {detailToken.ticker}
+                          </strong>
+                          <code>{holder.address}</code>
+                        </div>
+                        <a
+                          className="secondary small"
+                          href={
+                            mempoolBase("livenet") + `/address/${holder.address}`
+                          }
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <span className="button-content">
+                            <ArrowUpRight size={15} />
+                            <span>Address</span>
+                          </span>
+                        </a>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              <section className="id-launch-card">
+                <div className="id-card-head">
+                  <div className="empty-icon" aria-hidden="true">
+                    <Clock size={24} />
+                  </div>
+                  <div>
+                    <h3>Mint log</h3>
+                    <p>
+                      Sorted by confirmation date. Pending records stay visible.
+                    </p>
+                  </div>
+                </div>
+                <div className="activity-feed">
+                  {detailRecentMints.length === 0 ? (
+                    <div className="empty-state">
+                      <h3>No mints yet</h3>
+                      <p>The selected token starts with its first valid mint.</p>
+                    </div>
+                  ) : (
+                    detailRecentMints.map((mint) => (
+                      <article
+                        className="activity-row"
+                        key={`${mint.txid}-${mint.amount}`}
+                      >
+                        <div className="activity-row-main">
+                          <div>
+                            <h4>
+                              {mint.amount.toLocaleString()} {mint.ticker}
+                            </h4>
+                            <strong>{shortAddress(mint.minterAddress)}</strong>
+                            <p>
+                              {mint.confirmed ? "Confirmed" : "Pending"} -{" "}
+                              {mint.paidSats.toLocaleString()} sats
+                            </p>
+                          </div>
+                          <time dateTime={mint.createdAt}>
+                            {formatDate(mint.createdAt)}
+                          </time>
+                        </div>
+                        <div className="id-record-actions">
+                          <a
+                            className="secondary small"
+                            href={mempoolTxUrl(mint.txid, mint.network)}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            <span className="button-content">
+                              <ArrowUpRight size={15} />
+                              <span>View TX</span>
+                            </span>
+                          </a>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+          </>
+        ) : (
+          <section className="id-launch-card token-detail-empty">
+            <div className="empty-icon" aria-hidden="true">
+              <FileText size={24} />
+            </div>
+            <h2>{normalizeTokenTicker(tokenDetailTarget) || "Token"} not live yet</h2>
+            <p>
+              Create the token first. Once the creation transaction confirms,
+              this page becomes the token dashboard.
+            </p>
+          </section>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section className="id-launch-main">
+      <div className="id-launch-hero">
+        <section className="id-launch-card id-claim-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <FilePenLine size={24} />
+            </div>
+            <div>
+              <h2>Create token</h2>
+              <p>
+                Pay the creation fee to <code>{TOKEN_INDEX_ID}</code>. The token
+                gets its own registry for mints.
+              </p>
+            </div>
+          </div>
+
+          <form className="id-form" onSubmit={createToken}>
+            <div className="token-form-grid">
+              <label>
+                Ticker
+                <input
+                  maxLength={12}
+                  onChange={(event) => setCreateTicker(event.target.value)}
+                  placeholder={WORK_TOKEN_TICKER}
+                  value={createTicker}
+                />
+              </label>
+              <label>
+                Max supply
+                <input
+                  min={1}
+                  onChange={(event) =>
+                    setCreateMaxSupply(Number(event.target.value))
+                  }
+                  placeholder={String(WORK_TOKEN_MAX_SUPPLY)}
+                  type="number"
+                  value={createMaxSupply || ""}
+                />
+              </label>
+              <label>
+                Mint amount
+                <input
+                  min={1}
+                  onChange={(event) =>
+                    setCreateMintAmount(Number(event.target.value))
+                  }
+                  placeholder={String(WORK_TOKEN_MINT_AMOUNT)}
+                  type="number"
+                  value={createMintAmount || ""}
+                />
+              </label>
+              <label>
+                Mint price sats
+                <input
+                  min={TOKEN_MIN_MUTATION_PRICE_SATS}
+                  onChange={(event) =>
+                    setCreateMintPriceSats(Number(event.target.value))
+                  }
+                  placeholder={String(WORK_TOKEN_MINT_PRICE_SATS)}
+                  type="number"
+                  value={createMintPriceSats || ""}
+                />
+              </label>
+              <label className="wide">
+                Token registry
+                <input
+                  onChange={(event) =>
+                    setCreateRegistryAddress(event.target.value)
+                  }
+                  placeholder="work@proofofwork.me or Bitcoin address"
+                  value={createRegistryAddress}
+                />
+                {createRegistryNote ? (
+                  <span
+                    className={
+                      createRegistryResolution.error
+                        ? "field-note bad"
+                        : "field-note good"
+                    }
+                  >
+                    {createRegistryNote}
+                  </span>
+                ) : null}
+              </label>
+              <label>
+                Fee rate
+                <input
+                  min={0.1}
+                  onChange={(event) => setFeeRate(Number(event.target.value))}
+                  step={0.1}
+                  type="number"
+                  value={feeRate}
+                />
+              </label>
+            </div>
+            <div className="token-template-action">
+              <button
+                className="secondary small"
+                onClick={applyWorkDefaults}
+                type="button"
+              >
+                <span className="button-content">
+                  <FilePenLine size={15} />
+                  <span>Use WORK defaults</span>
+                </span>
+              </button>
+            </div>
+            <div className="id-launch-stats" aria-label="Token create preview">
+              <div>
+                <span>Create fee</span>
+                <strong>{TOKEN_CREATION_PRICE_SATS.toLocaleString()} sats</strong>
+              </div>
+              <div>
+                <span>Minimum price</span>
+                <strong>
+                  {TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} sats
+                </strong>
+              </div>
+              <div>
+                <span>Starting price</span>
+                <strong>
+                  {tokenSatsPerUnit(createPricePerToken)} sat /{" "}
+                  {createTickerLabel}
+                </strong>
+              </div>
+              <div>
+                <span>USD/token</span>
+                <strong>{tokenUsd(createUnitUsd)}</strong>
+              </div>
+            </div>
+            {createHasMintPreview ? (
+              <p className="field-note">
+                {createMintAmount.toLocaleString()} {createTickerLabel} for{" "}
+                {createMintPriceSats.toLocaleString()} sats ={" "}
+                {tokenSatsPerUnit(createPricePerToken)} sat / {createTickerLabel}{" "}
+                ({tokenUsd(createMintUsd)} per mint). Paid to{" "}
+                {createRegistryResolution.paymentAddress
+                  ? shortAddress(createRegistryResolution.paymentAddress)
+                  : "the token registry"} on each mint.
+              </p>
+            ) : (
+              <p className="field-note">
+                WORK placeholders are only a template. Enter values or use WORK
+                defaults to preview the launch price.
+              </p>
+            )}
+            <div
+              className={
+                createBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"
+              }
+            >
+              {createBytes.toLocaleString()} /{" "}
+              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+              bytes
+            </div>
+            <button className="primary" disabled={!canCreate} type="submit">
+              <span className="button-content">
+                <Send size={16} />
+                <span>{creatingToken ? "Creating" : "Create Token"}</span>
+              </span>
+            </button>
+            {!address ? (
+              <p className="field-note">Connect UniSat to create a token.</p>
+            ) : null}
+          </form>
+        </section>
+
+        <section className="id-launch-card id-claim-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Wallet size={24} />
+            </div>
+            <div>
+              <h2>Mint token</h2>
+              <p>
+                Mints pay the token registry directly. ProofOfWork only charges
+                the creation event.
+              </p>
+            </div>
+          </div>
+
+          <form className="id-form" onSubmit={submitMint}>
+            <div className="token-form-grid token-mint-grid">
+              <label className="wide">
+                Token
+                <select
+                  onChange={(event) => setSelectedTokenId(event.target.value)}
+                  value={selectedTokenId}
+                >
+                  {tokens.length === 0 ? (
+                    <option value="">No tokens created yet</option>
+                  ) : null}
+                  {tokens.map((token) => (
+                    <option key={token.tokenId} value={token.tokenId}>
+                      {token.ticker} - {shortAddress(token.tokenId)} -{" "}
+                      {token.confirmed ? "confirmed" : "pending"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Amount
+                <input
+                  readOnly
+                  type="number"
+                  value={selectedToken?.mintAmount ?? 0}
+                />
+              </label>
+            </div>
+            <div className="id-launch-stats" aria-label="Mint preview">
+              <div>
+                <span>Mint price</span>
+                <strong>
+                  {(selectedToken?.mintPriceSats ?? 0).toLocaleString()} sats
+                </strong>
+              </div>
+              <div>
+                <span>Amount</span>
+                <strong>
+                  {(selectedToken?.mintAmount ?? 0).toLocaleString()}{" "}
+                  {selectedToken?.ticker ?? ""}
+                </strong>
+              </div>
+              <div>
+                <span>Price</span>
+                <strong>
+                  {tokenSatsPerUnit(selectedPricePerToken)} sat /{" "}
+                  {selectedToken?.ticker ?? "TOKEN"}
+                </strong>
+              </div>
+              <div>
+                <span>USD/token</span>
+                <strong>{tokenUsd(selectedUnitUsd)}</strong>
+              </div>
+            </div>
+            <p className="field-note">
+              {(selectedToken?.mintAmount ?? 0).toLocaleString()}{" "}
+              {selectedToken?.ticker ?? "TOKEN"} for{" "}
+              {(selectedToken?.mintPriceSats ?? 0).toLocaleString()} sats ={" "}
+              {tokenSatsPerUnit(selectedPricePerToken)} sat /{" "}
+              {selectedToken?.ticker ?? "TOKEN"} ({tokenUsd(selectedMintUsd)} per
+              mint). Paid to{" "}
+              {selectedToken
+                ? shortAddress(selectedToken.registryAddress)
+                : "the token registry"}{" "}
+              on each mint. Your confirmed balance is {holderBalance.toLocaleString()}{" "}
+              {selectedToken?.ticker ?? ""}.
+            </p>
+            <div
+              className={
+                mintBytes > MAX_DATA_CARRIER_BYTES ? "counter bad" : "counter"
+              }
+            >
+              {mintBytes.toLocaleString()} /{" "}
+              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+              bytes
+            </div>
+            <button className="primary" disabled={!canMint} type="submit">
+              <span className="button-content">
+                <Send size={16} />
+                <span>{mintingToken ? "Minting" : "Mint"}</span>
+              </span>
+            </button>
+            {!selectedToken ? (
+              <p className="field-note">Create or load a token before minting.</p>
+            ) : null}
+          </form>
+        </section>
+      </div>
+
+      <div className="id-launch-stats" aria-label="Token stats">
+        <div>
+          <strong>{tokens.length.toLocaleString()}</strong>
+          <span>Created tokens</span>
+        </div>
+        <div>
+          <strong>{confirmedTokenCount.toLocaleString()}</strong>
+          <span>Confirmed tokens</span>
+        </div>
+        <div>
+          <strong>{pendingTokenCount.toLocaleString()}</strong>
+          <span>Pending tokens</span>
+        </div>
+        <div>
+          <strong>{creationSats.toLocaleString()}</strong>
+          <span>Creation sats</span>
+        </div>
+      </div>
+
+      <div className="id-launch-grid">
+        <section className="id-launch-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <TrendingUp size={24} />
+            </div>
+            <div>
+              <h3>Token index</h3>
+              <p>
+                Creation fees go to {TOKEN_INDEX_ID}. Mints and mutations pay
+                each token registry at the owner-set price.
+              </p>
+            </div>
+          </div>
+          <dl className="browser-meta">
+            <div>
+              <dt>Index ID</dt>
+              <dd>{TOKEN_INDEX_ID}</dd>
+            </div>
+            <div>
+              <dt>Index address</dt>
+              <dd>{tokenIndexAddress}</dd>
+            </div>
+            <div>
+              <dt>Creation sats</dt>
+              <dd>{creationSats.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Creation tx</dt>
+              <dd>{shortAddress(TOKEN_INDEX_TXID)}</dd>
+            </div>
+            <div>
+              <dt>BTC/USD</dt>
+              <dd>{tokenUsd(btcUsd)}</dd>
+            </div>
+          </dl>
+          <div className="id-record-actions">
+            <button className="secondary small" onClick={onRefresh} type="button">
+              <span className="button-content">
+                <RefreshCw size={15} />
+                <span>Refresh</span>
+              </span>
+            </button>
+            <a
+              className="secondary small"
+              href={mempoolBase("livenet") + `/address/${tokenIndexAddress}`}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="button-content">
+                <ArrowUpRight size={15} />
+                <span>Index</span>
+              </span>
+            </a>
+            <a
+              className="secondary small"
+              href={mempoolTxUrl(TOKEN_INDEX_TXID, "livenet")}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="button-content">
+                <ArrowUpRight size={15} />
+                <span>TX</span>
+              </span>
+            </a>
+            <a
+              className="secondary small"
+              href={appHref(
+                `${TOKEN_APP_URL}/?asset=${WORK_TOKEN_TICKER}`,
+                `/?token=1&asset=${WORK_TOKEN_TICKER}`,
+              )}
+            >
+              <span className="button-content">
+                <TrendingUp size={15} />
+                <span>WORK</span>
+              </span>
+            </a>
+          </div>
+        </section>
+
+        <section className="id-launch-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <FileText size={24} />
+            </div>
+            <div>
+              <h3>Created tokens</h3>
+              <p>Sorted by confirmation date. Pending creations stay visible.</p>
+            </div>
+          </div>
+          <div className="id-record-list">
+            {tokens.length === 0 ? (
+              <div className="empty-state">
+                <h3>No tokens yet</h3>
+                <p>Create WORK first, then mint against its token id.</p>
+              </div>
+            ) : (
+              tokens.slice(0, 12).map((token) => (
+                <article className="id-record" key={token.tokenId}>
+                  <div>
+                    <strong>
+                      {token.ticker} - {token.mintAmount.toLocaleString()} for{" "}
+                      {token.mintPriceSats.toLocaleString()} sats
+                    </strong>
+                    <code>{shortAddress(token.tokenId)}</code>
+                    <p className="field-note">
+                      {token.confirmed ? "Confirmed" : "Pending"} registry{" "}
+                      {shortAddress(token.registryAddress)} -{" "}
+                      {formatDate(token.createdAt)}
+                    </p>
+                  </div>
+                  <div className="id-record-actions">
+                    <button
+                      className="secondary small"
+                      onClick={() => setSelectedTokenId(token.tokenId)}
+                      type="button"
+                    >
+                      Select
+                    </button>
+                    <button
+                      className="secondary small"
+                      onClick={() => openTokenDetail(token)}
+                      type="button"
+                    >
+                      Details
+                    </button>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 type Pay2SpeakWorkspaceProps = {
   address: string;
   busy: boolean;
@@ -16438,7 +18682,7 @@ function growthActualValuePoints(
 
   for (const funding of pay2SpeakFunding) {
     if (funding.confirmed) {
-      addEventTime(funding.createdAt, funding.question ?? "Pay2Speak funding");
+      addEventTime(funding.createdAt, `${shortAddress(funding.txid)} funding`);
     }
   }
 
@@ -17161,11 +19405,10 @@ function GrowthWorkspace({
           <span>Real events</span>
           <h3>The green line moves when Bitcoin confirms.</h3>
           <p>
-            Registrations, messages, replies, file writes, HTML page writes, and
-            buyer-funded marketplace sales are pulled from the live registry and
-            log endpoints. Pay2Speak campaigns and funded questions come from
-            the Pay2Speak registry. Pending mempool events wait until they
-            confirm.
+            Registrations, messages, replies, file writes, HTML page writes,
+            buyer-funded marketplace sales, Pay2Speak campaigns, funded
+            questions are pulled from live endpoints. Pending mempool events
+            wait until they confirm.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -17173,9 +19416,9 @@ function GrowthWorkspace({
           <h3>Every product joins the same model.</h3>
           <p>
             A product needs real chain inputs, a usage assumption, a value
-            assumption, fee elasticity, and blockspace cost. That keeps Browser
-            and Pay2Speak beside IDs, Mail, Drive, and Marketplace instead of
-            bolted on.
+            assumption, fee elasticity, and blockspace cost. That keeps every
+            merged app beside IDs, Mail, Drive, Marketplace, and Browser instead
+            of bolted on.
           </p>
         </article>
       </section>

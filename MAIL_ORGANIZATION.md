@@ -12,9 +12,10 @@ proofofwork.me              permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           focused ProofOfWork ID registry onboarding app
 computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
-browser.proofofwork.me      public HTML browser and confirmed-page wallet-intent surface by txid
+browser.proofofwork.me      public HTML browser by txid
 marketplace.proofofwork.me  standalone ID marketplace
 pay2speak.proofofwork.me    standalone X Space crowdfunding app
+token.proofofwork.me        standalone token creation and mint app
 log.proofofwork.me          public Bitcoin Computer log
 growth.proofofwork.me       public growth model dashboard
 ```
@@ -40,6 +41,7 @@ Mail organization features that are already implemented in the full app:
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
 - Pay2Speak workspace for mainnet X Space campaign creation, funding, and ranked questions.
+- Token workspace for mainnet token creation and minting. Creation pays the `tokens@proofofwork.me` index fee; mints pay each token registry directly.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, and attachment actions.
 - Growth surface for canonical modeled network value versus real confirmed registry, log, file, marketplace, and Pay2Speak value metrics.
 - Export/import for local drafts, archive/favorite preferences, theme, and sent/outbox tracking.
@@ -50,7 +52,7 @@ Future developers should keep `id.proofofwork.me` narrow. Do not pull the full m
 Marketplace actions should stay outside the mailbox folders. Keep ID trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders.
 Log is not a mailbox folder. It is a read-only Bitcoin Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, and attachments.
 Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical Bitcoin Computer growth model in sats and USD. Merged apps such as Pay2Speak should appear as normal app surfaces, Computer workspaces when useful, and first-class Growth inputs.
-Browser is not a mailbox folder. It is an HTML renderer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. Confirmed pages may ask the parent Browser app to sign narrowly validated wallet intents, but wallet authority stays local in UniSat. Browser should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
+Browser is not a mailbox folder. It is an HTML renderer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. Browser-rendered HTML stays separate from wallet signing. Browser should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
 
 ## Core Idea
 

@@ -140,9 +140,9 @@ The log endpoint:
 
 The Growth app:
 
-- Reads the same registry and log endpoints as Log and Marketplace.
+- Reads the same registry, log, and Pay2Speak endpoints as Log, Marketplace, and Pay2Speak.
 - Compares modeled Bitcoin Computer network value to confirmed chain-derived value in sats and USD.
-- Auto-refreshes confirmed registry, log, file, and marketplace metrics while the page is visible.
+- Auto-refreshes confirmed registry, log, file, marketplace, and Pay2Speak metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
 
 The Pay2Speak endpoint:

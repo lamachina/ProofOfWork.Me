@@ -828,6 +828,8 @@ type GrowthModelRow = {
   mailWrites: number;
   marketplaceSats: number;
   marketplaceWrites: number;
+  pay2SpeakSats: number;
+  pay2SpeakWrites: number;
   powids: number;
   totalSats: number;
   totalUsdBase: number;
@@ -851,6 +853,8 @@ type GrowthActualNetworkValue = {
   mailSats: number;
   marketplaceSats: number;
   marketplaceVolumeSats: number;
+  pay2SpeakFlowSats: number;
+  pay2SpeakSats: number;
   powids: number;
   totalSats: number;
   totalUsd: number;
@@ -882,10 +886,12 @@ const GROWTH_MODEL_INPUTS = {
   baselineFileFlowSats: 2_184,
   baselineMarketplaceVolumeSats: 1_000,
   baselineBrowserFlowSats: 0,
+  baselinePay2SpeakFlowSats: 0,
   mailEdgeDensity: 0.012307692307692308,
   mailSatsPerDelivery: 680.1333333333333,
   marketplaceAverageSaleSats: 1000,
   browserAveragePageSats: 1000,
+  pay2SpeakAverageCampaignSats: 5460,
   satsPerFile: 1000,
   canonicalFee: 0.00001,
   blockspaceVbytesPerYear: 52_560_000_000,
@@ -894,10 +900,12 @@ const GROWTH_MODEL_INPUTS = {
   driveVbytesPerWrite: 9_621,
   marketplaceVbytesPerSale: 1_500,
   browserVbytesPerPage: 15_000,
+  pay2SpeakVbytesPerWrite: 700,
   mailMessagesPerPairPerYear: 4,
   driveFilesPerIdPerYear: 6,
   marketplaceSalesPerIdPerYear: 0.2,
   browserPagesPerIdPerYear: 1,
+  pay2SpeakCampaignsPerIdPerYear: 0.15,
   valueMultiple: 5,
   elasticities: {
     id: 0.25,
@@ -905,6 +913,7 @@ const GROWTH_MODEL_INPUTS = {
     drive: 0.75,
     marketplace: 0.5,
     browser: 0.75,
+    pay2speak: 0.6,
   },
   horizons: [
     { label: "6 months", years: 0.5, adoption: 0.1 },
@@ -964,6 +973,10 @@ function growthModelRow(horizon: {
     GROWTH_MODEL_INPUTS.canonicalFee,
     GROWTH_MODEL_INPUTS.elasticities.browser,
   );
+  const pay2SpeakMultiplier = growthFeeMultiplier(
+    GROWTH_MODEL_INPUTS.canonicalFee,
+    GROWTH_MODEL_INPUTS.elasticities.pay2speak,
+  );
   const rawIdSats =
     powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 * idMultiplier;
   const rawMailSats =
@@ -991,6 +1004,12 @@ function growthModelRow(horizon: {
     GROWTH_MODEL_INPUTS.browserAveragePageSats *
     GROWTH_MODEL_INPUTS.valueMultiple *
     browserMultiplier;
+  const rawPay2SpeakSats =
+    powids *
+    GROWTH_MODEL_INPUTS.pay2SpeakCampaignsPerIdPerYear *
+    GROWTH_MODEL_INPUTS.pay2SpeakAverageCampaignSats *
+    GROWTH_MODEL_INPUTS.valueMultiple *
+    pay2SpeakMultiplier;
   const idWrites = powids * idMultiplier;
   const mailWrites =
     directedPairs *
@@ -1005,12 +1024,17 @@ function growthModelRow(horizon: {
     marketplaceMultiplier;
   const browserWrites =
     powids * GROWTH_MODEL_INPUTS.browserPagesPerIdPerYear * browserMultiplier;
+  const pay2SpeakWrites =
+    powids *
+    GROWTH_MODEL_INPUTS.pay2SpeakCampaignsPerIdPerYear *
+    pay2SpeakMultiplier;
   const rawBlockspaceVbytes =
     idWrites * GROWTH_MODEL_INPUTS.idVbytesPerWrite +
     mailWrites * GROWTH_MODEL_INPUTS.mailVbytesPerWrite +
     driveWrites * GROWTH_MODEL_INPUTS.driveVbytesPerWrite +
     marketplaceWrites * GROWTH_MODEL_INPUTS.marketplaceVbytesPerSale +
-    browserWrites * GROWTH_MODEL_INPUTS.browserVbytesPerPage;
+    browserWrites * GROWTH_MODEL_INPUTS.browserVbytesPerPage +
+    pay2SpeakWrites * GROWTH_MODEL_INPUTS.pay2SpeakVbytesPerWrite;
   const blockspaceUsageRatio =
     rawBlockspaceVbytes > 0
       ? Math.min(
@@ -1023,8 +1047,14 @@ function growthModelRow(horizon: {
   const driveSats = rawDriveSats * blockspaceUsageRatio;
   const marketplaceSats = rawMarketplaceSats * blockspaceUsageRatio;
   const browserSats = rawBrowserSats * blockspaceUsageRatio;
+  const pay2SpeakSats = rawPay2SpeakSats * blockspaceUsageRatio;
   const totalSats =
-    idSats + mailSats + driveSats + marketplaceSats + browserSats;
+    idSats +
+    mailSats +
+    driveSats +
+    marketplaceSats +
+    browserSats +
+    pay2SpeakSats;
   const btcUsdBase = growthBtcUsdAtYears(horizon.years);
 
   return {
@@ -1041,12 +1071,20 @@ function growthModelRow(horizon: {
     mailWrites: mailWrites * blockspaceUsageRatio,
     marketplaceSats,
     marketplaceWrites: marketplaceWrites * blockspaceUsageRatio,
+    pay2SpeakSats,
+    pay2SpeakWrites: pay2SpeakWrites * blockspaceUsageRatio,
     powids,
     totalSats,
     totalUsdBase: (totalSats / 100_000_000) * btcUsdBase,
     totalWrites:
       idWrites +
-      (mailWrites + driveWrites + marketplaceWrites + browserWrites) *
+      (
+        mailWrites +
+        driveWrites +
+        marketplaceWrites +
+        browserWrites +
+        pay2SpeakWrites
+      ) *
         blockspaceUsageRatio,
   };
 }
@@ -1067,8 +1105,16 @@ function growthModelStartRow(): GrowthModelRow {
   const browserSats =
     GROWTH_MODEL_INPUTS.baselineBrowserFlowSats *
     GROWTH_MODEL_INPUTS.valueMultiple;
+  const pay2SpeakSats =
+    GROWTH_MODEL_INPUTS.baselinePay2SpeakFlowSats *
+    GROWTH_MODEL_INPUTS.valueMultiple;
   const totalSats =
-    idSats + mailSats + driveSats + marketplaceSats + browserSats;
+    idSats +
+    mailSats +
+    driveSats +
+    marketplaceSats +
+    browserSats +
+    pay2SpeakSats;
   const btcUsdBase = growthBtcUsdAtYears(0);
   return {
     adoption: 0,
@@ -1085,6 +1131,8 @@ function growthModelStartRow(): GrowthModelRow {
     mailWrites: 0,
     marketplaceSats,
     marketplaceWrites: 0,
+    pay2SpeakSats,
+    pay2SpeakWrites: 0,
     powids: GROWTH_MODEL_INPUTS.currentPowids,
     totalSats,
     totalUsdBase: (totalSats / 100_000_000) * btcUsdBase,
@@ -9634,9 +9682,10 @@ export default function App() {
 
     const refreshGrowthMetrics = () => {
       if (document.visibilityState === "visible") {
-        void refreshIds(true);
+        void refreshGrowth(true);
       }
     };
+    refreshGrowthMetrics();
     const interval = window.setInterval(refreshGrowthMetrics, 30_000);
     window.addEventListener("focus", refreshGrowthMetrics);
 
@@ -10595,6 +10644,54 @@ export default function App() {
       setStatus({
         tone: "bad",
         text: errorMessage(error, "Pay2Speak scan failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshGrowth(silent = false) {
+    setBusy(true);
+    if (!silent) {
+      setStatus({ tone: "idle", text: "Refreshing Growth metrics..." });
+    }
+
+    try {
+      const [registryState, pay2SpeakState, liveActivity] = await Promise.all([
+        fetchIdRegistryState("livenet"),
+        fetchPay2SpeakState("livenet"),
+        fetchGlobalActivity("livenet").catch(() => undefined),
+      ]);
+      const activity =
+        liveActivity && liveActivity.length > 0
+          ? liveActivity
+          : registryState.activity;
+
+      setIdRegistry(registryState.records);
+      setIdListings(registryState.listings);
+      setIdPendingEvents(registryState.pendingEvents);
+      setIdSales(registryState.sales);
+      setIdActivity(activity);
+      setPay2SpeakCampaigns(pay2SpeakState.campaigns);
+      setPay2SpeakFunding(pay2SpeakState.funding);
+      setPay2SpeakQuestions(pay2SpeakState.questions);
+
+      if (!silent) {
+        const confirmedIds = registryState.records.filter(
+          (record) => record.confirmed,
+        ).length;
+        const confirmedCampaigns = pay2SpeakState.campaigns.filter(
+          (campaign) => campaign.confirmed,
+        ).length;
+        setStatus({
+          tone: "good",
+          text: `Growth metrics loaded. ${confirmedIds.toLocaleString()} IDs, ${confirmedCampaigns.toLocaleString()} Pay2Speak campaign${confirmedCampaigns === 1 ? "" : "s"}.`,
+        });
+      }
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Growth metrics refresh failed."),
       });
     } finally {
       setBusy(false);
@@ -12937,6 +13034,12 @@ export default function App() {
       <GrowthApp
         busy={busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
+        pay2SpeakCampaigns={pay2SpeakCampaigns.filter(
+          (campaign) => campaign.network === "livenet",
+        )}
+        pay2SpeakFunding={pay2SpeakFunding.filter(
+          (funding) => funding.network === "livenet",
+        )}
         registryListings={idListings.filter(
           (listing) => listing.network === "livenet",
         )}
@@ -12947,7 +13050,7 @@ export default function App() {
         setTheme={setTheme}
         status={status}
         theme={theme}
-        onRefresh={() => void refreshIds()}
+        onRefresh={() => void refreshGrowth()}
       />
     );
   }
@@ -16206,6 +16309,8 @@ function growthActualNetworkValue(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
   sales: PowIdMarketplaceSale[],
+  pay2SpeakCampaigns: Pay2SpeakCampaign[],
+  pay2SpeakFunding: Pay2SpeakFunding[],
   cutoffMs = Date.now(),
 ): GrowthActualNetworkValue {
   const confirmedRecords = records.filter(
@@ -16216,6 +16321,14 @@ function growthActualNetworkValue(
   );
   const confirmedSales = publicMarketplaceSales(sales).filter(
     (sale) => sale.confirmed && Date.parse(sale.createdAt) <= cutoffMs,
+  );
+  const confirmedPay2SpeakCampaigns = pay2SpeakCampaigns.filter(
+    (campaign) =>
+      campaign.confirmed && Date.parse(campaign.createdAt) <= cutoffMs,
+  );
+  const confirmedPay2SpeakFunding = pay2SpeakFunding.filter(
+    (funding) =>
+      funding.confirmed && Date.parse(funding.createdAt) <= cutoffMs,
   );
   const powids = confirmedRecords.length;
   const mailFlowSats = confirmedActivity
@@ -16235,14 +16348,29 @@ function growthActualNetworkValue(
     (total, sale) => total + sale.priceSats,
     0,
   );
+  const pay2SpeakFlowSats =
+    confirmedPay2SpeakCampaigns.reduce(
+      (total, campaign) => total + campaign.registrySats,
+      0,
+    ) +
+    confirmedPay2SpeakFunding.reduce(
+      (total, funding) => total + funding.grossSats,
+      0,
+    );
   const idSats = powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
   const mailSats = mailFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const marketplaceSats =
     marketplaceVolumeSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const pay2SpeakSats = pay2SpeakFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const totalSats =
-    idSats + mailSats + driveSats + marketplaceSats + browserSats;
+    idSats +
+    mailSats +
+    driveSats +
+    marketplaceSats +
+    browserSats +
+    pay2SpeakSats;
   const years = Math.max(
     0,
     (Math.min(cutoffMs, Date.now()) - GROWTH_MODEL_START_MS) /
@@ -16258,6 +16386,8 @@ function growthActualNetworkValue(
     mailSats,
     marketplaceSats,
     marketplaceVolumeSats,
+    pay2SpeakFlowSats,
+    pay2SpeakSats,
     powids,
     totalSats,
     totalUsd: growthSatsToUsdAtYears(totalSats, years),
@@ -16268,6 +16398,8 @@ function growthActualValuePoints(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
   sales: PowIdMarketplaceSale[],
+  pay2SpeakCampaigns: Pay2SpeakCampaign[],
+  pay2SpeakFunding: Pay2SpeakFunding[],
 ): GrowthValuePoint[] {
   const eventTimes: Array<{ createdMs: number; label: string }> = [];
   const addEventTime = (createdAt: string, label: string) => {
@@ -16298,11 +16430,25 @@ function growthActualValuePoints(
     }
   }
 
+  for (const campaign of pay2SpeakCampaigns) {
+    if (campaign.confirmed) {
+      addEventTime(campaign.createdAt, campaign.title);
+    }
+  }
+
+  for (const funding of pay2SpeakFunding) {
+    if (funding.confirmed) {
+      addEventTime(funding.createdAt, funding.question ?? "Pay2Speak funding");
+    }
+  }
+
   const points: GrowthValuePoint[] = [];
   const startValue = growthActualNetworkValue(
     records,
     idActivity,
     sales,
+    pay2SpeakCampaigns,
+    pay2SpeakFunding,
     GROWTH_MODEL_START_MS,
   );
   points.push({
@@ -16319,6 +16465,8 @@ function growthActualValuePoints(
       records,
       idActivity,
       sales,
+      pay2SpeakCampaigns,
+      pay2SpeakFunding,
       createdMs,
     );
     points.push({
@@ -16336,7 +16484,13 @@ function growthActualValuePoints(
   }
 
   const elapsed = growthElapsedYears();
-  const nowValue = growthActualNetworkValue(records, idActivity, sales);
+  const nowValue = growthActualNetworkValue(
+    records,
+    idActivity,
+    sales,
+    pay2SpeakCampaigns,
+    pay2SpeakFunding,
+  );
   const lastPoint = points[points.length - 1];
   if (
     !lastPoint ||
@@ -16424,6 +16578,8 @@ function growthRealEventItems(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
   sales: PowIdMarketplaceSale[],
+  pay2SpeakCampaigns: Pay2SpeakCampaign[],
+  pay2SpeakFunding: Pay2SpeakFunding[],
 ): GrowthRealEvent[] {
   const events = new Map<string, GrowthRealEvent>();
   const setEvent = (event: GrowthRealEvent) => {
@@ -16482,6 +16638,40 @@ function growthRealEventItems(
       network: sale.network,
       title: "Marketplace sale",
       txid: sale.txid,
+    });
+  }
+
+  for (const campaign of pay2SpeakCampaigns) {
+    if (!campaign.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${campaign.registrySats.toLocaleString()} registry sats`,
+      createdAt: campaign.createdAt,
+      detail: `${campaign.title} opened by ${shortAddress(campaign.creatorAddress)}.`,
+      key: campaign.txid,
+      kind: "Pay2Speak",
+      network: campaign.network,
+      title: "Pay2Speak campaign",
+      txid: campaign.txid,
+    });
+  }
+
+  for (const funding of pay2SpeakFunding) {
+    if (!funding.confirmed) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${funding.grossSats.toLocaleString()} gross sats`,
+      createdAt: funding.createdAt,
+      detail: `${shortAddress(funding.donorAddress)} funded ${shortAddress(funding.creatorAddress)} with ${funding.creatorSats.toLocaleString()} creator sats.`,
+      key: funding.txid,
+      kind: "Pay2Speak",
+      network: funding.network,
+      title: funding.question ? "Funded question" : "Campaign funding",
+      txid: funding.txid,
     });
   }
 
@@ -16693,6 +16883,8 @@ function GrowthProductCard({
 function GrowthApp({
   busy,
   idActivity,
+  pay2SpeakCampaigns,
+  pay2SpeakFunding,
   registryListings,
   registryRecords,
   registrySales,
@@ -16703,6 +16895,8 @@ function GrowthApp({
 }: {
   busy: boolean;
   idActivity: PowActivityItem[];
+  pay2SpeakCampaigns: Pay2SpeakCampaign[];
+  pay2SpeakFunding: Pay2SpeakFunding[];
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   registrySales: PowIdMarketplaceSale[];
@@ -16754,6 +16948,8 @@ function GrowthApp({
       <GrowthWorkspace
         busy={busy}
         idActivity={idActivity}
+        pay2SpeakCampaigns={pay2SpeakCampaigns}
+        pay2SpeakFunding={pay2SpeakFunding}
         registryListings={registryListings}
         registryRecords={registryRecords}
         registrySales={registrySales}
@@ -16768,6 +16964,8 @@ function GrowthApp({
 function GrowthWorkspace({
   busy,
   idActivity,
+  pay2SpeakCampaigns,
+  pay2SpeakFunding,
   registryListings,
   registryRecords,
   registrySales,
@@ -16775,6 +16973,8 @@ function GrowthWorkspace({
 }: {
   busy: boolean;
   idActivity: PowActivityItem[];
+  pay2SpeakCampaigns: Pay2SpeakCampaign[];
+  pay2SpeakFunding: Pay2SpeakFunding[];
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   registrySales: PowIdMarketplaceSale[];
@@ -16786,16 +16986,22 @@ function GrowthWorkspace({
     registryRecords,
     idActivity,
     registrySales,
+    pay2SpeakCampaigns,
+    pay2SpeakFunding,
   );
   const actualPoints = growthActualValuePoints(
     registryRecords,
     idActivity,
     registrySales,
+    pay2SpeakCampaigns,
+    pay2SpeakFunding,
   );
   const realEvents = growthRealEventItems(
     registryRecords,
     idActivity,
     registrySales,
+    pay2SpeakCampaigns,
+    pay2SpeakFunding,
   );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
   const oneYear =
@@ -16814,6 +17020,12 @@ function GrowthWorkspace({
   const driveActions = confirmedActivity.filter(
     (item) => item.kind === "file" && !isBrowserActivityItem(item),
   ).length;
+  const confirmedPay2SpeakCampaigns = pay2SpeakCampaigns.filter(
+    (campaign) => campaign.confirmed,
+  ).length;
+  const confirmedPay2SpeakFunding = pay2SpeakFunding.filter(
+    (funding) => funding.confirmed,
+  ).length;
 
   return (
     <section className="growth-workspace">
@@ -16824,7 +17036,7 @@ function GrowthWorkspace({
           <p>
             The blue line is modeled Bitcoin Computer network value. The green
             line is real confirmed mainnet value from IDs, Mail, Drive,
-            Marketplace, and Browser.
+            Marketplace, Browser, and Pay2Speak.
           </p>
         </div>
         <div className="growth-model-card">
@@ -16932,17 +17144,17 @@ function GrowthWorkspace({
           <h3>Blue is the success case. Green is Bitcoin history.</h3>
           <p>
             The model asks what the Bitcoin Computer can become if IDs, Mail,
-            Drive, Marketplace, and Browser compound together. The real line
-            only counts confirmed mainnet records that already exist.
+            Drive, Marketplace, Browser, and Pay2Speak compound together. The
+            real line only counts confirmed mainnet records that already exist.
           </p>
         </article>
         <article className="growth-explainer-card">
           <span>Network value</span>
           <h3>Everything is valued in sats first.</h3>
           <p>
-            IDs use n squared network value. Mail, Drive, Marketplace, and
-            Browser use confirmed payment flow multiplied by the same value
-            multiple, then translated to USD with the Bitcoin benchmark.
+            IDs use n squared network value. Mail, Drive, Marketplace, Browser,
+            and Pay2Speak use confirmed payment flow multiplied by the same
+            value multiple, then translated to USD with the Bitcoin benchmark.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -16951,7 +17163,9 @@ function GrowthWorkspace({
           <p>
             Registrations, messages, replies, file writes, HTML page writes, and
             buyer-funded marketplace sales are pulled from the live registry and
-            log endpoints. Pending mempool events wait until they confirm.
+            log endpoints. Pay2Speak campaigns and funded questions come from
+            the Pay2Speak registry. Pending mempool events wait until they
+            confirm.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -16960,7 +17174,8 @@ function GrowthWorkspace({
           <p>
             A product needs real chain inputs, a usage assumption, a value
             assumption, fee elasticity, and blockspace cost. That keeps Browser
-            beside IDs, Mail, Drive, and Marketplace instead of bolted on.
+            and Pay2Speak beside IDs, Mail, Drive, and Marketplace instead of
+            bolted on.
           </p>
         </article>
       </section>
@@ -17156,6 +17371,25 @@ function GrowthWorkspace({
             name="Browser"
             note="HTML pages rendered from OP_RETURN message bodies or verified file attachments by txid."
           />
+          <GrowthProductCard
+            actual={growthSats(actualValue.pay2SpeakSats)}
+            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.pay2SpeakSats, elapsedYears))} · ${actualValue.pay2SpeakFlowSats.toLocaleString()} gross sats · ${confirmedPay2SpeakCampaigns.toLocaleString()} campaigns · ${confirmedPay2SpeakFunding.toLocaleString()} funding events`}
+            icon={<Mic2 size={24} />}
+            modelFiveYear={growthSats(fiveYear.pay2SpeakSats)}
+            modelFiveYearLabel={growthUsd(
+              growthSatsToUsdAtYears(
+                fiveYear.pay2SpeakSats,
+                fiveYear.years,
+              ),
+            )}
+            modelLabel="network value"
+            modelOneYear={growthSats(oneYear.pay2SpeakSats)}
+            modelOneYearLabel={growthUsd(
+              growthSatsToUsdAtYears(oneYear.pay2SpeakSats, oneYear.years),
+            )}
+            name="Pay2Speak"
+            note="Creator funding, paid questions, and campaign receipts become measurable work value."
+          />
         </div>
       </section>
 
@@ -17245,14 +17479,14 @@ function LandingApp({
       <section className="landing-hero">
         <div className="landing-hero-content">
           <span className="landing-kicker">
-            Bitcoin-native identity, mail, files, pages, markets, logs, and
-            growth
+            Bitcoin-native identity, mail, files, pages, markets, funding,
+            logs, and growth
           </span>
           <h2>ProofOfWork.Me</h2>
           <p>
             Claim a permanent on-chain ID, then use the Bitcoin Computer for
-            mail, files, HTML pages, marketplace actions, and chain-readable
-            proof.
+            mail, files, HTML pages, marketplace actions, Pay2Speak campaigns,
+            and chain-readable proof.
           </p>
           <div className="landing-actions">
             <a
@@ -17298,6 +17532,15 @@ function LandingApp({
               <span className="button-content">
                 <Users size={17} />
                 <span>Marketplace</span>
+              </span>
+            </a>
+            <a
+              className="secondary link-button"
+              href={appHref(PAY2SPEAK_APP_URL, LOCAL_PAY2SPEAK_APP_URL)}
+            >
+              <span className="button-content">
+                <Mic2 size={17} />
+                <span>Pay2Speak</span>
               </span>
             </a>
           </div>
@@ -17500,6 +17743,28 @@ function LandingApp({
               <span className="button-content">
                 <Users size={16} />
                 <span>Open Marketplace</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <Mic2 size={24} />
+            </div>
+            <div>
+              <h3>Open Pay2Speak</h3>
+              <p>
+                Create X Space campaigns, fund creators, and rank questions by
+                sats through confirmed <code>pws1:</code> records.
+              </p>
+            </div>
+            <a
+              className="secondary link-button"
+              href={appHref(PAY2SPEAK_APP_URL, LOCAL_PAY2SPEAK_APP_URL)}
+            >
+              <span className="button-content">
+                <Mic2 size={16} />
+                <span>Open Pay2Speak</span>
               </span>
             </a>
           </article>

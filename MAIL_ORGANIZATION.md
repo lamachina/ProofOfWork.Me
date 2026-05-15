@@ -41,7 +41,7 @@ Mail organization features that are already implemented in the full app:
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
 - Pay2Speak workspace for mainnet X Space campaign creation, funding, and ranked questions.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, and attachment actions.
-- Growth surface for canonical modeled network value versus real confirmed registry, log, file, and marketplace value metrics.
+- Growth surface for canonical modeled network value versus real confirmed registry, log, file, marketplace, and Pay2Speak value metrics.
 - Export/import for local drafts, archive/favorite preferences, theme, and sent/outbox tracking.
 - Confirmed-only ID routing in compose: pending IDs must not receive routed mail.
 - First-party OP_RETURN API reads for production mainnet mail, files, registry, and tx status when `VITE_POW_API_BASE` is configured.
@@ -49,7 +49,7 @@ Mail organization features that are already implemented in the full app:
 Future developers should keep `id.proofofwork.me` narrow. Do not pull the full mailbox UI into the Phase 1 registry launch unless the launch scope explicitly changes.
 Marketplace actions should stay outside the mailbox folders. Keep ID trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders.
 Log is not a mailbox folder. It is a read-only Bitcoin Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, and attachments.
-Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical Bitcoin Computer growth model in sats and USD.
+Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical Bitcoin Computer growth model in sats and USD. Merged apps such as Pay2Speak should appear as normal app surfaces, Computer workspaces when useful, and first-class Growth inputs.
 Browser is not a mailbox folder. It is an HTML renderer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. Confirmed pages may ask the parent Browser app to sign narrowly validated wallet intents, but wallet authority stays local in UniSat. Browser should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
 
 ## Core Idea

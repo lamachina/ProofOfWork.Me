@@ -135,7 +135,7 @@ Launch invariants for future developers/agents:
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Exposes Pay2Speak as a mainnet-only X Space crowdfunding surface with campaign creation, funding splits, optional questions, and a Computer workspace.
-- Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, and marketplace value metrics.
+- Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, marketplace, and Pay2Speak value metrics.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
@@ -185,7 +185,7 @@ Current production behavior:
 - Confirmed Browser pages may run scripts in an opaque sandbox, but wallet signing remains outside Browser pages. Pending Browser pages render as visibility only and cannot run scripts.
 - Files/Desktop treat Browser-readable `pwm1:m` HTML bodies as derived `.html` files for navigation and opening, while the original transaction remains a message-body record on-chain.
 - The canonical welcome page is pinned by txid `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` as the default Bitcoin Computer file. It appears in Files/Desktop as a system artifact and opens in Browser so the transaction remains the source of truth.
-- Growth reads the same registry and log endpoints, then auto-refreshes real confirmed network value against the canonical `output/bitcoin-computer-agent-adoption-model.md` sats/USD assumptions. New products should enter the model with real inputs, a usage rate, a value assumption, a fee elasticity, and blockspace accounting.
+- Growth reads the same registry, log, and Pay2Speak endpoints, then auto-refreshes real confirmed network value against the canonical `output/bitcoin-computer-agent-adoption-model.md` sats/USD assumptions. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which mempool.space reports as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.

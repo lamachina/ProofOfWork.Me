@@ -38,6 +38,12 @@ const MAX_ACTIVITY_ADDRESS_GRAPH_PASSES = Number(
 const ACTIVITY_CACHE_TTL_MS = Number(
   process.env.ACTIVITY_CACHE_TTL_MS ?? 15_000,
 );
+const RESPONSE_CACHE_TTL_MS = Number(
+  process.env.RESPONSE_CACHE_TTL_MS ?? 15_000,
+);
+const RESPONSE_CACHE_STALE_MS = Number(
+  process.env.RESPONSE_CACHE_STALE_MS ?? 120_000,
+);
 const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
 const BLOCK_TXID_FETCH_CONCURRENCY = Number(
   process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4,
@@ -90,6 +96,9 @@ const TOKEN_INDEX_ADDRESSES = {
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
 const BLOCK_TXID_INDEX_CACHE = new Map();
 const GLOBAL_ACTIVITY_CACHE = new Map();
+const RESPONSE_CACHE = new Map();
+const READ_CACHE_CONTROL =
+  "public, max-age=15, stale-while-revalidate=60, stale-if-error=120";
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
@@ -120,6 +129,63 @@ function errorResponse(response, statusCode, message, details) {
     error: message,
     ok: false,
   });
+}
+
+async function cachedPayload(cacheKey, producer, ttlMs = RESPONSE_CACHE_TTL_MS) {
+  const now = Date.now();
+  const cached = RESPONSE_CACHE.get(cacheKey);
+  if (cached?.payload && now < cached.expiresAt) {
+    return cached.payload;
+  }
+
+  if (cached?.payload && now < cached.staleUntil) {
+    if (!cached.promise) {
+      cached.promise = producer()
+        .then((payload) => {
+          RESPONSE_CACHE.set(cacheKey, {
+            expiresAt: Date.now() + ttlMs,
+            payload,
+            staleUntil: Date.now() + RESPONSE_CACHE_STALE_MS,
+          });
+          return payload;
+        })
+        .catch((error) => {
+          RESPONSE_CACHE.set(cacheKey, {
+            ...cached,
+            promise: null,
+          });
+          console.error(`Cache refresh failed for ${cacheKey}:`, error);
+          return cached.payload;
+        });
+      RESPONSE_CACHE.set(cacheKey, cached);
+    }
+    return cached.payload;
+  }
+
+  if (cached?.promise) {
+    return cached.promise;
+  }
+
+  const promise = producer()
+    .then((payload) => {
+      RESPONSE_CACHE.set(cacheKey, {
+        expiresAt: Date.now() + ttlMs,
+        payload,
+        staleUntil: Date.now() + RESPONSE_CACHE_STALE_MS,
+      });
+      return payload;
+    })
+    .catch((error) => {
+      RESPONSE_CACHE.delete(cacheKey);
+      throw error;
+    });
+  RESPONSE_CACHE.set(cacheKey, {
+    expiresAt: now + ttlMs,
+    payload: cached?.payload,
+    promise,
+    staleUntil: now + RESPONSE_CACHE_STALE_MS,
+  });
+  return promise;
 }
 
 function networkFromSearch(searchParams) {
@@ -4236,8 +4302,10 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await registryPayload(network),
-        "public, max-age=15",
+        await cachedPayload(`registry:${network}`, () =>
+          registryPayload(network),
+        ),
+        READ_CACHE_CONTROL,
       );
       return;
     }
@@ -4246,8 +4314,10 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await globalActivityPayload(network),
-        "public, max-age=15",
+        await cachedPayload(`activity:${network}`, () =>
+          globalActivityPayload(network),
+        ),
+        READ_CACHE_CONTROL,
       );
       return;
     }
@@ -4256,8 +4326,10 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await pay2SpeakPayload(network),
-        "public, max-age=15",
+        await cachedPayload(`pay2speak:${network}`, () =>
+          pay2SpeakPayload(network),
+        ),
+        READ_CACHE_CONTROL,
       );
       return;
     }
@@ -4266,8 +4338,8 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await tokenPayload(network),
-        "public, max-age=15",
+        await cachedPayload(`token:${network}`, () => tokenPayload(network)),
+        READ_CACHE_CONTROL,
       );
       return;
     }
@@ -4279,7 +4351,9 @@ async function handleRequest(request, response) {
       pathParts[2] === "ids"
     ) {
       const id = normalizePowId(decodeURIComponent(pathParts[3]));
-      const registry = await registryPayload(network);
+      const registry = await cachedPayload(`registry:${network}`, () =>
+        registryPayload(network),
+      );
       const records = registry.records.filter((record) => record.id === id);
       const confirmed = records.find((record) => record.confirmed);
       const pending = records.find((record) => !record.confirmed);

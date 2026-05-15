@@ -3439,13 +3439,25 @@ pre {
   padding: 18px;
 }
 
+@media (min-width: 861px) {
+  .mail-layout.is-token-workspace {
+    grid-template-columns: 232px minmax(0, 1fr);
+  }
+
+  .mail-layout.is-token-workspace > .token-workspace {
+    grid-column: 2;
+  }
+}
+
 .token-workspace-compact {
+  align-content: start;
   gap: 14px;
+  justify-items: stretch;
 }
 
 .token-workspace-compact .id-launch-hero {
   align-items: start;
-  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  grid-template-columns: repeat(2, minmax(min(100%, 380px), 1fr));
 }
 
 .token-workspace-compact .id-launch-hero h2,
@@ -3473,11 +3485,11 @@ pre {
 }
 
 .token-workspace-compact .id-launch-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(min(100%, 380px), 1fr));
 }
 
 .token-workspace-compact .id-launch-stats {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .token-workspace-compact .id-launch-stats div {
@@ -3486,12 +3498,20 @@ pre {
 }
 
 .token-workspace-compact .id-launch-stats strong {
-  font-size: 1rem;
+  font-size: clamp(1rem, 1.35vw, 1.28rem);
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: normal;
 }
 
 .token-workspace-compact .token-detail-page,
 .token-workspace-compact.token-detail-page {
   max-width: none;
+}
+
+.token-workspace-compact.token-detail-page > * {
+  min-width: 0;
+  width: 100%;
 }
 
 .token-form-grid {
@@ -3544,6 +3564,10 @@ pre {
   font-size: 0.82rem;
   line-height: 1.35;
   margin: 0;
+}
+
+.token-workspace-compact .token-registry-strip {
+  grid-template-columns: repeat(3, minmax(min(100%, 210px), 1fr));
 }
 
 .token-mint-grid {
@@ -3702,6 +3726,40 @@ pre {
 
 .token-payment-lane strong {
   overflow-wrap: anywhere;
+}
+
+.token-workspace-compact .browser-meta {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.token-workspace-compact .browser-meta div {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.token-workspace-compact .browser-meta dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.token-workspace-compact .browser-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.token-workspace-compact .token-payment-lane strong {
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .token-utxo-prep {
@@ -3963,6 +4021,10 @@ pre {
 @media (max-width: 1060px) {
   .mail-layout {
     grid-template-columns: 196px minmax(280px, 360px) minmax(0, 1fr);
+  }
+
+  .mail-layout.is-token-workspace {
+    grid-template-columns: 196px minmax(0, 1fr);
   }
 
   .topbar-controls {

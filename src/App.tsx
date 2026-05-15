@@ -14780,7 +14780,13 @@ export default function App() {
         <span>{status.text}</span>
       </div>
 
-      <section className={`mail-layout ${address ? "" : "is-onboarding"}`}>
+      <section
+        className={`mail-layout ${address ? "" : "is-onboarding"} ${
+          activeFolder === "token" || activeFolder === "work"
+            ? "is-token-workspace"
+            : ""
+        }`}
+      >
         <aside className="sidebar">
           <button className="compose-button" onClick={composeNew} type="button">
             <span className="button-content">

@@ -1,6 +1,6 @@
 # ProofOfWork OP_RETURN Infrastructure
 
-ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol and `pwid1:` ID registry protocol.
+ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, `pws1:` Pay2Speak protocol, and `pwt1:` token protocol.
 
 The current product direction is OP_RETURN only. Future protocol work should improve this OP_RETURN indexer and API before introducing any new carrier.
 
@@ -143,8 +143,8 @@ The log endpoint:
 
 - Starts from the canonical registry and all known ProofOfWork ID owner/receiver addresses.
 - Crawls the ProofOfWork mail/file address graph by reading `pwm1:` transactions, discovering senders and recipients, and expanding until the configured safety cap.
-- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, and attachments.
-- Reports total indexed ProofOfWork protocol data bytes across all discovered `pwm1:` and `pwid1:` OP_RETURN payloads, including marketplace listing/seal/buy/delist records.
+- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, Pay2Speak campaigns/funding, token creations, and token mints.
+- Reports total indexed ProofOfWork protocol data bytes across all discovered `pwm1:`, `pwid1:`, `pws1:`, and `pwt1:` OP_RETURN payloads, including marketplace listing/seal/buy/delist records.
 
 The Growth app:
 

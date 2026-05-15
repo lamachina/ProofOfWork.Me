@@ -1362,6 +1362,7 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
         createdAt,
         creationFeeSats: TOKEN_CREATION_PRICE_SATS,
         creatorAddress: actorAddress,
+        dataBytes: proofProtocolDataBytesForVout(vout),
         maxSupply: parsed.maxSupply,
         mintAmount: parsed.mintAmount,
         mintPriceSats: parsed.mintPriceSats,
@@ -1471,6 +1472,7 @@ function tokenStateFromTransactions(indexTxs, registryTxsByAddress, indexAddress
           amount: parsed.amount,
           confirmed,
           createdAt,
+          dataBytes: proofProtocolDataBytesForVout(vout),
           minterAddress: actorAddress,
           network,
           paidSats: mintedToken.mintPriceSats,
@@ -2873,6 +2875,116 @@ function mailActivityItemsFromTransactions(txs, network) {
     .filter(Boolean);
 }
 
+function pay2SpeakActivityItemsFromState(state, registryAddress) {
+  const campaigns = (state.campaigns ?? []).map((campaign) => ({
+    amountSats: campaign.registrySats,
+    actor: campaign.creatorAddress,
+    confirmed: campaign.confirmed,
+    counterparty: registryAddress,
+    createdAt: campaign.createdAt,
+    dataBytes: campaign.dataBytes,
+    description: `${campaign.title} opened by ${shortAddress(campaign.creatorAddress)} with a ${campaign.targetGrossSats.toLocaleString()} sat target.`,
+    detail: `Space ${campaign.spaceNumber.toLocaleString()} · @${campaign.handle}`,
+    kind: "pay2speak-campaign",
+    network: campaign.network,
+    tags: [
+      activityStatusTag(campaign.confirmed),
+      networkLabel(campaign.network),
+      "Pay2Speak",
+      "Campaign",
+      `${campaign.registrySats.toLocaleString()} registry sats`,
+    ],
+    title: campaign.confirmed
+      ? "Pay2Speak campaign"
+      : "Pay2Speak campaign pending",
+    txid: campaign.txid,
+  }));
+
+  const funding = (state.funding ?? []).map((item) => ({
+    amountSats: item.grossSats,
+    actor: item.donorAddress,
+    confirmed: item.confirmed,
+    counterparty: item.creatorAddress,
+    createdAt: item.createdAt,
+    dataBytes: item.dataBytes,
+    description: `${shortAddress(item.donorAddress)} funded ${shortAddress(item.creatorAddress)} with ${item.grossSats.toLocaleString()} gross sats.`,
+    detail: item.question
+      ? `Question: ${compactText(item.question, 120)}`
+      : `Campaign ${shortAddress(item.campaignId)}`,
+    kind: "pay2speak-funding",
+    network: item.network,
+    tags: [
+      activityStatusTag(item.confirmed),
+      networkLabel(item.network),
+      "Pay2Speak",
+      item.question ? "Question" : "Funding",
+      `${item.creatorSats.toLocaleString()} creator sats`,
+      `${item.registrySats.toLocaleString()} registry sats`,
+    ],
+    title: item.confirmed
+      ? item.question
+        ? "Funded question"
+        : "Campaign funding"
+      : item.question
+        ? "Funded question pending"
+        : "Campaign funding pending",
+    txid: item.txid,
+  }));
+
+  return [...campaigns, ...funding];
+}
+
+function tokenActivityItemsFromState(state, indexAddress) {
+  const creations = (state.tokens ?? []).map((token) => ({
+    amountSats: token.creationFeeSats,
+    actor: token.creatorAddress,
+    confirmed: token.confirmed,
+    counterparty: indexAddress,
+    createdAt: token.createdAt,
+    dataBytes: token.dataBytes,
+    description: `${token.ticker} created with ${token.maxSupply.toLocaleString()} max supply and registry ${shortAddress(token.registryAddress)}.`,
+    detail: `${token.mintAmount.toLocaleString()} ${token.ticker} for ${token.mintPriceSats.toLocaleString()} sats`,
+    kind: "token-create",
+    network: token.network,
+    tags: [
+      activityStatusTag(token.confirmed),
+      networkLabel(token.network),
+      "Token",
+      "Creation",
+      token.ticker,
+      `${token.creationFeeSats.toLocaleString()} creation sats`,
+    ],
+    title: token.confirmed ? "Token created" : "Token creation pending",
+    txid: token.txid,
+  }));
+
+  const mints = (state.mints ?? []).map((mint) => ({
+    amountSats: mint.paidSats,
+    actor: mint.minterAddress,
+    confirmed: mint.confirmed,
+    counterparty: mint.registryAddress,
+    createdAt: mint.createdAt,
+    dataBytes: mint.dataBytes,
+    description: `${mint.amount.toLocaleString()} ${mint.ticker} minted by ${shortAddress(mint.minterAddress)}.`,
+    detail: `Token ${shortAddress(mint.tokenId)}`,
+    kind: "token-mint",
+    network: mint.network,
+    tags: [
+      activityStatusTag(mint.confirmed),
+      networkLabel(mint.network),
+      "Token",
+      "Mint",
+      mint.ticker,
+      `${mint.amount.toLocaleString()} ${mint.ticker}`,
+      `${mint.paidSats.toLocaleString()} mint sats`,
+    ],
+    title: mint.confirmed ? "Token mint" : "Token mint pending",
+    txid: mint.txid,
+  }));
+
+  return [...creations, ...mints];
+}
+
 function addActivityAddress(addresses, address, network) {
   if (typeof address === "string" && isValidBitcoinAddress(address, network)) {
     addresses.add(address);
@@ -3006,14 +3118,39 @@ async function globalActivityPayload(network) {
   }
 
   const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
+  const [pay2SpeakState, tokenState] = await Promise.all([
+    cachedPayload(`pay2speak:${network}`, () => pay2SpeakPayload(network)).catch(
+      () => null,
+    ),
+    cachedPayload(`token:${network}`, () => tokenPayload(network)).catch(
+      () => null,
+    ),
+  ]);
+  const pay2SpeakActivity = pay2SpeakState
+    ? pay2SpeakActivityItemsFromState(
+        pay2SpeakState,
+        pay2SpeakState.registryAddress ?? "",
+      )
+    : [];
+  const tokenActivity = tokenState
+    ? tokenActivityItemsFromState(tokenState, tokenState.indexAddress ?? "")
+    : [];
   const activity = dedupeActivityItems([
     ...(registry.activity ?? []),
     ...mailActivity,
+    ...pay2SpeakActivity,
+    ...tokenActivity,
   ]);
   const dataBytes = totalProtocolDataBytes(activity);
   const fileActions = activity.filter((item) => item.kind === "file").length;
   const messageActions = activity.filter(
     (item) => item.kind === "mail" || item.kind === "reply",
+  ).length;
+  const pay2SpeakActions = activity.filter((item) =>
+    String(item.kind).startsWith("pay2speak-"),
+  ).length;
+  const tokenActions = activity.filter((item) =>
+    String(item.kind).startsWith("token-"),
   ).length;
 
   const payload = {
@@ -3026,8 +3163,10 @@ async function globalActivityPayload(network) {
       dataBytes,
       files: fileActions,
       messages: messageActions,
+      pay2Speak: pay2SpeakActions,
       pending: activity.filter((item) => !item.confirmed).length,
       registry: (registry.activity ?? []).length,
+      tokens: tokenActions,
       total: activity.length,
     },
   };
@@ -4032,6 +4171,7 @@ function pay2SpeakStateFromTransactions(txs, registryAddress, network) {
           confirmed,
           createdAt,
           creatorAddress: actorAddress,
+          dataBytes: proofProtocolDataBytesForVout(vout),
           fundedGrossSats: 0,
           fundingCount: 0,
           handle: parsed.handle,
@@ -4050,6 +4190,7 @@ function pay2SpeakStateFromTransactions(txs, registryAddress, network) {
         campaignId: parsed.campaignId,
         confirmed,
         createdAt,
+        dataBytes: proofProtocolDataBytesForVout(vout),
         donorAddress: actorAddress,
         network,
         question: parsed.question,

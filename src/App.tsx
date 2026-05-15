@@ -331,6 +331,7 @@ type Pay2SpeakCampaign = {
   confirmed: boolean;
   createdAt: string;
   creatorAddress: string;
+  dataBytes?: number;
   fundedGrossSats: number;
   fundingCount: number;
   handle: string;
@@ -349,6 +350,7 @@ type Pay2SpeakFunding = {
   createdAt: string;
   creatorAddress: string;
   creatorSats: number;
+  dataBytes?: number;
   donorAddress: string;
   grossSats: number;
   network: BitcoinNetwork;
@@ -377,6 +379,7 @@ type PowTokenDefinition = {
   createdAt: string;
   creatorAddress: string;
   creationFeeSats: number;
+  dataBytes?: number;
   maxSupply: number;
   mintAmount: number;
   mintPriceSats: number;
@@ -391,6 +394,7 @@ type PowTokenMint = {
   amount: number;
   confirmed: boolean;
   createdAt: string;
+  dataBytes?: number;
   minterAddress: string;
   network: BitcoinNetwork;
   paidSats: number;
@@ -433,7 +437,11 @@ type PowActivityKind =
   | "id-buy"
   | "mail"
   | "reply"
-  | "file";
+  | "file"
+  | "pay2speak-campaign"
+  | "pay2speak-funding"
+  | "token-create"
+  | "token-mint";
 
 type PowActivityItem = {
   amountSats?: number;
@@ -7288,6 +7296,7 @@ function activityMatchesSearch(item: PowActivityItem, query: string) {
     item.listingId,
     item.actor,
     item.counterparty,
+    item.kind,
     item.utxo,
     ...item.tags,
   ]
@@ -16593,7 +16602,8 @@ function ActivityWorkspace({
           <h2>Every ProofOfWork action with a txid.</h2>
           <p>
             Messages, replies, files, ID registry events, listings, seals,
-            delistings, and purchases in one chain-readable log.
+            delistings, purchases, Pay2Speak records, and token events in one
+            chain-readable log.
           </p>
         </div>
         <form className="desktop-search activity-search" onSubmit={onSearch}>
@@ -19681,7 +19691,42 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     return "Drive";
   }
 
+  if (kind === "pay2speak-campaign" || kind === "pay2speak-funding") {
+    return "Pay2Speak";
+  }
+
+  if (kind === "token-create" || kind === "token-mint") {
+    return "Token";
+  }
+
   return kind === "reply" ? "Mail reply" : "Mail";
+}
+
+function confirmedComputerActionCount(
+  records: PowIdRecord[],
+  idActivity: PowActivityItem[],
+  pay2SpeakCampaigns: Pay2SpeakCampaign[],
+  pay2SpeakFunding: Pay2SpeakFunding[],
+  tokenDefinitions: PowTokenDefinition[],
+  tokenMints: PowTokenMint[],
+) {
+  const txids = new Set<string>();
+  const add = (confirmed: boolean, txid: string) => {
+    if (confirmed && txid) {
+      txids.add(txid);
+    }
+  };
+
+  records.forEach((record) => add(record.confirmed, record.txid));
+  idActivity.forEach((item) => add(item.confirmed, item.txid));
+  pay2SpeakCampaigns.forEach((campaign) =>
+    add(campaign.confirmed, campaign.txid),
+  );
+  pay2SpeakFunding.forEach((funding) => add(funding.confirmed, funding.txid));
+  tokenDefinitions.forEach((token) => add(token.confirmed, token.txid));
+  tokenMints.forEach((mint) => add(mint.confirmed, mint.txid));
+
+  return txids.size;
 }
 
 function growthRealEventItems(
@@ -20175,6 +20220,14 @@ function GrowthWorkspace({
   const modelNow = growthModelValueAtYears(elapsedYears);
   const valueDeltaSats = actualValue.totalSats - modelNow.sats;
   const valueDeltaPct = modelNow.sats > 0 ? valueDeltaSats / modelNow.sats : 0;
+  const confirmedComputerActions = confirmedComputerActionCount(
+    registryRecords,
+    idActivity,
+    pay2SpeakCampaigns,
+    pay2SpeakFunding,
+    tokenDefinitions,
+    tokenMints,
+  );
   const mailActions = confirmedActivity.filter(
     (item) => item.kind === "mail" || item.kind === "reply",
   ).length;
@@ -20289,7 +20342,7 @@ function GrowthWorkspace({
           </span>
         </div>
         <div>
-          <strong>{confirmedActivity.length.toLocaleString()}</strong>
+          <strong>{confirmedComputerActions.toLocaleString()}</strong>
           <span>Confirmed computer actions</span>
         </div>
         <div>

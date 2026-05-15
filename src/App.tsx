@@ -16518,7 +16518,13 @@ export default function App() {
         <span>{status.text}</span>
       </div>
 
-      <section className={`mail-layout ${address ? "" : "is-onboarding"}`}>
+      <section
+        className={`mail-layout ${address ? "" : "is-onboarding"} ${
+          activeFolder === "token" || activeFolder === "work"
+            ? "is-token-workspace"
+            : ""
+        }`}
+      >
         <aside className="sidebar">
           <button className="compose-button" onClick={composeNew} type="button">
             <span className="button-content">
@@ -17000,6 +17006,7 @@ export default function App() {
             canCreate={canCreateToken}
             canMint={canMintToken}
             canPrepareMintUtxos={canPrepareTokenMintUtxos}
+            compact
             confirmedSupply={selectedTokenLedger.confirmedSupply}
             createBytes={tokenCreateBytes}
             creatingToken={tokenAction === "create"}
@@ -18609,6 +18616,7 @@ type TokenAppProps = {
   canCreate: boolean;
   canMint: boolean;
   canPrepareMintUtxos: boolean;
+  compact?: boolean;
   confirmedSupply: number;
   connectWallet: () => void;
   createBytes: number;
@@ -18773,6 +18781,7 @@ function TokenWorkspace({
   canCreate,
   canMint,
   canPrepareMintUtxos,
+  compact,
   confirmedSupply,
   createBytes,
   creatingToken,
@@ -19256,10 +19265,11 @@ function TokenWorkspace({
       )}
     </div>
   );
+  const workspaceClassName = `id-launch-main token-workspace${compact ? " token-workspace-compact" : ""}`;
 
   if (detailMode) {
     return (
-      <section className="id-launch-main token-detail-page">
+      <section className={`${workspaceClassName} token-detail-page`}>
         <div className="token-detail-toolbar">
           <a
             className="secondary small"
@@ -19547,7 +19557,7 @@ function TokenWorkspace({
   }
 
   return (
-    <section className="id-launch-main">
+    <section className={workspaceClassName}>
       <div className="token-registry-strip">
         <div>
           <span>Token index</span>

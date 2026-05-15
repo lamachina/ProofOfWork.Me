@@ -3424,6 +3424,96 @@ pre {
   gap: 11px;
 }
 
+.token-workspace {
+  min-width: 0;
+  width: 100%;
+}
+
+.mail-layout > .token-workspace {
+  align-content: start;
+  grid-column: 2 / -1;
+  margin: 0;
+  max-width: none;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+@media (min-width: 861px) {
+  .mail-layout.is-token-workspace {
+    grid-template-columns: 232px minmax(0, 1fr);
+  }
+
+  .mail-layout.is-token-workspace > .token-workspace {
+    grid-column: 2;
+  }
+}
+
+.token-workspace-compact {
+  align-content: start;
+  gap: 14px;
+  justify-items: stretch;
+}
+
+.token-workspace-compact .id-launch-hero {
+  align-items: start;
+  grid-template-columns: repeat(2, minmax(min(100%, 380px), 1fr));
+}
+
+.token-workspace-compact .id-launch-hero h2,
+.token-workspace-compact .token-detail-title h2 {
+  font-size: clamp(2rem, 3vw, 3.3rem);
+  line-height: 1;
+}
+
+.token-workspace-compact .id-launch-hero p,
+.token-workspace-compact .id-launch-section-head p {
+  font-size: 0.9rem;
+}
+
+.token-workspace-compact .id-claim-card {
+  box-shadow: none;
+}
+
+.token-workspace-compact .id-launch-card {
+  gap: 12px;
+  padding: 14px;
+}
+
+.token-workspace-compact .id-card-head {
+  align-items: start;
+}
+
+.token-workspace-compact .id-launch-grid {
+  grid-template-columns: repeat(2, minmax(min(100%, 380px), 1fr));
+}
+
+.token-workspace-compact .id-launch-stats {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.token-workspace-compact .id-launch-stats div {
+  min-height: 68px;
+  padding: 10px;
+}
+
+.token-workspace-compact .id-launch-stats strong {
+  font-size: clamp(1rem, 1.35vw, 1.28rem);
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.token-workspace-compact .token-detail-page,
+.token-workspace-compact.token-detail-page {
+  max-width: none;
+}
+
+.token-workspace-compact.token-detail-page > * {
+  min-width: 0;
+  width: 100%;
+}
+
 .token-form-grid {
   display: grid;
   gap: 10px;
@@ -3474,6 +3564,10 @@ pre {
   font-size: 0.82rem;
   line-height: 1.35;
   margin: 0;
+}
+
+.token-workspace-compact .token-registry-strip {
+  grid-template-columns: repeat(3, minmax(min(100%, 210px), 1fr));
 }
 
 .token-mint-grid {
@@ -3634,6 +3728,40 @@ pre {
   overflow-wrap: anywhere;
 }
 
+.token-workspace-compact .browser-meta {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.token-workspace-compact .browser-meta div {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.token-workspace-compact .browser-meta dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.token-workspace-compact .browser-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.token-workspace-compact .token-payment-lane strong {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .token-utxo-prep {
   background: var(--surface-soft);
   border: 1px solid var(--border);
@@ -3779,13 +3907,21 @@ pre {
 
 @media (max-width: 860px) {
   .token-public-app .id-launch-hero,
+  .token-workspace-compact .id-launch-hero,
   .token-public-app .id-launch-grid,
+  .token-workspace-compact .id-launch-grid,
   .token-registry-strip,
   .token-detail-hero {
     grid-template-columns: 1fr;
   }
 
-  .token-public-app .id-launch-stats {
+  .mail-layout > .token-workspace {
+    grid-column: auto;
+    padding: 14px;
+  }
+
+  .token-public-app .id-launch-stats,
+  .token-workspace-compact .id-launch-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -3801,7 +3937,8 @@ pre {
   .token-search-row,
   .token-payment-lane,
   .token-public-app .browser-meta,
-  .token-public-app .id-launch-stats {
+  .token-public-app .id-launch-stats,
+  .token-workspace-compact .id-launch-stats {
     grid-template-columns: 1fr;
   }
 
@@ -3884,6 +4021,10 @@ pre {
 @media (max-width: 1060px) {
   .mail-layout {
     grid-template-columns: 196px minmax(280px, 360px) minmax(0, 1fr);
+  }
+
+  .mail-layout.is-token-workspace {
+    grid-template-columns: 196px minmax(0, 1fr);
   }
 
   .topbar-controls {

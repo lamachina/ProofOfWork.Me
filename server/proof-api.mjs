@@ -1180,7 +1180,7 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
 
     const vin = Array.isArray(tx.vin) ? tx.vin : [];
     const vout = Array.isArray(tx.vout) ? tx.vout : [];
-    const actorAddress = transactionInputAddresses(vin)[0] ?? "";
+    const actorAddress = inputAddresses(vin)[0] ?? "";
     if (!isValidBitcoinAddress(actorAddress, network)) {
       continue;
     }
@@ -1231,7 +1231,7 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
     creationSats,
     tokens: tokens.sort(
       (left, right) =>
-        Number(left.confirmed) - Number(right.confirmed) ||
+        Number(right.confirmed) - Number(left.confirmed) ||
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
         left.txid.localeCompare(right.txid),
     ),
@@ -1261,7 +1261,7 @@ function tokenStateFromTransactions(indexTxs, registryTxsByAddress, indexAddress
 
       const vin = Array.isArray(tx.vin) ? tx.vin : [];
       const vout = Array.isArray(tx.vout) ? tx.vout : [];
-      const actorAddress = transactionInputAddresses(vin)[0] ?? "";
+      const actorAddress = inputAddresses(vin)[0] ?? "";
       if (!isValidBitcoinAddress(actorAddress, network)) {
         continue;
       }
@@ -1351,7 +1351,7 @@ function tokenStateFromTransactions(indexTxs, registryTxsByAddress, indexAddress
       ),
     mints: mints.sort(
       (left, right) =>
-        Number(left.confirmed) - Number(right.confirmed) ||
+        Number(right.confirmed) - Number(left.confirmed) ||
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
         left.txid.localeCompare(right.txid),
     ),

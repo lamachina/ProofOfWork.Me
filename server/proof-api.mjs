@@ -51,6 +51,8 @@ const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
 const BLOCK_TXID_FETCH_CONCURRENCY = Number(
   process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4,
 );
+const SLIPSTREAM_SUBMIT_TX_URL = "https://slipstream.mara.com/rest-api/submit-tx";
+const SLIPSTREAM_TX_URL = "https://slipstream.mara.com/tx";
 
 const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
@@ -60,6 +62,27 @@ const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
 const PAY2SPEAK_REGISTRY_PRICE_SATS = 1000;
 const PAY2SPEAK_SPLIT_THRESHOLD_SATS = 5460;
+const AK_PROTOCOL_MINT = '{"p":"nft","op":"mint","name":"ak21"}';
+const AK_OPERATOR_ADDRESS = "bc1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk7whapn";
+const NFT_DEPLOY_FEE_ADDRESS = AK_OPERATOR_ADDRESS;
+const NFT_DEPLOY_MIN_FEE_SATS = 1000;
+const AK_OPERATOR_MIN_SATS = 1000;
+const AK_OWNER_ANCHOR_SATS = 762;
+const NFT_COLLECTIONS = [
+  {
+    defaultOperatorAddress: AK_OPERATOR_ADDRESS,
+    description:
+      "AK21 visual NFT mints with an operator payment, mint JSON, owner anchor, optional Genesis Tag, and image OP_RETURN.",
+    displayName: "AK",
+    id: "ak21",
+    maxSupply: 1000,
+    mintProtocolPayload: AK_PROTOCOL_MINT,
+    name: "ak21",
+    operatorMinSats: AK_OPERATOR_MIN_SATS,
+    ownerAnchorSats: AK_OWNER_ANCHOR_SATS,
+    slug: "ak",
+  },
+];
 const TOKEN_CREATE_ACTION = "create";
 const TOKEN_MINT_ACTION = "mint";
 const TOKEN_CREATION_PRICE_SATS = 546;
@@ -126,7 +149,7 @@ function writeJsonBody(
   response.writeHead(statusCode, {
     "Access-Control-Allow-Headers":
       "Accept, Authorization, Cache-Control, Content-Type",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Origin": CORS_ORIGIN,
     "Cache-Control": cacheControl,
     "Content-Length": Buffer.byteLength(body),
@@ -350,6 +373,92 @@ async function fetchText(url) {
   }
 
   return response.text();
+}
+
+function readRequestBody(request, maxBytes = 1_000_000) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > maxBytes) {
+        reject(new Error("Request body is too large."));
+        request.destroy();
+      }
+    });
+    request.on("end", () => resolve(body));
+    request.on("error", reject);
+  });
+}
+
+async function readJsonRequestBody(request, maxBytes) {
+  const body = await readRequestBody(request, maxBytes);
+  if (!body.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error("Invalid JSON request body.");
+  }
+}
+
+function normalizeBroadcastTxid(value) {
+  const txid = String(value ?? "").trim().toLowerCase();
+  return /^[0-9a-f]{64}$/u.test(txid) ? txid : "";
+}
+
+async function submitSlipstreamTransaction(txHex) {
+  const response = await fetch(SLIPSTREAM_SUBMIT_TX_URL, {
+    body: JSON.stringify({ tx_hex: txHex }),
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const responseText = await response.text().catch(() => "");
+  let payload = null;
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      payload = { message: responseText };
+    }
+  }
+
+  const txid = normalizeBroadcastTxid(
+    payload?.message ?? payload?.txId ?? payload?.txid ?? payload?.result,
+  );
+  if (!response.ok || payload?.status !== "success" || !txid) {
+    throw new Error(
+      payload?.error ??
+        payload?.message ??
+        responseText ??
+        `Slipstream broadcast failed with HTTP ${response.status}.`,
+    );
+  }
+
+  return {
+    ok: true,
+    raw: payload,
+    source: "slipstream",
+    txid,
+    url: `${SLIPSTREAM_TX_URL}/${txid}`,
+  };
+}
+
+async function broadcastSlipstreamPayload(request) {
+  const payload = await readJsonRequestBody(request, 1_000_000);
+  const txHex = String(payload?.txHex ?? payload?.tx_hex ?? "").trim();
+  if (!/^[0-9a-fA-F]+$/u.test(txHex) || txHex.length % 2 !== 0) {
+    throw new Error("Invalid transaction hex.");
+  }
+
+  return submitSlipstreamTransaction(txHex);
 }
 
 async function fetchBlockTxidIndex(blockHash, network) {
@@ -835,6 +944,15 @@ function decodedProtocolMessages(vout, prefix) {
   return decodedOpReturnMessages(vout).filter((message) =>
     message.startsWith(prefix),
   );
+}
+
+function decodedOpReturnAt(vout, index) {
+  const output = vout[index];
+  if (!output || output.scriptpubkey_type !== "op_return") {
+    return "";
+  }
+
+  return decodedOpReturnMessages([output])[0] ?? "";
 }
 
 function protocolDataBytesForVout(vout, prefix) {
@@ -2943,6 +3061,32 @@ function pay2SpeakActivityItemsFromState(state, registryAddress) {
   return [...campaigns, ...funding];
 }
 
+function akActivityItemsFromState(state) {
+  return (state.mints ?? []).map((mint) => ({
+    amountSats: mint.operatorSats,
+    actor: mint.ownerAddress,
+    confirmed: mint.confirmed,
+    counterparty: mint.operatorAddress,
+    createdAt: mint.createdAt,
+    dataBytes: mint.dataBytes,
+    description: `${shortAddress(mint.ownerAddress)} minted an AK NFT.`,
+    detail: mint.genesisTag
+      ? `Genesis Tag: ${compactText(mint.genesisTag, 120)}`
+      : `Token ${mint.tokenIdentifier}`,
+    kind: "ak-mint",
+    network: mint.network,
+    tags: [
+      activityStatusTag(mint.confirmed),
+      networkLabel(mint.network),
+      "AK",
+      "NFT",
+      `${mint.operatorSats.toLocaleString()} operator sats`,
+    ],
+    title: mint.confirmed ? "AK minted" : "AK mint pending",
+    txid: mint.txid,
+  }));
+}
+
 function tokenActivityItemsFromState(state, indexAddress) {
   const creations = (state.tokens ?? []).map((token) => ({
     amountSats: token.creationFeeSats,
@@ -3127,8 +3271,9 @@ async function globalActivityPayload(network) {
   }
 
   const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
-  const [pay2SpeakState, tokenState] = await Promise.all([
+  const [pay2SpeakState, akState, tokenState] = await Promise.all([
     pay2SpeakPayload(network).catch(() => null),
+    akPayload(network).catch(() => null),
     tokenPayload(network).catch(() => null),
   ]);
   const pay2SpeakActivity = pay2SpeakState
@@ -3140,10 +3285,12 @@ async function globalActivityPayload(network) {
   const tokenActivity = tokenState
     ? tokenActivityItemsFromState(tokenState, tokenState.indexAddress ?? "")
     : [];
+  const akActivity = akState ? akActivityItemsFromState(akState) : [];
   const activity = dedupeActivityItems([
     ...(registry.activity ?? []),
     ...mailActivity,
     ...pay2SpeakActivity,
+    ...akActivity,
     ...tokenActivity,
   ]);
   const dataBytes = totalProtocolDataBytes(activity);
@@ -3157,6 +3304,7 @@ async function globalActivityPayload(network) {
   const tokenActions = activity.filter((item) =>
     String(item.kind).startsWith("token-"),
   ).length;
+  const akActions = activity.filter((item) => item.kind === "ak-mint").length;
 
   const payload = {
     activity,
@@ -3165,6 +3313,7 @@ async function globalActivityPayload(network) {
     source: mempoolBase(network),
     stats: {
       addresses: seenAddresses.size,
+      ak: akActions,
       dataBytes,
       files: fileActions,
       messages: messageActions,
@@ -4281,6 +4430,411 @@ function pay2SpeakStateFromTransactions(txs, registryAddress, network) {
   };
 }
 
+function isAkImagePayload(payload) {
+  const value = String(payload ?? "").trim();
+  return value.startsWith("data:image/") || value.startsWith("iVBORw0KGgo");
+}
+
+function normalizeAkImagePayload(payload) {
+  const value = String(payload ?? "").trim();
+  if (value.startsWith("data:image/")) {
+    return value;
+  }
+
+  return `data:image/png;base64,${value}`;
+}
+
+function akImageBase64(payload) {
+  const value = String(payload ?? "").trim();
+  if (!value.startsWith("data:image/")) {
+    return value;
+  }
+
+  const comma = value.indexOf(",");
+  return comma >= 0 ? value.slice(comma + 1) : "";
+}
+
+function akDataBytes(protocolPayload, genesisTag, imagePayload) {
+  return [protocolPayload, genesisTag ?? "", imagePayload]
+    .filter(Boolean)
+    .reduce((total, payload) => total + Buffer.byteLength(payload, "utf8"), 0);
+}
+
+function parseNftDeployPayload(payload) {
+  try {
+    const parsed = JSON.parse(String(payload ?? ""));
+    if (parsed?.p !== "nft" || parsed?.op !== "deploy") {
+      return null;
+    }
+
+    const name = String(parsed.name ?? "").trim();
+    const maxSupply = Number.parseInt(String(parsed.amt ?? ""), 10);
+    if (!name || !Number.isSafeInteger(maxSupply) || maxSupply <= 0) {
+      return null;
+    }
+
+    return { maxSupply, name };
+  } catch {
+    return null;
+  }
+}
+
+function transactionInputAddresses(vin) {
+  return (Array.isArray(vin) ? vin : [])
+    .map((input) => input?.prevout?.scriptpubkey_address)
+    .filter((address) => typeof address === "string" && address);
+}
+
+function nftDeployFeeAmount(vout) {
+  return (Array.isArray(vout) ? vout : []).reduce((total, output) => {
+    if (
+      output?.scriptpubkey_address === NFT_DEPLOY_FEE_ADDRESS &&
+      typeof output.value === "number"
+    ) {
+      return total + output.value;
+    }
+
+    return total;
+  }, 0);
+}
+
+function parseNftDeployTransaction(tx, network) {
+  const txid = transactionTxid(tx);
+  if (!txid) {
+    return null;
+  }
+
+  const operatorAddress = transactionInputAddresses(tx.vin)[0] ?? "";
+  if (!isValidBitcoinAddress(operatorAddress, network)) {
+    return null;
+  }
+
+  const vout = Array.isArray(tx.vout) ? tx.vout : [];
+  const deployRecord = parseNftDeployPayload(decodedOpReturnAt(vout, 0));
+  if (!deployRecord) {
+    return null;
+  }
+
+  const deployFeeSats = nftDeployFeeAmount(vout);
+  if (deployFeeSats < NFT_DEPLOY_MIN_FEE_SATS) {
+    return null;
+  }
+
+  const genesisTag = decodedOpReturnAt(vout, 1).trim() || null;
+  const imagePayload = decodedOpReturnAt(vout, 2);
+  if (!isAkImagePayload(imagePayload)) {
+    return null;
+  }
+
+  const blockTime =
+    typeof tx.status?.block_time === "number"
+      ? tx.status.block_time * 1000
+      : Date.now();
+  const normalizedName = deployRecord.name.toLowerCase();
+
+  return {
+    confirmed: transactionConfirmed(tx),
+    createdAt: new Date(blockTime).toISOString(),
+    dataBytes: akDataBytes(decodedOpReturnAt(vout, 0), genesisTag, imagePayload),
+    defaultOperatorAddress: operatorAddress,
+    deployedHeight: transactionBlockHeight(tx),
+    deployedTime:
+      typeof tx.status?.block_time === "number"
+        ? tx.status.block_time
+        : undefined,
+    deployFeeSats,
+    description:
+      genesisTag ??
+      `${deployRecord.name} NFT collection deployed by ${shortAddress(operatorAddress)}.`,
+    displayName: deployRecord.name,
+    genesisTag,
+    id: normalizedName,
+    imageBase64: akImageBase64(imagePayload),
+    imageDataUrl: normalizeAkImagePayload(imagePayload),
+    maxSupply: deployRecord.maxSupply,
+    mintProtocolPayload: JSON.stringify({
+      p: "nft",
+      op: "mint",
+      name: normalizedName,
+    }),
+    name: deployRecord.name,
+    network,
+    operatorAddress,
+    operatorMinSats: AK_OPERATOR_MIN_SATS,
+    ownerAnchorSats: AK_OWNER_ANCHOR_SATS,
+    slug: normalizedName,
+    txid,
+  };
+}
+
+function compareNftCollections(left, right) {
+  if (left.confirmed !== right.confirmed) {
+    return Number(right.confirmed) - Number(left.confirmed);
+  }
+
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    left.txid.localeCompare(right.txid)
+  );
+}
+
+function nftKnownCollectionRecords(network) {
+  return NFT_COLLECTIONS.map((collection) => ({
+    ...collection,
+    confirmed: true,
+    createdAt: "2026-05-05T11:21:44.000Z",
+    deployFeeSats: NFT_DEPLOY_MIN_FEE_SATS,
+    genesisTag: null,
+    imageBase64: "",
+    imageDataUrl: "",
+    network,
+    operatorAddress: collection.defaultOperatorAddress,
+    txid: "",
+  }));
+}
+
+function mergeNftCollections(indexed, network) {
+  const byKey = new Map();
+  for (const collection of nftKnownCollectionRecords(network)) {
+    byKey.set(
+      `${collection.name.toLowerCase()}:${collection.operatorAddress.toLowerCase()}`,
+      collection,
+    );
+  }
+  for (const collection of indexed) {
+    byKey.set(
+      `${collection.name.toLowerCase()}:${collection.operatorAddress.toLowerCase()}`,
+      collection,
+    );
+  }
+  return [...byKey.values()].sort(compareNftCollections);
+}
+
+function nftSyntheticCollectionDefinition(name, operatorAddress = "") {
+  const trimmedName = String(name ?? "").trim();
+  const normalizedName = (trimmedName || "nft").toLowerCase();
+  return {
+    defaultOperatorAddress: operatorAddress || AK_OPERATOR_ADDRESS,
+    description: `${trimmedName || "NFT"} NFT collection.`,
+    displayName: trimmedName || "NFT",
+    id: normalizedName,
+    maxSupply: 0,
+    mintProtocolPayload: JSON.stringify({
+      p: "nft",
+      op: "mint",
+      name: normalizedName,
+    }),
+    name: trimmedName || normalizedName,
+    operatorMinSats: AK_OPERATOR_MIN_SATS,
+    ownerAnchorSats: AK_OWNER_ANCHOR_SATS,
+    slug: normalizedName,
+  };
+}
+
+function nftCollectionByNameAndOperator(value, operatorAddressInput = "") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalizedOperator = String(operatorAddressInput ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return NFT_COLLECTIONS[0];
+  }
+  const matches = NFT_COLLECTIONS.filter(
+    (collection) =>
+      collection.id.toLowerCase() === normalized ||
+      collection.name.toLowerCase() === normalized ||
+      collection.slug.toLowerCase() === normalized,
+  );
+
+  if (normalizedOperator) {
+    const operatorMatch = matches.find(
+      (collection) =>
+        collection.defaultOperatorAddress.toLowerCase() === normalizedOperator,
+    );
+    if (operatorMatch) {
+      return operatorMatch;
+    }
+  }
+
+  if (matches.length > 0) {
+    return matches[0];
+  }
+
+  return (
+    NFT_COLLECTIONS.find(
+      (collection) =>
+        normalizedOperator &&
+        collection.defaultOperatorAddress.toLowerCase() === normalizedOperator,
+    ) ?? nftSyntheticCollectionDefinition(value, operatorAddressInput)
+  );
+}
+
+function nftOperatorAddress(collection, value) {
+  const operatorAddress = String(value ?? "").trim();
+  return operatorAddress || collection.defaultOperatorAddress;
+}
+
+function parseAkMintTransaction(
+  tx,
+  network,
+  collection = NFT_COLLECTIONS[0],
+  operatorAddress = collection.defaultOperatorAddress,
+) {
+  const txid = transactionTxid(tx);
+  if (!txid) {
+    return null;
+  }
+
+  const vout = Array.isArray(tx.vout) ? tx.vout : [];
+  const operatorOutput = vout[0];
+  if (
+    operatorOutput?.scriptpubkey_address !== operatorAddress ||
+    typeof operatorOutput.value !== "number" ||
+    operatorOutput.value < collection.operatorMinSats
+  ) {
+    return null;
+  }
+
+  const mintPayload = decodedOpReturnAt(vout, 1);
+  if (mintPayload !== collection.mintProtocolPayload) {
+    return null;
+  }
+
+  const ownerOutput = vout[2];
+  const ownerAddress = ownerOutput?.scriptpubkey_address;
+  if (
+    typeof ownerAddress !== "string" ||
+    !isValidBitcoinAddress(ownerAddress, network) ||
+    typeof ownerOutput.value !== "number" ||
+    ownerOutput.value < collection.ownerAnchorSats
+  ) {
+    return null;
+  }
+
+  const vout3Payload = decodedOpReturnAt(vout, 3);
+  if (!vout3Payload) {
+    return null;
+  }
+
+  let genesisTag = null;
+  let imagePayload = "";
+  if (isAkImagePayload(vout3Payload)) {
+    imagePayload = vout3Payload;
+  } else {
+    genesisTag = vout3Payload.trim() || null;
+    imagePayload = decodedOpReturnAt(vout, 4);
+  }
+
+  if (!isAkImagePayload(imagePayload)) {
+    return null;
+  }
+
+  const blockTime =
+    typeof tx.status?.block_time === "number"
+      ? tx.status.block_time * 1000
+      : Date.now();
+  return {
+    confirmed: transactionConfirmed(tx),
+    collectionId: collection.id,
+    collectionName: collection.name,
+    createdAt: new Date(blockTime).toISOString(),
+    dataBytes: akDataBytes(mintPayload, genesisTag, imagePayload),
+    genesisTag,
+    imageBase64: akImageBase64(imagePayload),
+    imageDataUrl: normalizeAkImagePayload(imagePayload),
+    mintedHeight: transactionBlockHeight(tx),
+    mintedTime:
+      typeof tx.status?.block_time === "number"
+        ? tx.status.block_time
+        : undefined,
+    network,
+    operatorAddress,
+    operatorSats: operatorOutput.value,
+    ownerAddress,
+    tokenIdentifier: `${txid}:2`,
+    txid,
+    voutIndex: 2,
+  };
+}
+
+function compareAkMints(left, right) {
+  if (left.confirmed !== right.confirmed) {
+    return Number(right.confirmed) - Number(left.confirmed);
+  }
+
+  return (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    left.txid.localeCompare(right.txid)
+  );
+}
+
+async function akPayload(
+  network,
+  ownerFilter = "",
+  collectionId = "",
+  operatorAddressInput = "",
+) {
+  const collection = nftCollectionByNameAndOperator(
+    collectionId,
+    operatorAddressInput,
+  );
+  const operatorAddress = nftOperatorAddress(collection, operatorAddressInput);
+  if (network !== "livenet") {
+    return {
+      collection,
+      collections: [],
+      indexedAt: new Date().toISOString(),
+      mints: [],
+      network,
+      operatorAddress,
+      source: mempoolBase(network),
+      stats: { confirmed: 0, pending: 0, total: 0 },
+    };
+  }
+
+  const [deployTxs, txs] = await Promise.all([
+    fetchRegistryTransactions(NFT_DEPLOY_FEE_ADDRESS, network),
+    isValidBitcoinAddress(operatorAddress, network)
+      ? fetchRegistryTransactions(operatorAddress, network)
+      : [],
+  ]);
+  const collections = mergeNftCollections(
+    deployTxs.map((tx) => parseNftDeployTransaction(tx, network)).filter(Boolean),
+    network,
+  );
+  const effectiveCollection =
+    collections.find(
+      (item) =>
+        item.name.toLowerCase() === collection.name.toLowerCase() &&
+        item.operatorAddress.toLowerCase() === operatorAddress.toLowerCase(),
+    ) ?? collection;
+  const normalizedOwner = String(ownerFilter ?? "").trim();
+  const mints = txs
+    .map((tx) =>
+      parseAkMintTransaction(tx, network, effectiveCollection, operatorAddress),
+    )
+    .filter(Boolean)
+    .filter(
+      (mint) =>
+        !normalizedOwner ||
+        mint.ownerAddress.toLowerCase() === normalizedOwner.toLowerCase(),
+    )
+    .sort(compareAkMints);
+
+  return {
+    collection: effectiveCollection,
+    collections,
+    indexedAt: new Date().toISOString(),
+    mints,
+    network,
+    operatorAddress,
+    source: mempoolBase(network),
+    stats: {
+      confirmed: mints.filter((mint) => mint.confirmed).length,
+      pending: mints.filter((mint) => !mint.confirmed).length,
+      total: mints.length,
+    },
+  };
+}
+
 async function pay2SpeakPayload(network) {
   const registryAddress = pay2SpeakRegistryAddressForNetwork(network);
   if (!registryAddress) {
@@ -4499,15 +5053,10 @@ async function handleRequest(request, response) {
     response.writeHead(204, {
       "Access-Control-Allow-Headers":
         "Accept, Authorization, Cache-Control, Content-Type",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Origin": CORS_ORIGIN,
     });
     response.end();
-    return;
-  }
-
-  if (request.method !== "GET") {
-    errorResponse(response, 405, "Method not allowed.");
     return;
   }
 
@@ -4518,6 +5067,24 @@ async function handleRequest(request, response) {
   const pathParts = url.pathname.split("/").filter(Boolean);
 
   try {
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/v1/broadcast/slipstream"
+    ) {
+      jsonResponse(
+        response,
+        200,
+        await broadcastSlipstreamPayload(request),
+        "no-store",
+      );
+      return;
+    }
+
+    if (request.method !== "GET") {
+      errorResponse(response, 405, "Method not allowed.");
+      return;
+    }
+
     if (url.pathname === "/health" || url.pathname === "/api/v1/health") {
       jsonResponse(response, 200, await healthPayload(), "no-store");
       return;
@@ -4552,6 +5119,19 @@ async function handleRequest(request, response) {
         response,
         `pay2speak:${network}`,
         () => pay2SpeakPayload(network),
+        READ_CACHE_CONTROL,
+      );
+      return;
+    }
+
+    if (url.pathname === "/api/v1/nft" || url.pathname === "/api/v1/ak") {
+      const owner = url.searchParams.get("owner") ?? "";
+      const collection = url.searchParams.get("collection") ?? "";
+      const operator = url.searchParams.get("operator") ?? "";
+      await cachedJsonResponse(
+        response,
+        `nft:${network}:${collection}:${operator}:${owner}`,
+        () => akPayload(network, owner, collection, operator),
         READ_CACHE_CONTROL,
       );
       return;

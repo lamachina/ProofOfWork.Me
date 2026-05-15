@@ -31,6 +31,7 @@ desktop.proofofwork.me
 browser.proofofwork.me
 marketplace.proofofwork.me
 pay2speak.proofofwork.me
+nft.proofofwork.me
 token.proofofwork.me
 tokens.proofofwork.me -> https://token.proofofwork.me/
 work.proofofwork.me
@@ -48,6 +49,7 @@ Production app roles:
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
 - `marketplace.proofofwork.me` is the standalone ProofOfWork ID listing and buyer-funded transfer app.
 - `pay2speak.proofofwork.me` is the standalone mainnet Pay2Speak app for X Space crowdfunding records and funded questions.
+- `nft.proofofwork.me` is the standalone mainnet NFT collections app. AK is the first collection, with local visual generation, wallet-signed minting, and valid mint gallery reads.
 - `token.proofofwork.me` is the standalone mainnet token creation and mint app.
 - `tokens.proofofwork.me` redirects permanently to `https://token.proofofwork.me/`.
 - `work.proofofwork.me` is the standalone WORK token dashboard and mint page.
@@ -56,7 +58,7 @@ Production app roles:
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their Bitcoin transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, Token, WORK, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Marketplace, Pay2Speak, NFT, Token, WORK, Log, and Growth. Public social links should include X, YouTube, GitHub, and Discord.
 
 Official YouTube:
 
@@ -141,8 +143,9 @@ Launch invariants for future developers/agents:
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Exposes Pay2Speak as a mainnet-only X Space crowdfunding surface with campaign creation, funding splits, optional questions, and a Computer workspace.
+- Exposes NFT as a mainnet-only collection surface. AK is the first collection, with local pixel-art generation, optional Genesis Tag minting, a Computer workspace, and collection subpages that scan a selected operator address with AK decoding rules.
 - Exposes Tokens as a mainnet-only creation and mint surface, plus a dedicated WORK token dashboard. Token creation pays the built-in index fee to `tokens@proofofwork.me`; mints pay each token's own registry at the owner-set price.
-- Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, marketplace, Pay2Speak, and Token value metrics.
+- Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, marketplace, Pay2Speak, NFT, and Token value metrics.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and marketplace flows live in the Computer app and the standalone Marketplace app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
@@ -173,6 +176,7 @@ https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
 https://marketplace.proofofwork.me/api/*
 https://pay2speak.proofofwork.me/api/*
+https://nft.proofofwork.me/api/*
 https://token.proofofwork.me/api/*
 https://work.proofofwork.me/api/*
 https://log.proofofwork.me/api/*
@@ -196,12 +200,13 @@ Current production behavior:
 - Token surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per token and per mint from BTC/USD.
 - `work.proofofwork.me` shows only the WORK dashboard: mint progress, holders, token facts, mint action, and mint log. `token.proofofwork.me` stays focused on token creation and mint selection.
 - WORK defaults are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. The launch price is exactly 1 sat per WORK. These are editable create-form defaults, not hardcoded limits for other tokens.
-- The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, Pay2Speak campaigns/funding, token creations, and token mints. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across all discovered `pwm1:`, `pwid1:`, `pws1:`, and `pwt1:` OP_RETURN records.
+- The NFT API indexes deploy records and supported collection operators. Deploy records derive the operator from `vin0`, require at least 1,000 sats to `bc1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk7whapn`, and canonical collection subpages use `collection=<name>&operator=<operator-address>` because collection names are not globally unique.
+- The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT mints, token creations, and token mints. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
 - Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside carrier; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
 - Confirmed Browser pages may run scripts in an opaque sandbox, but wallet signing remains outside Browser pages. Pending Browser pages render as visibility only and cannot run scripts.
 - Files/Desktop treat Browser-readable `pwm1:m` HTML bodies as derived `.html` files for navigation and opening, while the original transaction remains a message-body record on-chain.
 - The canonical welcome page is pinned by txid `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` as the default Bitcoin Computer file. It appears in Files/Desktop as a system artifact and opens in Browser so the transaction remains the source of truth.
-- Growth reads the same registry, log, Pay2Speak, and Token endpoints, then auto-refreshes real confirmed network value against the canonical `output/bitcoin-computer-agent-adoption-model.md` sats/USD assumptions. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
+- Growth reads the same registry, log, Pay2Speak, NFT, and Token endpoints, then auto-refreshes real confirmed network value against the canonical `output/bitcoin-computer-agent-adoption-model.md` sats/USD assumptions. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and marketplace actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which mempool.space reports as a lower effective fee rate.
 - A tx status can be `confirmed`, `pending`, or `dropped`.
 - A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
@@ -321,6 +326,12 @@ To preview Pay2Speak locally:
 http://localhost:5173/?pay2speak=1
 ```
 
+To preview NFT collections locally:
+
+```text
+http://localhost:5173/?nft=1
+```
+
 To preview the token creation and mint app locally:
 
 ```text
@@ -361,6 +372,7 @@ Desktop -> /?desktop=1
 Browser -> /?browser=1
 Marketplace -> /?marketplace=1
 Pay2Speak -> /?pay2speak=1
+NFT -> /?nft=1
 Token -> /?token=1
 WORK -> /?work=1
 Log -> /?log=1
@@ -407,6 +419,12 @@ To build the standalone Pay2Speak app for production:
 
 ```bash
 VITE_PAY2SPEAK_ONLY=1 VITE_POW_API_BASE=https://pay2speak.proofofwork.me npm run build
+```
+
+To build the standalone NFT app for production:
+
+```bash
+VITE_NFT_ONLY=1 VITE_POW_API_BASE=https://nft.proofofwork.me npm run build
 ```
 
 To build the standalone token app for production:
@@ -489,6 +507,7 @@ Important implementation points:
 - Public Browser route switch: `isBrowserRoute()` in `src/App.tsx`.
 - Standalone Marketplace route switch: `isMarketplaceRoute()` in `src/App.tsx`.
 - Standalone Pay2Speak route switch: `isPay2SpeakRoute()` in `src/App.tsx`.
+- Standalone NFT route switch: `isNftRoute()` in `src/App.tsx`.
 - Standalone Token route switch: `isTokenRoute()` in `src/App.tsx`.
 - Standalone WORK route switch: `isWorkTokenRoute()` in `src/App.tsx`.
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
@@ -496,6 +515,7 @@ Important implementation points:
 - Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
 - Marketplace-only deploy switch: `VITE_MARKETPLACE_ONLY=1`.
 - Pay2Speak-only deploy switch: `VITE_PAY2SPEAK_ONLY=1`.
+- NFT-only deploy switch: `VITE_NFT_ONLY=1`.
 - Token-only deploy switch: `VITE_TOKEN_ONLY=1`.
 - WORK-only deploy switch: `VITE_WORK_TOKEN_ONLY=1`.
 - Growth-only deploy switch: `VITE_GROWTH_ONLY=1`.

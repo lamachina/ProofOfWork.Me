@@ -9,11 +9,13 @@ The full ProofOfWork.Me app is probably too large to fit directly into a single 
 Current production build size is roughly:
 
 ```text
-Raw build assets:     ~568 KB in dist/
-Main JS bundle:       ~475 KB
-Main CSS bundle:      ~23 KB
-Gzipped JS bundle:    ~143 KB
-Gzipped CSS bundle:   ~5 KB
+Dist with public assets: ~8.6 MB
+Compiled JS/CSS assets: ~789 KB
+App JS chunk:         ~349 KB
+Vendor JS chunks:     ~396 KB split across React, Bitcoin, and vendor
+Main CSS bundle:      ~59 KB
+Gzipped JS total:     ~200 KB
+Gzipped CSS bundle:   ~11 KB
 ```
 
 That is larger than a practical 100 KB OP_RETURN target.
@@ -25,20 +27,41 @@ The Phase 1 launch does not anchor app releases on-chain yet.
 Current launch surfaces:
 
 ```text
-proofofwork.me          -> landing/router page
-id.proofofwork.me       -> focused mainnet ID registry onboarding
-computer.proofofwork.me -> full mail/computer app
-desktop.proofofwork.me  -> public read-only file desktop
+www.proofofwork.me          -> canonical landing/router page
+proofofwork.me              -> permanent redirect to https://www.proofofwork.me/
+id.proofofwork.me           -> focused mainnet ID registry onboarding
+computer.proofofwork.me     -> full mail/computer app
+desktop.proofofwork.me      -> public read-only file desktop
+browser.proofofwork.me      -> public HTML browser by txid
+marketplace.proofofwork.me  -> standalone ID marketplace
+pay2speak.proofofwork.me    -> standalone X Space crowdfunding app
+token.proofofwork.me        -> standalone token creation and mint app
+tokens.proofofwork.me       -> permanent redirect to https://token.proofofwork.me/
+work.proofofwork.me         -> standalone WORK token dashboard and mint page
+log.proofofwork.me          -> public Bitcoin Computer log
+growth.proofofwork.me       -> public growth model dashboard
 ```
 
-These are served as static frontend builds. `id.proofofwork.me` and `desktop.proofofwork.me` are selected in code by hostname or dedicated build flags, with local previews available at:
+These are served as static frontend builds. Standalone surfaces are selected in
+code by hostname or dedicated build flags, with local previews available at:
 
 ```text
 http://localhost:5173/?id-launch=1
 http://localhost:5173/?desktop=1
+http://localhost:5173/?browser=1
+http://localhost:5173/?marketplace=1
+http://localhost:5173/?pay2speak=1
+http://localhost:5173/?token=1
+http://localhost:5173/?work=1
+http://localhost:5173/?log=1
+http://localhost:5173/?growth=1
 ```
 
-`desktop.proofofwork.me` should remain a standalone public search surface, not the full Computer mailbox shell.
+`desktop.proofofwork.me`, `browser.proofofwork.me`,
+`marketplace.proofofwork.me`, `pay2speak.proofofwork.me`,
+`token.proofofwork.me`, `work.proofofwork.me`, `log.proofofwork.me`, and
+`growth.proofofwork.me` should remain standalone public surfaces, not hidden
+tabs that require the full Computer mailbox shell.
 
 Future on-chain app anchoring should verify releases without changing the canonical ID registry address or `pwid1:r2` format.
 

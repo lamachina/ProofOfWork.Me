@@ -3128,12 +3128,8 @@ async function globalActivityPayload(network) {
 
   const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
   const [pay2SpeakState, tokenState] = await Promise.all([
-    cachedPayload(`pay2speak:${network}`, () => pay2SpeakPayload(network)).catch(
-      () => null,
-    ),
-    cachedPayload(`token:${network}`, () => tokenPayload(network)).catch(
-      () => null,
-    ),
+    pay2SpeakPayload(network).catch(() => null),
+    tokenPayload(network).catch(() => null),
   ]);
   const pay2SpeakActivity = pay2SpeakState
     ? pay2SpeakActivityItemsFromState(

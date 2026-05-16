@@ -1186,6 +1186,7 @@ type GrowthRealEvent = {
 
 const GROWTH_MODEL_START_DATE = "2026-05-11";
 const GROWTH_MODEL_GENERATED_ON = "2026-05-13";
+const MAX_GROWTH_ACTUAL_CHART_EVENTS = 240;
 const GROWTH_MODEL_INPUTS = {
   bitnodesReachableNodes: 23_984,
   agentShare: 0.51,
@@ -13484,7 +13485,7 @@ export default function App() {
         fetchGlobalActivity("livenet").catch(() => []),
         fetchPay2SpeakState("livenet"),
         fetchAkState("livenet"),
-        fetchTokenState("livenet", !silent),
+        fetchTokenState("livenet", false),
       ]);
       const deployedNftCollections = (akState.collections ?? []).filter(
         (collection) => collection.txid,
@@ -23474,6 +23475,34 @@ function growthActualNetworkValue(
   };
 }
 
+function compactGrowthEventTimes(
+  eventTimes: Array<{ createdMs: number; label: string }>,
+) {
+  const sorted = [...eventTimes].sort(
+    (left, right) => left.createdMs - right.createdMs,
+  );
+  if (sorted.length <= MAX_GROWTH_ACTUAL_CHART_EVENTS) {
+    return sorted;
+  }
+
+  const indexes = new Set<number>([0, sorted.length - 1]);
+  for (let index = 0; index < MAX_GROWTH_ACTUAL_CHART_EVENTS; index += 1) {
+    indexes.add(
+      Math.round(
+        (index * (sorted.length - 1)) /
+          Math.max(1, MAX_GROWTH_ACTUAL_CHART_EVENTS - 1),
+      ),
+    );
+  }
+
+  return [...indexes]
+    .sort((left, right) => left - right)
+    .map((index) => sorted[index])
+    .filter((item): item is { createdMs: number; label: string } =>
+      Boolean(item),
+    );
+}
+
 function growthActualValuePoints(
   records: PowIdRecord[],
   idActivity: PowActivityItem[],
@@ -23573,9 +23602,7 @@ function growthActualValuePoints(
     years: 0,
   });
 
-  for (const { createdMs, label } of eventTimes.sort(
-    (left, right) => left.createdMs - right.createdMs,
-  )) {
+  for (const { createdMs, label } of compactGrowthEventTimes(eventTimes)) {
     const value = growthActualNetworkValue(
       records,
       idActivity,

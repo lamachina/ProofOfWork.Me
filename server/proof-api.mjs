@@ -36,7 +36,7 @@ const MAX_ACTIVITY_ADDRESS_GRAPH_PASSES = Number(
   process.env.MAX_ACTIVITY_ADDRESS_GRAPH_PASSES ?? 1,
 );
 const ACTIVITY_CACHE_TTL_MS = Number(
-  process.env.ACTIVITY_CACHE_TTL_MS ?? 15 * 60_000,
+  process.env.ACTIVITY_CACHE_TTL_MS ?? 60_000,
 );
 const ACTIVITY_CACHE_STALE_MS = Number(
   process.env.ACTIVITY_CACHE_STALE_MS ?? 3_600_000,
@@ -53,8 +53,10 @@ const RESPONSE_CACHE_TTL_MS = Number(
 const RESPONSE_CACHE_STALE_MS = Number(
   process.env.RESPONSE_CACHE_STALE_MS ?? 120_000,
 );
-const TOKEN_CACHE_TTL_MS = Number(process.env.TOKEN_CACHE_TTL_MS ?? 5_000);
-const TOKEN_CACHE_STALE_MS = Number(process.env.TOKEN_CACHE_STALE_MS ?? 0);
+const TOKEN_CACHE_TTL_MS = Number(process.env.TOKEN_CACHE_TTL_MS ?? 30_000);
+const TOKEN_CACHE_STALE_MS = Number(
+  process.env.TOKEN_CACHE_STALE_MS ?? 5 * 60_000,
+);
 const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
 const BLOCK_TXID_FETCH_CONCURRENCY = Number(
   process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4,
@@ -140,8 +142,10 @@ const RESPONSE_CACHE = new Map();
 const READ_CACHE_CONTROL =
   "public, max-age=15, stale-while-revalidate=60, stale-if-error=120";
 const EXPENSIVE_READ_CACHE_CONTROL =
-  "public, max-age=900, stale-while-revalidate=3600, stale-if-error=3600";
-const TOKEN_READ_CACHE_CONTROL = "no-store, max-age=0, must-revalidate";
+  "public, max-age=60, stale-while-revalidate=3600, stale-if-error=3600";
+const TOKEN_READ_CACHE_CONTROL =
+  "public, max-age=30, stale-while-revalidate=300, stale-if-error=300";
+const FRESH_READ_CACHE_CONTROL = "no-store, max-age=0, must-revalidate";
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
@@ -5296,7 +5300,7 @@ async function handleRequest(request, response) {
           response,
           200,
           await tokenPayload(network, tokenScope),
-          TOKEN_READ_CACHE_CONTROL,
+          FRESH_READ_CACHE_CONTROL,
         );
       } else {
         await cachedJsonResponse(

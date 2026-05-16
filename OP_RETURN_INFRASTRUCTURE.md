@@ -200,6 +200,7 @@ The token endpoint:
 - `token.proofofwork.me` is the create/mint surface, `tokens.proofofwork.me` redirects to it, and `work.proofofwork.me` is the dedicated WORK dashboard.
 - WORK defaults are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 sat per WORK. These are editable create-form defaults, not hardcoded limits for other tokens.
 - WORK's permanent price floor is derived from the confirmed Bitcoin Computer network value, not from pending mempool visibility: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / confirmed_network_value_sats` is the WORK-per-sat ratio.
+- The WORK dashboard computes and displays this live floor from the same Growth inputs, using live BTC/USD for USD translations. The dashboard must keep the live floor visually separate from the token's owner-set mint price.
 - Historical WORK floor announcement mail tx: `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`. Its subject is `$work now has a permanent Bitcoin Computer floor.` The tx status should be read from the node/API at runtime; docs preserve the txid and decoded intent, not a stale confirmation claim.
 - Treats pending token records as visibility only; confirmed records are canonical.
 

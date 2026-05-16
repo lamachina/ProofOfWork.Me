@@ -1173,6 +1173,13 @@ type GrowthActualNetworkValue = {
   totalUsd: number;
 };
 
+type WorkFloorQuote = {
+  indexedAt: string;
+  networkValueSats: number;
+  powids: number;
+  tokenFlowSats: number;
+};
+
 type GrowthRealEvent = {
   amountLabel: string;
   createdAt: string;
@@ -11013,6 +11020,10 @@ export default function App() {
   const [tokenBtcUsd, setTokenBtcUsd] = useState(
     GROWTH_MODEL_INPUTS.currentBtcUsd,
   );
+  const [workFloorQuote, setWorkFloorQuote] = useState<
+    WorkFloorQuote | undefined
+  >();
+  const [workFloorLoading, setWorkFloorLoading] = useState(false);
   const [tokenPrepareMintCount, setTokenPrepareMintCount] = useState(
     TOKEN_PREPARE_DEFAULT_MINT_COUNT,
   );
@@ -11093,6 +11104,7 @@ export default function App() {
   const chainSentRef = useRef(chainSent);
   const idRefreshInFlightRef = useRef(false);
   const growthRefreshInFlightRef = useRef(false);
+  const workFloorRefreshInFlightRef = useRef(false);
   const nftMintAssistantActiveRef = useRef(false);
   const nftMintAssistantTimerRef = useRef<number | undefined>(undefined);
   const tokenMintAssistantActiveRef = useRef(false);
@@ -12296,6 +12308,33 @@ export default function App() {
   }, [network, tokenMode, workTokenMode]);
 
   useEffect(() => {
+    if (
+      network !== "livenet" ||
+      (!workTokenMode && activeFolder !== "work")
+    ) {
+      return;
+    }
+
+    const refreshWorkFloorMetrics = () => {
+      if (document.visibilityState === "visible") {
+        void refreshWorkFloor(true);
+      }
+    };
+
+    refreshWorkFloorMetrics();
+    const interval = window.setInterval(
+      refreshWorkFloorMetrics,
+      GROWTH_AUTO_REFRESH_MS,
+    );
+    window.addEventListener("focus", refreshWorkFloorMetrics);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshWorkFloorMetrics);
+    };
+  }, [activeFolder, network, workTokenMode]);
+
+  useEffect(() => {
     if (!tokenMode && !workTokenMode && activeFolder !== "token" && activeFolder !== "work") {
       return;
     }
@@ -13459,6 +13498,70 @@ export default function App() {
       });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function refreshWorkFloor(silent = false) {
+    if (workFloorRefreshInFlightRef.current) {
+      return;
+    }
+
+    workFloorRefreshInFlightRef.current = true;
+    setWorkFloorLoading(true);
+    if (!silent) {
+      setStatus({ tone: "idle", text: "Refreshing WORK floor..." });
+    }
+
+    try {
+      const [
+        registryState,
+        computerActivity,
+        pay2SpeakState,
+        akState,
+        tokenState,
+      ] = await Promise.all([
+        fetchIdRegistryState("livenet"),
+        fetchGlobalActivity("livenet").catch(() => []),
+        fetchPay2SpeakState("livenet"),
+        fetchAkState("livenet"),
+        fetchTokenState("livenet", false),
+      ]);
+      const actualValue = growthActualNetworkValue(
+        registryState.records,
+        computerActivity.length > 0
+          ? computerActivity
+          : registryState.activity,
+        registryState.sales,
+        pay2SpeakState.campaigns,
+        pay2SpeakState.funding,
+        akState.collections ?? [],
+        akState.mints,
+        tokenState.tokens,
+        tokenState.mints,
+      );
+      setWorkFloorQuote({
+        indexedAt: new Date().toISOString(),
+        networkValueSats: actualValue.totalSats,
+        powids: actualValue.powids,
+        tokenFlowSats:
+          actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats,
+      });
+      if (!silent) {
+        setStatus({
+          tone: "good",
+          text: `WORK floor loaded. Confirmed network value ${Math.round(actualValue.totalSats).toLocaleString()} sats.`,
+        });
+      }
+    } catch (error) {
+      if (!silent) {
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "WORK floor refresh failed."),
+        });
+      }
+    } finally {
+      workFloorRefreshInFlightRef.current = false;
+      setWorkFloorLoading(false);
     }
   }
 
@@ -16972,12 +17075,19 @@ export default function App() {
         tokenDetailTarget={effectiveTokenDetailTarget}
         tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
         tokens={orderedTokenDefinitions}
+        workFloorLoading={workFloorLoading}
+        workFloorQuote={workFloorQuote}
         startMintAssistant={startTokenMintAssistant}
         stopMintAssistant={stopTokenMintAssistant}
         submitMint={mintToken}
         theme={theme}
         workTokenOnly={workTokenMode}
-        onRefresh={() => void refreshToken()}
+        onRefresh={() => {
+          void refreshToken();
+          if (workTokenMode) {
+            void refreshWorkFloor();
+          }
+        }}
       />
     );
   }
@@ -17781,10 +17891,17 @@ export default function App() {
             }
             tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
             tokens={orderedTokenDefinitions}
+            workFloorLoading={workFloorLoading}
+            workFloorQuote={workFloorQuote}
             startMintAssistant={startTokenMintAssistant}
             stopMintAssistant={stopTokenMintAssistant}
             workTokenOnly={activeFolder === "work"}
-            onRefresh={() => void refreshToken()}
+            onRefresh={() => {
+              void refreshToken();
+              if (activeFolder === "work") {
+                void refreshWorkFloor();
+              }
+            }}
           />
         ) : activeFolder === "contacts" ? (
           <ContactsWorkspace
@@ -19422,6 +19539,8 @@ type TokenAppProps = {
   tokenDetailTarget: string;
   tokenIndexAddress: string;
   tokens: PowTokenDefinition[];
+  workFloorLoading: boolean;
+  workFloorQuote?: WorkFloorQuote;
   startMintAssistant: (tokenId?: string) => void;
   stopMintAssistant: () => void;
   submitMint: (
@@ -19598,6 +19717,8 @@ function TokenWorkspace({
   tokenDetailTarget,
   tokenIndexAddress,
   tokens,
+  workFloorLoading,
+  workFloorQuote,
   workTokenOnly,
   onRefresh,
 }: Omit<
@@ -19701,6 +19822,16 @@ function TokenWorkspace({
   );
   const detailMintUsd = satsToUsd(detailToken?.mintPriceSats ?? 0, btcUsd);
   const detailUnitUsd = satsToUsd(detailPricePerToken, btcUsd);
+  const detailShowsWorkFloor =
+    Boolean(workTokenOnly && detailToken?.ticker === WORK_TOKEN_TICKER);
+  const liveWorkFloorSats =
+    detailShowsWorkFloor && workFloorQuote
+      ? workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY
+      : 0;
+  const liveWorkFloorUsd = satsToUsd(liveWorkFloorSats, btcUsd);
+  const liveWorkNetworkUsd = workFloorQuote
+    ? satsToUsd(workFloorQuote.networkValueSats, btcUsd)
+    : 0;
   const detailMatchingHolders = detailHolders.filter((holder) =>
     tokenHolderMatchesSearch(holder, holderQuery),
   );
@@ -20361,6 +20492,72 @@ function TokenWorkspace({
                 <span>Confirmed mints</span>
               </div>
             </div>
+
+            {detailShowsWorkFloor ? (
+              <section className="id-launch-card token-floor-card">
+                <div className="id-card-head">
+                  <div className="empty-icon" aria-hidden="true">
+                    <TrendingUp size={24} />
+                  </div>
+                  <div>
+                    <h3>Live WORK floor</h3>
+                    <p>
+                      Confirmed Bitcoin Computer network value divided by{" "}
+                      {WORK_TOKEN_MAX_SUPPLY.toLocaleString()} WORK.
+                    </p>
+                  </div>
+                </div>
+                {workFloorQuote ? (
+                  <>
+                    <div
+                      className="id-launch-stats token-floor-stats"
+                      aria-label="Live WORK floor"
+                    >
+                      <div>
+                        <span>Floor</span>
+                        <strong>
+                          {tokenSatsPerUnit(liveWorkFloorSats)} sats / WORK
+                        </strong>
+                      </div>
+                      <div>
+                        <span>USD/WORK</span>
+                        <strong>{tokenUsd(liveWorkFloorUsd)}</strong>
+                      </div>
+                      <div>
+                        <span>Network value</span>
+                        <strong>
+                          {Math.round(
+                            workFloorQuote.networkValueSats,
+                          ).toLocaleString()}{" "}
+                          sats
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Network USD</span>
+                        <strong>{tokenUsd(liveWorkNetworkUsd)}</strong>
+                      </div>
+                    </div>
+                    <p className="field-note">
+                      Mint price remains{" "}
+                      {detailToken.mintPriceSats.toLocaleString()} sats for{" "}
+                      {detailToken.mintAmount.toLocaleString()} WORK. The live
+                      floor follows confirmed network value only; pending mints
+                      wait for confirmation. Refreshed{" "}
+                      {formatDate(workFloorQuote.indexedAt)} from{" "}
+                      {workFloorQuote.powids.toLocaleString()} confirmed IDs and{" "}
+                      {workFloorQuote.tokenFlowSats.toLocaleString()} token flow
+                      sats.
+                    </p>
+                  </>
+                ) : (
+                  <p className="field-note">
+                    {workFloorLoading
+                      ? "Loading confirmed network value..."
+                      : "Refresh to load the live WORK floor."}
+                  </p>
+                )}
+              </section>
+            ) : null}
 
             <div className="id-launch-grid">
               <section className="id-launch-card token-mint-panel">

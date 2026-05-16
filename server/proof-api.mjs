@@ -106,6 +106,8 @@ const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const WORK_TOKEN_MINT_AMOUNT = 1000;
 const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_PRICE_SATS_PER_WORK = 1;
+const WORK_TOKEN_ID =
+  "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS =
   "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
 const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
@@ -1448,6 +1450,23 @@ function parseTokenPayload(message, network) {
   return null;
 }
 
+function normalizeTokenScope(value) {
+  const raw = String(value ?? "").trim();
+  if (/^[0-9a-fA-F]{64}$/u.test(raw)) {
+    return raw.toLowerCase();
+  }
+
+  return normalizeTokenTicker(raw);
+}
+
+function tokenMatchesScope(token, scope) {
+  if (!scope) {
+    return true;
+  }
+
+  return token.tokenId === scope || token.ticker === scope;
+}
+
 function emptyTokenState() {
   return {
     creationSats: 0,
@@ -1554,11 +1573,23 @@ function tokenDefinitionsFromTransactions(txs, indexAddress, network) {
   };
 }
 
-function tokenStateFromTransactions(indexTxs, registryTxsByAddress, indexAddress, network) {
-  const { creationSats, tokens } = tokenDefinitionsFromTransactions(
+function tokenStateFromTransactions(
+  indexTxs,
+  registryTxsByAddress,
+  indexAddress,
+  network,
+  tokenScope = "",
+) {
+  const { tokens: allTokens } = tokenDefinitionsFromTransactions(
     indexTxs,
     indexAddress,
     network,
+  );
+  const scope = normalizeTokenScope(tokenScope);
+  const tokens = allTokens.filter((token) => tokenMatchesScope(token, scope));
+  const creationSats = tokens.reduce(
+    (total, token) => total + token.creationFeeSats,
+    0,
   );
   const tokensById = new Map(tokens.map((token) => [token.tokenId, token]));
   const tokenSupply = new Map();
@@ -3294,10 +3325,11 @@ function cachedAkPayload(
   );
 }
 
-function cachedTokenPayload(network) {
+function cachedTokenPayload(network, tokenScope = "") {
+  const scope = normalizeTokenScope(tokenScope);
   return cachedPayload(
-    `payload:token:${network}`,
-    () => tokenPayload(network),
+    `payload:token:${network}:${scope}`,
+    () => tokenPayload(network, scope),
     TOKEN_CACHE_TTL_MS,
     TOKEN_CACHE_STALE_MS,
   );
@@ -4978,7 +5010,8 @@ async function pay2SpeakPayload(network) {
   };
 }
 
-async function tokenPayload(network) {
+async function tokenPayload(network, tokenScope = "") {
+  const scope = normalizeTokenScope(tokenScope);
   const indexAddress = tokenIndexAddressForNetwork(network);
   if (!indexAddress) {
     return {
@@ -4997,6 +5030,7 @@ async function tokenPayload(network) {
         priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
         registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
         ticker: WORK_TOKEN_TICKER,
+        tokenId: WORK_TOKEN_ID,
       },
     };
   }
@@ -5007,8 +5041,11 @@ async function tokenPayload(network) {
     indexAddress,
     network,
   );
+  const scopedTokens = tokens.filter((token) => tokenMatchesScope(token, scope));
   const registryAddresses = [
-    ...new Set(tokens.map((token) => token.registryAddress).filter(Boolean)),
+    ...new Set(
+      scopedTokens.map((token) => token.registryAddress).filter(Boolean),
+    ),
   ];
   const registryEntries = await Promise.all(
     registryAddresses.map(async (registryAddress) => [
@@ -5021,6 +5058,7 @@ async function tokenPayload(network) {
     new Map(registryEntries),
     indexAddress,
     network,
+    scope,
   );
   return {
     ...state,
@@ -5051,6 +5089,7 @@ async function tokenPayload(network) {
       priceSatsPerWork: WORK_TOKEN_PRICE_SATS_PER_WORK,
       registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
       ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
     },
   };
 }
@@ -5246,18 +5285,24 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/token") {
+      const tokenScope = normalizeTokenScope(
+        url.searchParams.get("asset") ??
+          url.searchParams.get("tokenId") ??
+          url.searchParams.get("ticker") ??
+          "",
+      );
       if (freshReadRequested(url.searchParams)) {
         jsonResponse(
           response,
           200,
-          await tokenPayload(network),
+          await tokenPayload(network, tokenScope),
           TOKEN_READ_CACHE_CONTROL,
         );
       } else {
         await cachedJsonResponse(
           response,
-          `token:${network}`,
-          () => cachedTokenPayload(network),
+          `token:${network}:${tokenScope}`,
+          () => cachedTokenPayload(network, tokenScope),
           TOKEN_READ_CACHE_CONTROL,
           TOKEN_CACHE_TTL_MS,
           TOKEN_CACHE_STALE_MS,

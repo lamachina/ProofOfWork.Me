@@ -1032,6 +1032,8 @@ const WORK_TOKEN_TICKER = "WORK";
 const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const WORK_TOKEN_MINT_AMOUNT = 1000;
 const WORK_TOKEN_MINT_PRICE_SATS = 1000;
+const WORK_TOKEN_ID =
+  "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const WORK_TOKEN_DEFAULT_REGISTRY_ID = "work@proofofwork.me";
 const WORK_TOKEN_REGISTRY_TXID =
   "ec249a2b023e9f7ec173d717ae06f331942cb7893dcc19a1a490936a93b35422";
@@ -9128,6 +9130,7 @@ async function fetchOwnedNftMints(
 async function fetchTokenState(
   targetNetwork: BitcoinNetwork,
   fresh = false,
+  tokenScope = "",
 ): Promise<PowTokenState> {
   const indexAddress = tokenIndexAddressForNetwork(targetNetwork);
   if (!indexAddress) {
@@ -9135,8 +9138,16 @@ async function fetchTokenState(
   }
 
   if (POW_API_BASE) {
+    const params = new URLSearchParams();
+    if (fresh) {
+      params.set("fresh", "1");
+    }
+    if (tokenScope.trim()) {
+      params.set("asset", tokenScope.trim());
+    }
+    const query = params.toString();
     const payload = await fetchProofApiJson<PowTokenApiResponse>(
-      fresh ? "/api/v1/token?fresh=1" : "/api/v1/token",
+      query ? `/api/v1/token?${query}` : "/api/v1/token",
       targetNetwork,
     );
     return {
@@ -12403,7 +12414,11 @@ export default function App() {
 
         if (tokenMode || workTokenMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
-          const state = await fetchTokenState("livenet", true);
+          const state = await fetchTokenState(
+            "livenet",
+            true,
+            workTokenMode ? WORK_TOKEN_ID : "",
+          );
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
           setTokenCreationSats(state.creationSats);
@@ -13324,7 +13339,13 @@ export default function App() {
     }
 
     try {
-      const state = await fetchTokenState(network, fresh || !silent);
+      const tokenScope =
+        workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
+      const state = await fetchTokenState(
+        network,
+        fresh || !silent,
+        tokenScope,
+      );
       setTokenDefinitions(state.tokens);
       setTokenMints(state.mints);
       setTokenCreationSats(state.creationSats);
@@ -13578,7 +13599,11 @@ export default function App() {
         }
 
         if (tokenMode || workTokenMode) {
-          const state = await fetchTokenState("livenet", true);
+          const state = await fetchTokenState(
+            "livenet",
+            true,
+            workTokenMode ? WORK_TOKEN_ID : "",
+          );
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
           setTokenCreationSats(state.creationSats);
@@ -16010,7 +16035,7 @@ export default function App() {
     setStatus({ tone: "idle", text: `Checking ${selectedToken.ticker} supply...` });
 
     try {
-      const latestState = await fetchTokenState("livenet", true);
+      const latestState = await fetchTokenState("livenet", true, selectedToken.tokenId);
       setTokenDefinitions(latestState.tokens);
       setTokenMints(latestState.mints);
       setTokenCreationSats(latestState.creationSats);

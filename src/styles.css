@@ -3795,6 +3795,69 @@ pre {
   word-break: normal;
 }
 
+.token-mint-assistant {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+}
+
+.token-assistant-head,
+.token-assistant-actions,
+.token-assistant-status {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.token-assistant-head {
+  justify-content: space-between;
+}
+
+.token-assistant-head > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.token-assistant-head strong {
+  font-size: 0.96rem;
+}
+
+.token-assistant-head span,
+.token-assistant-status span {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 780;
+}
+
+.token-assistant-status {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.token-assistant-status span {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.token-assistant-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.token-assistant-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(90px, auto);
+}
+
+.token-mint-assistant .field-note {
+  margin: 0;
+}
+
 .token-utxo-prep {
   background: var(--surface-soft);
   border: 1px solid var(--border);
@@ -4009,6 +4072,8 @@ pre {
 @media (max-width: 620px) {
   .token-form-grid,
   .token-mint-grid,
+  .token-assistant-grid,
+  .token-assistant-actions,
   .token-search-row,
   .token-payment-lane,
   .token-split-fee-presets,
@@ -4025,6 +4090,7 @@ pre {
   }
 
   .token-progress-mini > div,
+  .token-assistant-head,
   .token-record-top {
     align-items: flex-start;
     flex-direction: column;

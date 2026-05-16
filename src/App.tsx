@@ -1021,7 +1021,15 @@ const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const TOKEN_PREPARE_DEFAULT_MINT_COUNT = 40;
 const TOKEN_PREPARE_MAX_MINT_COUNT = 100;
 const TOKEN_PREPARE_DEFAULT_FEE_RESERVE_SATS = 1000;
+const TOKEN_MINT_ASSISTANT_DEFAULT_COUNT = 5;
+const TOKEN_MINT_ASSISTANT_MAX_COUNT = 100;
+const TOKEN_MINT_ASSISTANT_DEFAULT_DELAY_MS = 1200;
+const TOKEN_MINT_ASSISTANT_MAX_DELAY_MS = 60_000;
 const TOKEN_LIST_PREVIEW_COUNT = 25;
+const NFT_MINT_ASSISTANT_DEFAULT_COUNT = 3;
+const NFT_MINT_ASSISTANT_MAX_COUNT = 50;
+const NFT_MINT_ASSISTANT_DEFAULT_DELAY_MS = 1200;
+const NFT_MINT_ASSISTANT_MAX_DELAY_MS = 60_000;
 const TOKEN_INDEX_ID = "tokens@proofofwork.me";
 const TOKEN_INDEX_TXID =
   "7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19";
@@ -6352,12 +6360,20 @@ function parseNftDeployPayload(payload: string) {
   }
 }
 
-function buildAkMintPayloads(genesisTag: string, imageBase64: string) {
+function buildNftMintPayloads(
+  collection: NftCollectionDefinition,
+  genesisTag: string,
+  imageBase64: string,
+) {
   const imagePayload = buildAkImagePayload(imageBase64);
   const tag = genesisTag.trim();
   return tag
-    ? [AK_PROTOCOL_MINT, tag, imagePayload]
-    : [AK_PROTOCOL_MINT, imagePayload];
+    ? [collection.mintProtocolPayload, tag, imagePayload]
+    : [collection.mintProtocolPayload, imagePayload];
+}
+
+function buildAkMintPayloads(genesisTag: string, imageBase64: string) {
+  return buildNftMintPayloads(NFT_COLLECTIONS[0], genesisTag, imageBase64);
 }
 
 function isAkImagePayload(payload: string) {
@@ -9769,17 +9785,21 @@ async function buildPaymentPsbt({
 }
 
 async function buildAkMintPsbt({
+  collection = NFT_COLLECTIONS[0],
   feeRate,
   fromAddress,
   genesisTag,
   imageBase64,
   network,
+  operatorAddress = collection.defaultOperatorAddress,
 }: {
+  collection?: NftCollectionDefinition;
   feeRate: number;
   fromAddress: string;
   genesisTag: string;
   imageBase64: string;
   network: BitcoinNetwork;
+  operatorAddress?: string;
 }) {
   if (network !== "livenet") {
     throw new Error("NFT minting is mainnet-only in V1.");
@@ -9787,9 +9807,9 @@ async function buildAkMintPsbt({
 
   const selectedNetwork = bitcoinNetwork(network);
   const operatorScript = scriptForAddress(
-    AK_OPERATOR_ADDRESS,
+    operatorAddress,
     network,
-    "AK operator",
+    `${collection.displayName} operator`,
   );
   const ownerScript = scriptForAddress(fromAddress, network, "AK owner");
   const changeScript = scriptForAddress(
@@ -9797,7 +9817,7 @@ async function buildAkMintPsbt({
     network,
     "Connected wallet",
   );
-  const payloads = buildAkMintPayloads(genesisTag, imageBase64);
+  const payloads = buildNftMintPayloads(collection, genesisTag, imageBase64);
   const opReturnScripts = protocolOutputScripts(payloads);
   const fixedOutputVbytes =
     outputVbytesForScript(operatorScript) +
@@ -9824,7 +9844,7 @@ async function buildAkMintPsbt({
 
   const selection = selectUtxos(
     utxos,
-    AK_OPERATOR_MIN_SATS + AK_OWNER_ANCHOR_SATS,
+    collection.operatorMinSats + collection.ownerAnchorSats,
     feeRate,
     fixedOutputVbytes,
     changeOutputVbytes,
@@ -9859,8 +9879,8 @@ async function buildAkMintPsbt({
   }
 
   psbt.addOutput({
-    address: AK_OPERATOR_ADDRESS,
-    value: BigInt(AK_OPERATOR_MIN_SATS),
+    address: operatorAddress,
+    value: BigInt(collection.operatorMinSats),
   });
   psbt.addOutput({
     script: opReturnScripts[0],
@@ -9868,7 +9888,7 @@ async function buildAkMintPsbt({
   });
   psbt.addOutput({
     address: fromAddress,
-    value: BigInt(AK_OWNER_ANCHOR_SATS),
+    value: BigInt(collection.ownerAnchorSats),
   });
 
   for (const script of opReturnScripts.slice(1)) {
@@ -10960,6 +10980,18 @@ export default function App() {
   const [akImageBase64, setAkImageBase64] = useState("");
   const [akImageDataUrl, setAkImageDataUrl] = useState("");
   const [akGenesisTag, setAkGenesisTag] = useState("");
+  const [nftMintAssistantTarget, setNftMintAssistantTarget] = useState(
+    NFT_MINT_ASSISTANT_DEFAULT_COUNT,
+  );
+  const [nftMintAssistantDelayMs, setNftMintAssistantDelayMs] = useState(
+    NFT_MINT_ASSISTANT_DEFAULT_DELAY_MS,
+  );
+  const [nftMintAssistantCompleted, setNftMintAssistantCompleted] =
+    useState(0);
+  const [nftMintAssistantRemaining, setNftMintAssistantRemaining] =
+    useState(0);
+  const [nftMintAssistantRunning, setNftMintAssistantRunning] =
+    useState(false);
   const [tokenDefinitions, setTokenDefinitions] = useState<
     PowTokenDefinition[]
   >([]);
@@ -10988,6 +11020,18 @@ export default function App() {
   );
   const [tokenPrepareFeeRate, setTokenPrepareFeeRate] =
     useState(DEFAULT_FEE_RATE);
+  const [tokenMintAssistantTarget, setTokenMintAssistantTarget] = useState(
+    TOKEN_MINT_ASSISTANT_DEFAULT_COUNT,
+  );
+  const [tokenMintAssistantDelayMs, setTokenMintAssistantDelayMs] = useState(
+    TOKEN_MINT_ASSISTANT_DEFAULT_DELAY_MS,
+  );
+  const [tokenMintAssistantCompleted, setTokenMintAssistantCompleted] =
+    useState(0);
+  const [tokenMintAssistantRemaining, setTokenMintAssistantRemaining] =
+    useState(0);
+  const [tokenMintAssistantRunning, setTokenMintAssistantRunning] =
+    useState(false);
   const [tokenAction, setTokenAction] = useState<
     "" | "create" | "mint" | "split"
   >("");
@@ -11048,6 +11092,10 @@ export default function App() {
   const chainSentRef = useRef(chainSent);
   const idRefreshInFlightRef = useRef(false);
   const growthRefreshInFlightRef = useRef(false);
+  const nftMintAssistantActiveRef = useRef(false);
+  const nftMintAssistantTimerRef = useRef<number | undefined>(undefined);
+  const tokenMintAssistantActiveRef = useRef(false);
+  const tokenMintAssistantTimerRef = useRef<number | undefined>(undefined);
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   const protocolPayloads = useMemo(
@@ -11534,9 +11582,9 @@ export default function App() {
   const akMintPayloads = useMemo(
     () =>
       akImageBase64
-        ? buildAkMintPayloads(akGenesisTag, akImageBase64)
-        : [AK_PROTOCOL_MINT],
-    [akGenesisTag, akImageBase64],
+        ? buildNftMintPayloads(nftSelectedCollection, akGenesisTag, akImageBase64)
+        : [nftSelectedCollection.mintProtocolPayload],
+    [akGenesisTag, akImageBase64, nftSelectedCollection],
   );
   const akMintBytes = useMemo(
     () =>
@@ -11789,9 +11837,16 @@ export default function App() {
       address &&
         network === "livenet" &&
         akImageBase64 &&
-        nftSelectedCollection.id === "ak21" &&
-        nftSelectedOperatorAddress === nftSelectedCollection.defaultOperatorAddress,
+        nftSelectedOperatorAddress === nftSelectedCollection.defaultOperatorAddress &&
+        nftSelectedCollection.maxSupply > 0,
     ) &&
+    akMints.filter(
+      (mint) =>
+        mint.confirmed &&
+        mint.collectionId === nftSelectedCollection.id &&
+        mint.operatorAddress.toLowerCase() ===
+          nftSelectedOperatorAddress.toLowerCase(),
+    ).length < nftSelectedCollection.maxSupply &&
     akMintBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
   const canDeployNft =
@@ -11981,6 +12036,16 @@ export default function App() {
     const interval = window.setInterval(detectWallet, 1000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(
+    () => () => {
+      nftMintAssistantActiveRef.current = false;
+      clearNftMintAssistantTimer();
+      tokenMintAssistantActiveRef.current = false;
+      clearTokenMintAssistantTimer();
+    },
+    [],
+  );
 
   useEffect(() => {
     allSentRef.current = allSent;
@@ -15636,12 +15701,27 @@ export default function App() {
     }
   }
 
-  async function mintAk(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function mintAk(
+    event?: FormEvent<HTMLFormElement>,
+    collectionOverride?: NftCollectionDefinition,
+    operatorOverride?: string,
+  ): Promise<string | undefined> {
+    event?.preventDefault();
+    const mintCollection = collectionOverride ?? nftSelectedCollection;
+    const mintOperator =
+      operatorOverride?.trim() ||
+      nftSelectedOperatorAddress ||
+      mintCollection.defaultOperatorAddress;
+    const mintPayloadBytes = akImageBase64
+      ? buildNftMintPayloads(mintCollection, akGenesisTag, akImageBase64).reduce(
+          (total, payload) => total + dataCarrierBytesForPayload(payload),
+          0,
+        )
+      : akMintBytes;
 
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
-      return;
+      return undefined;
     }
 
     if (!window.unisat.signPsbt) {
@@ -15649,53 +15729,81 @@ export default function App() {
         tone: "bad",
         text: "UniSat signPsbt is not available. Update UniSat and try again.",
       });
-      return;
+      return undefined;
     }
 
     if (network !== "livenet") {
       setStatus({ tone: "bad", text: "NFT minting is mainnet only." });
-      return;
+      return undefined;
     }
 
     if (
-      nftSelectedCollection.id !== "ak21" ||
-      nftSelectedOperatorAddress !== nftSelectedCollection.defaultOperatorAddress
+      !mintCollection.maxSupply ||
+      mintOperator !== mintCollection.defaultOperatorAddress
     ) {
       setStatus({
         tone: "bad",
-        text: "Minting is enabled only for the canonical AK operator in V1.",
+        text: "Select a live NFT collection with its canonical operator before minting.",
       });
-      return;
+      return undefined;
     }
 
     if (!akImageBase64) {
-      setStatus({ tone: "bad", text: "Select an AK image before minting." });
-      return;
+      setStatus({ tone: "bad", text: "Select an NFT image before minting." });
+      return undefined;
     }
 
-    if (akMintBytes > MAX_DATA_CARRIER_BYTES) {
+    if (mintPayloadBytes > MAX_DATA_CARRIER_BYTES) {
       setStatus({
         tone: "bad",
         text: "NFT mint OP_RETURN data is over 100 KB.",
       });
-      return;
+      return undefined;
     }
 
     setBusy(true);
-    setStatus({ tone: "idle", text: "Preparing NFT mint transaction..." });
+    setStatus({
+      tone: "idle",
+      text: `Preparing ${mintCollection.displayName} mint transaction...`,
+    });
 
     try {
+      const latestState = await fetchAkState(
+        "livenet",
+        mintCollection,
+        mintOperator,
+      );
+      setNftCollections(
+        mergeNftCollections(latestState.collections ?? visibleNftCollections, "livenet"),
+      );
+      setAkMints(latestState.mints);
+      const latestConfirmedMints = latestState.mints.filter(
+        (mint) =>
+          mint.confirmed &&
+          mint.collectionId === mintCollection.id &&
+          mint.operatorAddress.toLowerCase() === mintOperator.toLowerCase(),
+      ).length;
+      if (latestConfirmedMints >= mintCollection.maxSupply) {
+        setStatus({
+          tone: "bad",
+          text: `${mintCollection.displayName} is minted out.`,
+        });
+        return undefined;
+      }
+
       const currentNetwork = await getWalletNetwork(window.unisat);
       if (currentNetwork !== "livenet") {
         await switchWalletNetwork(window.unisat, "livenet");
       }
 
       const mintPsbt = await buildAkMintPsbt({
+        collection: mintCollection,
         feeRate,
         fromAddress: address,
         genesisTag: akGenesisTag,
         imageBase64: akImageBase64,
         network: "livenet",
+        operatorAddress: mintOperator,
       });
       if (
         !confirmDustFeeAbsorption({
@@ -15705,7 +15813,7 @@ export default function App() {
         })
       ) {
         setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
+        return undefined;
       }
 
       setStatus({
@@ -15722,16 +15830,16 @@ export default function App() {
       const txid = broadcast.txid;
       const mint: AkMintRecord = {
         confirmed: false,
-        collectionId: "ak21",
-        collectionName: "AK",
+        collectionId: mintCollection.id,
+        collectionName: mintCollection.name,
         createdAt: new Date().toISOString(),
-        dataBytes: akMintBytes,
+        dataBytes: mintPayloadBytes,
         genesisTag: akGenesisTag.trim() || null,
         imageBase64: akImageBase64,
         imageDataUrl: akImageDataUrl || buildAkImagePayload(akImageBase64),
         network: "livenet",
-        operatorAddress: AK_OPERATOR_ADDRESS,
-        operatorSats: AK_OPERATOR_MIN_SATS,
+        operatorAddress: mintOperator,
+        operatorSats: mintCollection.operatorMinSats,
         ownerAddress: address,
         tokenIdentifier: `${txid}:2`,
         txid,
@@ -15744,14 +15852,168 @@ export default function App() {
         text: `NFT mint broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
       });
       await refreshAk(true);
+      return txid;
     } catch (error) {
       setStatus({
         tone: "bad",
         text: errorMessage(error, "NFT mint failed."),
       });
+      return undefined;
     } finally {
       setBusy(false);
     }
+  }
+
+  function clearNftMintAssistantTimer() {
+    if (nftMintAssistantTimerRef.current !== undefined) {
+      window.clearTimeout(nftMintAssistantTimerRef.current);
+      nftMintAssistantTimerRef.current = undefined;
+    }
+  }
+
+  function stopNftMintAssistant(message = "NFT mint assistant stopped.") {
+    nftMintAssistantActiveRef.current = false;
+    clearNftMintAssistantTimer();
+    setNftMintAssistantRunning(false);
+    setNftMintAssistantRemaining(0);
+    setStatus({ tone: "idle", text: message });
+  }
+
+  function startNftMintAssistant() {
+    if (nftMintAssistantRunning || nftMintAssistantActiveRef.current) {
+      return;
+    }
+
+    const target = Math.min(
+      NFT_MINT_ASSISTANT_MAX_COUNT,
+      Math.max(1, Math.floor(nftMintAssistantTarget)),
+    );
+    const delayMs = Math.min(
+      NFT_MINT_ASSISTANT_MAX_DELAY_MS,
+      Math.max(0, Math.floor(nftMintAssistantDelayMs)),
+    );
+    const operator = nftSelectedOperatorAddress;
+    const confirmedMintCount = akMints.filter(
+      (mint) =>
+        mint.confirmed &&
+        mint.collectionId === nftSelectedCollection.id &&
+        mint.operatorAddress.toLowerCase() === operator.toLowerCase(),
+    ).length;
+
+    if (
+      !address ||
+      busy ||
+      network !== "livenet" ||
+      !akImageBase64 ||
+      !nftSelectedCollection.maxSupply ||
+      operator !== nftSelectedCollection.defaultOperatorAddress
+    ) {
+      setStatus({
+        tone: "bad",
+        text: "Select an NFT image and a live collection registry before starting the assistant.",
+      });
+      return;
+    }
+
+    if (confirmedMintCount >= nftSelectedCollection.maxSupply) {
+      setStatus({
+        tone: "bad",
+        text: `${nftSelectedCollection.displayName} is minted out.`,
+      });
+      return;
+    }
+
+    setNftMintAssistantTarget(target);
+    setNftMintAssistantDelayMs(delayMs);
+    setNftMintAssistantCompleted(0);
+    setNftMintAssistantRemaining(target);
+    setNftMintAssistantRunning(true);
+    nftMintAssistantActiveRef.current = true;
+    setStatus({
+      tone: "idle",
+      text: `NFT mint assistant started for ${target.toLocaleString()} ${nftSelectedCollection.displayName} mint${target === 1 ? "" : "s"}. You still approve each UniSat prompt.`,
+    });
+    void runNftMintAssistantStep(
+      target,
+      delayMs,
+      target,
+      nftSelectedCollection,
+      operator,
+    );
+  }
+
+  async function runNftMintAssistantStep(
+    remaining: number,
+    delayMs: number,
+    total: number,
+    collection: NftCollectionDefinition,
+    operator: string,
+  ) {
+    clearNftMintAssistantTimer();
+    if (!nftMintAssistantActiveRef.current) {
+      return;
+    }
+
+    if (remaining <= 0) {
+      nftMintAssistantActiveRef.current = false;
+      setNftMintAssistantRunning(false);
+      setNftMintAssistantRemaining(0);
+      setStatus({
+        tone: "good",
+        text: `NFT mint assistant complete: ${total.toLocaleString()} mint transaction${total === 1 ? "" : "s"} broadcast.`,
+      });
+      return;
+    }
+
+    setNftMintAssistantRemaining(remaining);
+    const txid = await mintAk(undefined, collection, operator);
+    if (!nftMintAssistantActiveRef.current) {
+      return;
+    }
+
+    if (!txid) {
+      nftMintAssistantActiveRef.current = false;
+      setNftMintAssistantRunning(false);
+      setNftMintAssistantRemaining(remaining);
+      setStatus((current) =>
+        current.tone === "bad"
+          ? current
+          : {
+              tone: "bad",
+              text: "NFT mint assistant paused after a failed or canceled mint.",
+            },
+      );
+      return;
+    }
+
+    const nextRemaining = remaining - 1;
+    const completed = total - nextRemaining;
+    setNftMintAssistantCompleted(completed);
+    setNftMintAssistantRemaining(nextRemaining);
+
+    if (nextRemaining <= 0) {
+      nftMintAssistantActiveRef.current = false;
+      setNftMintAssistantRunning(false);
+      setStatus({
+        tone: "good",
+        text: `NFT mint assistant complete: ${completed.toLocaleString()} mint transaction${completed === 1 ? "" : "s"} broadcast.`,
+      });
+      return;
+    }
+
+    setStatus({
+      tone: "good",
+      text: `NFT mint assistant broadcast ${completed.toLocaleString()} of ${total.toLocaleString()}: ${shortAddress(txid)}. Next prompt in ${(delayMs / 1000).toLocaleString()}s.`,
+    });
+    nftMintAssistantTimerRef.current = window.setTimeout(() => {
+      void runNftMintAssistantStep(
+        nextRemaining,
+        delayMs,
+        total,
+        collection,
+        operator,
+      );
+    }, delayMs);
   }
 
   async function deployNftCollection(event: FormEvent<HTMLFormElement>) {
@@ -16032,12 +16294,21 @@ export default function App() {
     }
   }
 
-  async function mintToken(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function mintToken(
+    event?: FormEvent<HTMLFormElement>,
+    tokenOverride?: PowTokenDefinition,
+  ): Promise<string | undefined> {
+    event?.preventDefault();
+    const mintTarget = tokenOverride ?? selectedToken;
+    const mintPayloadBytes = mintTarget
+      ? dataCarrierBytesForPayload(
+          buildTokenMintPayload(mintTarget.tokenId, mintTarget.mintAmount),
+        )
+      : tokenMintBytes;
 
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
-      return;
+      return undefined;
     }
 
     if (!window.unisat.signPsbt) {
@@ -16045,34 +16316,34 @@ export default function App() {
         tone: "bad",
         text: "UniSat signPsbt is not available. Update UniSat and try again.",
       });
-      return;
+      return undefined;
     }
 
-    if (network !== "livenet" || !selectedToken) {
+    if (network !== "livenet" || !mintTarget) {
       setStatus({ tone: "bad", text: "Select a mainnet token first." });
-      return;
+      return undefined;
     }
 
-    if (tokenMintBytes > MAX_DATA_CARRIER_BYTES) {
+    if (mintPayloadBytes > MAX_DATA_CARRIER_BYTES) {
       setStatus({
         tone: "bad",
         text: "Token mint OP_RETURN is over 100 KB.",
       });
-      return;
+      return undefined;
     }
 
     setTokenAction("mint");
     setBusy(true);
-    setStatus({ tone: "idle", text: `Checking ${selectedToken.ticker} supply...` });
+    setStatus({ tone: "idle", text: `Checking ${mintTarget.ticker} supply...` });
 
     try {
-      const latestState = await fetchTokenState("livenet", true, selectedToken.tokenId);
+      const latestState = await fetchTokenState("livenet", true, mintTarget.tokenId);
       setTokenDefinitions(latestState.tokens);
       setTokenMints(latestState.mints);
       setTokenCreationSats(latestState.creationSats);
       const latestToken =
-        latestState.tokens.find((token) => token.tokenId === selectedToken.tokenId) ??
-        selectedToken;
+        latestState.tokens.find((token) => token.tokenId === mintTarget.tokenId) ??
+        mintTarget;
       const latestLedger = tokenLedgerFor(latestToken, latestState.mints);
 
       if (latestLedger.confirmedSupply >= latestToken.maxSupply) {
@@ -16080,7 +16351,7 @@ export default function App() {
           tone: "bad",
           text: `${latestToken.ticker} is minted out.`,
         });
-        return;
+        return undefined;
       }
 
       if (
@@ -16093,7 +16364,7 @@ export default function App() {
           tone: "bad",
           text: "Next mint would exceed remaining token supply.",
         });
-        return;
+        return undefined;
       }
 
       const currentNetwork = await getWalletNetwork(window.unisat);
@@ -16124,7 +16395,7 @@ export default function App() {
         })
       ) {
         setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
+        return undefined;
       }
 
       const txid = await signAndBroadcastPsbt({
@@ -16157,15 +16428,166 @@ export default function App() {
       setTokenMints((current) =>
         current.some((item) => item.txid === txid) ? current : [mint, ...current],
       );
+      return txid;
     } catch (error) {
       setStatus({
         tone: "bad",
         text: errorMessage(error, "Token mint failed."),
       });
+      return undefined;
     } finally {
       setTokenAction("");
       setBusy(false);
     }
+  }
+
+  function clearTokenMintAssistantTimer() {
+    if (tokenMintAssistantTimerRef.current !== undefined) {
+      window.clearTimeout(tokenMintAssistantTimerRef.current);
+      tokenMintAssistantTimerRef.current = undefined;
+    }
+  }
+
+  function stopTokenMintAssistant(message = "Mint assistant stopped.") {
+    tokenMintAssistantActiveRef.current = false;
+    clearTokenMintAssistantTimer();
+    setTokenMintAssistantRunning(false);
+    setTokenMintAssistantRemaining(0);
+    setStatus({ tone: "idle", text: message });
+  }
+
+  function tokenForAssistant(tokenId?: string) {
+    const normalized = normalizeTokenTicker(tokenId ?? "");
+    return tokenId
+      ? dashboardTokenDefinitions.find(
+          (token) =>
+            token.tokenId === tokenId || (normalized && token.ticker === normalized),
+        )
+      : selectedToken;
+  }
+
+  function startTokenMintAssistant(tokenId?: string) {
+    if (tokenMintAssistantRunning || tokenMintAssistantActiveRef.current) {
+      return;
+    }
+
+    const targetToken = tokenForAssistant(tokenId);
+    const target = Math.min(
+      TOKEN_MINT_ASSISTANT_MAX_COUNT,
+      Math.max(1, Math.floor(tokenMintAssistantTarget)),
+    );
+    const delayMs = Math.min(
+      TOKEN_MINT_ASSISTANT_MAX_DELAY_MS,
+      Math.max(0, Math.floor(tokenMintAssistantDelayMs)),
+    );
+
+    if (!targetToken || !address || network !== "livenet" || busy) {
+      setStatus({
+        tone: "bad",
+        text: "Select a live token, connect UniSat, and resolve any mint block before starting the assistant.",
+      });
+      return;
+    }
+    const targetLedger = tokenLedgerFor(targetToken, tokenMints);
+    const targetRemainingSupply = Math.max(
+      0,
+      targetToken.maxSupply -
+        targetLedger.confirmedSupply -
+        targetLedger.pendingSupply,
+    );
+    if (targetLedger.confirmedSupply >= targetToken.maxSupply) {
+      setStatus({
+        tone: "bad",
+        text: `${targetToken.ticker} is minted out.`,
+      });
+      return;
+    }
+    if (targetToken.mintAmount > targetRemainingSupply) {
+      setStatus({
+        tone: "bad",
+        text: `Next mint needs ${targetToken.mintAmount.toLocaleString()} ${targetToken.ticker}, but only ${targetRemainingSupply.toLocaleString()} remain after pending mints.`,
+      });
+      return;
+    }
+
+    setTokenMintAssistantTarget(target);
+    setTokenMintAssistantDelayMs(delayMs);
+    setTokenMintAssistantCompleted(0);
+    setTokenMintAssistantRemaining(target);
+    setTokenMintAssistantRunning(true);
+    tokenMintAssistantActiveRef.current = true;
+    setStatus({
+      tone: "idle",
+      text: `Mint assistant started for ${target.toLocaleString()} ${targetToken.ticker} mint${target === 1 ? "" : "s"}. You still approve each UniSat prompt.`,
+    });
+    void runTokenMintAssistantStep(target, delayMs, target, targetToken);
+  }
+
+  async function runTokenMintAssistantStep(
+    remaining: number,
+    delayMs: number,
+    total: number,
+    token: PowTokenDefinition,
+  ) {
+    clearTokenMintAssistantTimer();
+    if (!tokenMintAssistantActiveRef.current) {
+      return;
+    }
+
+    if (remaining <= 0) {
+      tokenMintAssistantActiveRef.current = false;
+      setTokenMintAssistantRunning(false);
+      setTokenMintAssistantRemaining(0);
+      setStatus({
+        tone: "good",
+        text: `Mint assistant complete: ${total.toLocaleString()} mint transaction${total === 1 ? "" : "s"} broadcast.`,
+      });
+      return;
+    }
+
+    setTokenMintAssistantRemaining(remaining);
+    const txid = await mintToken(undefined, token);
+    if (!tokenMintAssistantActiveRef.current) {
+      return;
+    }
+
+    if (!txid) {
+      tokenMintAssistantActiveRef.current = false;
+      setTokenMintAssistantRunning(false);
+      setTokenMintAssistantRemaining(remaining);
+      setStatus((current) =>
+        current.tone === "bad"
+          ? current
+          : {
+              tone: "bad",
+              text: "Mint assistant paused after a failed or canceled mint.",
+            },
+      );
+      return;
+    }
+
+    const nextRemaining = remaining - 1;
+    const completed = total - nextRemaining;
+    setTokenMintAssistantCompleted(completed);
+    setTokenMintAssistantRemaining(nextRemaining);
+
+    if (nextRemaining <= 0) {
+      tokenMintAssistantActiveRef.current = false;
+      setTokenMintAssistantRunning(false);
+      setStatus({
+        tone: "good",
+        text: `Mint assistant complete: ${completed.toLocaleString()} mint transaction${completed === 1 ? "" : "s"} broadcast.`,
+      });
+      return;
+    }
+
+    setStatus({
+      tone: "good",
+      text: `Mint assistant broadcast ${completed.toLocaleString()} of ${total.toLocaleString()}: ${shortAddress(txid)}. Next prompt in ${(delayMs / 1000).toLocaleString()}s.`,
+    });
+    tokenMintAssistantTimerRef.current = window.setTimeout(() => {
+      void runTokenMintAssistantStep(nextRemaining, delayMs, total, token);
+    }, delayMs);
   }
 
   async function prepareTokenMintUtxos(event: FormEvent<HTMLFormElement>) {
@@ -16452,6 +16874,11 @@ export default function App() {
         imageDataUrl={akImageDataUrl}
         incompleteCollectionRoute={nftIncompleteCollectionRoute}
         mintAk={mintAk}
+        mintAssistantCompleted={nftMintAssistantCompleted}
+        mintAssistantDelayMs={nftMintAssistantDelayMs}
+        mintAssistantRemaining={nftMintAssistantRemaining}
+        mintAssistantRunning={nftMintAssistantRunning}
+        mintAssistantTarget={nftMintAssistantTarget}
         mintBytes={akMintBytes}
         mints={akMints.filter((mint) => mint.network === "livenet")}
         operatorAddress={nftOperatorAddress}
@@ -16460,6 +16887,8 @@ export default function App() {
         setGenesisTag={setAkGenesisTag}
         setImageBase64={setAkImageBase64}
         setImageDataUrl={setAkImageDataUrl}
+        setMintAssistantDelayMs={setNftMintAssistantDelayMs}
+        setMintAssistantTarget={setNftMintAssistantTarget}
         setDeployGenesisTag={setNftDeployGenesisTag}
         setDeployImagePayload={setNftDeployImagePayload}
         setDeployMaxSupply={setNftDeployMaxSupply}
@@ -16471,6 +16900,8 @@ export default function App() {
         status={status}
         theme={theme}
         traits={akTraits}
+        startMintAssistant={startNftMintAssistant}
+        stopMintAssistant={stopNftMintAssistant}
         onRefresh={() => void refreshAk()}
       />
     );
@@ -16507,6 +16938,11 @@ export default function App() {
         hasUnisat={hasUnisat}
         holders={selectedTokenLedger.holders}
         mintBytes={tokenMintBytes}
+        mintAssistantCompleted={tokenMintAssistantCompleted}
+        mintAssistantDelayMs={tokenMintAssistantDelayMs}
+        mintAssistantRemaining={tokenMintAssistantRemaining}
+        mintAssistantRunning={tokenMintAssistantRunning}
+        mintAssistantTarget={tokenMintAssistantTarget}
         mintingToken={tokenAction === "mint"}
         mints={selectedTokenLedger.mints}
         pendingSupply={selectedTokenLedger.pendingSupply}
@@ -16518,6 +16954,8 @@ export default function App() {
         selectedToken={selectedToken}
         selectedTokenId={selectedToken?.tokenId ?? ""}
         setFeeRate={setFeeRate}
+        setMintAssistantDelayMs={setTokenMintAssistantDelayMs}
+        setMintAssistantTarget={setTokenMintAssistantTarget}
         setPrepareFeeRate={setTokenPrepareFeeRate}
         setCreateMaxSupply={setTokenCreateMaxSupply}
         setCreateMintAmount={setTokenCreateMintAmount}
@@ -16533,6 +16971,8 @@ export default function App() {
         tokenDetailTarget={effectiveTokenDetailTarget}
         tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
         tokens={orderedTokenDefinitions}
+        startMintAssistant={startTokenMintAssistant}
+        stopMintAssistant={stopTokenMintAssistant}
         submitMint={mintToken}
         theme={theme}
         workTokenOnly={workTokenMode}
@@ -17251,6 +17691,11 @@ export default function App() {
             imageDataUrl={akImageDataUrl}
             incompleteCollectionRoute={nftIncompleteCollectionRoute}
             mintAk={mintAk}
+            mintAssistantCompleted={nftMintAssistantCompleted}
+            mintAssistantDelayMs={nftMintAssistantDelayMs}
+            mintAssistantRemaining={nftMintAssistantRemaining}
+            mintAssistantRunning={nftMintAssistantRunning}
+            mintAssistantTarget={nftMintAssistantTarget}
             mintBytes={akMintBytes}
             mints={akMints}
             operatorAddress={nftOperatorAddress}
@@ -17259,6 +17704,8 @@ export default function App() {
             setGenesisTag={setAkGenesisTag}
             setImageBase64={setAkImageBase64}
             setImageDataUrl={setAkImageDataUrl}
+            setMintAssistantDelayMs={setNftMintAssistantDelayMs}
+            setMintAssistantTarget={setNftMintAssistantTarget}
             setDeployGenesisTag={setNftDeployGenesisTag}
             setDeployImagePayload={setNftDeployImagePayload}
             setDeployMaxSupply={setNftDeployMaxSupply}
@@ -17266,6 +17713,8 @@ export default function App() {
             setOperatorAddress={setNftOperatorAddress}
             setSelectedCollectionId={setNftSelectedCollectionId}
             setTraits={setAkTraits}
+            startMintAssistant={startNftMintAssistant}
+            stopMintAssistant={stopNftMintAssistant}
             traits={akTraits}
             onRefresh={() => void refreshAk()}
           />
@@ -17297,6 +17746,11 @@ export default function App() {
             btcUsd={tokenBtcUsd}
             holders={selectedTokenLedger.holders}
             mintBytes={tokenMintBytes}
+            mintAssistantCompleted={tokenMintAssistantCompleted}
+            mintAssistantDelayMs={tokenMintAssistantDelayMs}
+            mintAssistantRemaining={tokenMintAssistantRemaining}
+            mintAssistantRunning={tokenMintAssistantRunning}
+            mintAssistantTarget={tokenMintAssistantTarget}
             mintingToken={tokenAction === "mint"}
             mints={selectedTokenLedger.mints}
             pendingSupply={selectedTokenLedger.pendingSupply}
@@ -17308,6 +17762,8 @@ export default function App() {
             selectedToken={selectedToken}
             selectedTokenId={selectedToken?.tokenId ?? ""}
             setFeeRate={setFeeRate}
+            setMintAssistantDelayMs={setTokenMintAssistantDelayMs}
+            setMintAssistantTarget={setTokenMintAssistantTarget}
             setPrepareFeeRate={setTokenPrepareFeeRate}
             setCreateMaxSupply={setTokenCreateMaxSupply}
             setCreateMintAmount={setTokenCreateMintAmount}
@@ -17324,6 +17780,8 @@ export default function App() {
             }
             tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
             tokens={orderedTokenDefinitions}
+            startMintAssistant={startTokenMintAssistant}
+            stopMintAssistant={stopTokenMintAssistant}
             workTokenOnly={activeFolder === "work"}
             onRefresh={() => void refreshToken()}
           />
@@ -18930,6 +19388,11 @@ type TokenAppProps = {
   hasUnisat: boolean;
   holders: PowTokenHolder[];
   mintBytes: number;
+  mintAssistantCompleted: number;
+  mintAssistantDelayMs: number;
+  mintAssistantRemaining: number;
+  mintAssistantRunning: boolean;
+  mintAssistantTarget: number;
   mintingToken: boolean;
   mints: PowTokenMint[];
   prepareFeeRate: number;
@@ -18941,6 +19404,8 @@ type TokenAppProps = {
   selectedToken: PowTokenDefinition | undefined;
   selectedTokenId: string;
   setFeeRate: (value: number) => void;
+  setMintAssistantDelayMs: (value: number) => void;
+  setMintAssistantTarget: (value: number) => void;
   setPrepareFeeRate: (value: number) => void;
   setCreateMaxSupply: (value: number) => void;
   setCreateMintAmount: (value: number) => void;
@@ -18956,7 +19421,11 @@ type TokenAppProps = {
   tokenDetailTarget: string;
   tokenIndexAddress: string;
   tokens: PowTokenDefinition[];
-  submitMint: (event: FormEvent<HTMLFormElement>) => void;
+  startMintAssistant: (tokenId?: string) => void;
+  stopMintAssistant: () => void;
+  submitMint: (
+    event: FormEvent<HTMLFormElement>,
+  ) => void | Promise<string | undefined>;
   theme: ThemeMode;
   workTokenOnly?: boolean;
   onRefresh: () => void;
@@ -19094,6 +19563,11 @@ function TokenWorkspace({
   btcUsd,
   holders,
   mintBytes,
+  mintAssistantCompleted,
+  mintAssistantDelayMs,
+  mintAssistantRemaining,
+  mintAssistantRunning,
+  mintAssistantTarget,
   mintingToken,
   mints,
   pendingSupply,
@@ -19105,6 +19579,8 @@ function TokenWorkspace({
   selectedToken,
   selectedTokenId,
   setFeeRate,
+  setMintAssistantDelayMs,
+  setMintAssistantTarget,
   setPrepareFeeRate,
   setCreateMaxSupply,
   setCreateMintAmount,
@@ -19115,6 +19591,8 @@ function TokenWorkspace({
   setPrepareMintCount,
   setSelectedTokenId,
   setTokenDetailTarget,
+  startMintAssistant,
+  stopMintAssistant,
   submitMint,
   tokenDetailTarget,
   tokenIndexAddress,
@@ -19331,6 +19809,132 @@ function TokenWorkspace({
     Number.isFinite(prepareFeeRate) && prepareFeeRate > 0
       ? prepareFeeRate
       : DEFAULT_FEE_RATE;
+  const normalizedMintAssistantTarget = Number.isFinite(mintAssistantTarget)
+    ? Math.min(
+        TOKEN_MINT_ASSISTANT_MAX_COUNT,
+        Math.max(1, Math.floor(mintAssistantTarget)),
+      )
+    : TOKEN_MINT_ASSISTANT_DEFAULT_COUNT;
+  const normalizedMintAssistantDelayMs = Number.isFinite(mintAssistantDelayMs)
+    ? Math.min(
+        TOKEN_MINT_ASSISTANT_MAX_DELAY_MS,
+        Math.max(0, Math.floor(mintAssistantDelayMs)),
+      )
+    : TOKEN_MINT_ASSISTANT_DEFAULT_DELAY_MS;
+  const mintAssistantDelaySeconds = Number(
+    (normalizedMintAssistantDelayMs / 1000).toFixed(2),
+  );
+  const renderMintAssistant = (token: PowTokenDefinition | undefined) => {
+    if (!token) {
+      return null;
+    }
+
+    const assistantMints =
+      detailToken?.tokenId === token.tokenId
+        ? detailMints
+        : selectedToken?.tokenId === token.tokenId
+          ? mints
+          : [];
+    const assistantLedger = tokenLedgerFor(token, assistantMints);
+    const assistantRemainingSupply = Math.max(
+      0,
+      token.maxSupply -
+        assistantLedger.confirmedSupply -
+        assistantLedger.pendingSupply,
+    );
+    const assistantBlocked =
+      assistantLedger.confirmedSupply >= token.maxSupply ||
+      token.mintAmount > assistantRemainingSupply ||
+      dataCarrierBytesForPayload(
+        buildTokenMintPayload(token.tokenId, token.mintAmount),
+      ) > MAX_DATA_CARRIER_BYTES;
+    const assistantCanStart = Boolean(
+      address && !busy && !mintAssistantRunning && !assistantBlocked,
+    );
+    const completedLabel = mintAssistantCompleted.toLocaleString();
+    const remainingLabel = mintAssistantRemaining.toLocaleString();
+
+    return (
+      <div className="token-mint-assistant">
+        <div className="token-assistant-head">
+          <div>
+            <strong>Mint assistant</strong>
+            <span>
+              {mintAssistantRunning
+                ? `${completedLabel} broadcast, ${remainingLabel} queued`
+                : "Queues one UniSat signing prompt at a time"}
+            </span>
+          </div>
+          <div className="token-assistant-status" aria-label="Mint assistant progress">
+            <span>{completedLabel} done</span>
+            <span>{remainingLabel} left</span>
+          </div>
+        </div>
+        <div className="token-form-grid token-assistant-grid">
+          <label>
+            Mints
+            <input
+              disabled={mintAssistantRunning}
+              max={TOKEN_MINT_ASSISTANT_MAX_COUNT}
+              min={1}
+              onChange={(event) =>
+                setMintAssistantTarget(Number(event.target.value))
+              }
+              type="number"
+              value={mintAssistantTarget || ""}
+            />
+          </label>
+          <label>
+            Delay seconds
+            <input
+              disabled={mintAssistantRunning}
+              max={TOKEN_MINT_ASSISTANT_MAX_DELAY_MS / 1000}
+              min={0}
+              onChange={(event) =>
+                setMintAssistantDelayMs(Number(event.target.value) * 1000)
+              }
+              step={0.1}
+              type="number"
+              value={mintAssistantDelaySeconds}
+            />
+          </label>
+        </div>
+        <div className="token-assistant-actions">
+          <button
+            className="secondary"
+            disabled={!assistantCanStart}
+            onClick={() => startMintAssistant(token.tokenId)}
+            type="button"
+          >
+            <span className="button-content">
+              <Send size={16} />
+              <span>
+                {mintAssistantRunning
+                  ? "Assistant running"
+                  : `Start ${normalizedMintAssistantTarget.toLocaleString()} mints`}
+              </span>
+            </span>
+          </button>
+          <button
+            className="secondary"
+            disabled={!mintAssistantRunning}
+            onClick={() => stopMintAssistant()}
+            type="button"
+          >
+            <span className="button-content">
+              <X size={16} />
+              <span>Stop</span>
+            </span>
+          </button>
+        </div>
+        <p className="field-note">
+          Opens the next {token.ticker} mint after the previous broadcast. You
+          still click Sign in UniSat. It stops on errors, cancelation, or minted
+          out supply.
+        </p>
+      </div>
+    );
+  };
   const renderMintUtxoPrep = (token: PowTokenDefinition | undefined) => {
     if (!token) {
       return null;
@@ -19831,6 +20435,7 @@ function TokenWorkspace({
                     <p className="field-note bad">{detailMintBlockedNote}</p>
                   ) : null}
                 </form>
+                {renderMintAssistant(detailToken)}
                 {renderMintUtxoPrep(detailToken)}
               </section>
 
@@ -20246,6 +20851,7 @@ function TokenWorkspace({
               <p className="field-note bad">{selectedMintBlockedNote}</p>
             ) : null}
           </form>
+          {renderMintAssistant(selectedToken)}
           {renderMintUtxoPrep(selectedToken)}
         </section>
       </div>
@@ -20495,7 +21101,14 @@ type NftWorkspaceProps = {
   imageDataUrl: string;
   incompleteCollectionRoute: boolean;
   mintBytes: number;
-  mintAk: (event: FormEvent<HTMLFormElement>) => void;
+  mintAk: (
+    event: FormEvent<HTMLFormElement>,
+  ) => void | Promise<string | undefined>;
+  mintAssistantCompleted: number;
+  mintAssistantDelayMs: number;
+  mintAssistantRemaining: number;
+  mintAssistantRunning: boolean;
+  mintAssistantTarget: number;
   mints: AkMintRecord[];
   operatorAddress: string;
   selectedCollection: NftCollectionDefinition;
@@ -20503,6 +21116,8 @@ type NftWorkspaceProps = {
   setGenesisTag: (value: string) => void;
   setImageBase64: (value: string) => void;
   setImageDataUrl: (value: string) => void;
+  setMintAssistantDelayMs: (value: number) => void;
+  setMintAssistantTarget: (value: number) => void;
   setOperatorAddress: (value: string) => void;
   setDeployGenesisTag: (value: string) => void;
   setDeployImagePayload: (value: string) => void;
@@ -20510,6 +21125,8 @@ type NftWorkspaceProps = {
   setDeployName: (value: string) => void;
   setSelectedCollectionId: (value: string) => void;
   setTraits: (value: AkTraits | ((current: AkTraits) => AkTraits)) => void;
+  startMintAssistant: () => void;
+  stopMintAssistant: () => void;
   traits: AkTraits;
   onRefresh: () => void;
 };
@@ -20679,6 +21296,11 @@ function NftWorkspace({
   incompleteCollectionRoute,
   mintBytes,
   mintAk,
+  mintAssistantCompleted,
+  mintAssistantDelayMs,
+  mintAssistantRemaining,
+  mintAssistantRunning,
+  mintAssistantTarget,
   mints,
   operatorAddress,
   selectedCollection,
@@ -20686,6 +21308,8 @@ function NftWorkspace({
   setGenesisTag,
   setImageBase64,
   setImageDataUrl,
+  setMintAssistantDelayMs,
+  setMintAssistantTarget,
   setOperatorAddress,
   setDeployGenesisTag,
   setDeployImagePayload,
@@ -20693,6 +21317,8 @@ function NftWorkspace({
   setDeployName,
   setSelectedCollectionId,
   setTraits,
+  startMintAssistant,
+  stopMintAssistant,
   traits,
   onRefresh,
 }: NftWorkspaceProps) {
@@ -20701,8 +21327,107 @@ function NftWorkspace({
     ? Math.min(100, (confirmedMints / selectedCollection.maxSupply) * 100)
     : 0;
   const canMintSelectedCollection =
-    selectedCollection.id === "ak21" &&
+    selectedCollection.maxSupply > 0 &&
     operatorAddress === selectedCollection.defaultOperatorAddress;
+  const normalizedNftMintAssistantTarget = Number.isFinite(
+    mintAssistantTarget,
+  )
+    ? Math.min(
+        NFT_MINT_ASSISTANT_MAX_COUNT,
+        Math.max(1, Math.floor(mintAssistantTarget)),
+      )
+    : NFT_MINT_ASSISTANT_DEFAULT_COUNT;
+  const normalizedNftMintAssistantDelayMs = Number.isFinite(
+    mintAssistantDelayMs,
+  )
+    ? Math.min(
+        NFT_MINT_ASSISTANT_MAX_DELAY_MS,
+        Math.max(0, Math.floor(mintAssistantDelayMs)),
+      )
+    : NFT_MINT_ASSISTANT_DEFAULT_DELAY_MS;
+  const nftMintAssistantDelaySeconds = Number(
+    (normalizedNftMintAssistantDelayMs / 1000).toFixed(2),
+  );
+  const nftMintAssistantCanStart = canMint && !mintAssistantRunning;
+  const renderNftMintAssistant = () => (
+    <div className="token-mint-assistant">
+      <div className="token-assistant-head">
+        <div>
+          <strong>Mint assistant</strong>
+          <span>
+            {mintAssistantRunning
+              ? `${mintAssistantCompleted.toLocaleString()} broadcast, ${mintAssistantRemaining.toLocaleString()} queued`
+              : `Queues ${selectedCollection.displayName} mints to ${shortAddress(operatorAddress)}`}
+          </span>
+        </div>
+        <div className="token-assistant-status" aria-label="NFT mint assistant progress">
+          <span>{mintAssistantCompleted.toLocaleString()} done</span>
+          <span>{mintAssistantRemaining.toLocaleString()} left</span>
+        </div>
+      </div>
+      <div className="token-form-grid token-assistant-grid">
+        <label>
+          Mints
+          <input
+            disabled={mintAssistantRunning}
+            max={NFT_MINT_ASSISTANT_MAX_COUNT}
+            min={1}
+            onChange={(event) =>
+              setMintAssistantTarget(Number(event.target.value))
+            }
+            type="number"
+            value={mintAssistantTarget || ""}
+          />
+        </label>
+        <label>
+          Delay seconds
+          <input
+            disabled={mintAssistantRunning}
+            max={NFT_MINT_ASSISTANT_MAX_DELAY_MS / 1000}
+            min={0}
+            onChange={(event) =>
+              setMintAssistantDelayMs(Number(event.target.value) * 1000)
+            }
+            step={0.1}
+            type="number"
+            value={nftMintAssistantDelaySeconds}
+          />
+        </label>
+      </div>
+      <div className="token-assistant-actions">
+        <button
+          className="secondary"
+          disabled={!nftMintAssistantCanStart}
+          onClick={startMintAssistant}
+          type="button"
+        >
+          <span className="button-content">
+            <Send size={16} />
+            <span>
+              {mintAssistantRunning
+                ? "Assistant running"
+                : `Start ${normalizedNftMintAssistantTarget.toLocaleString()} mints`}
+            </span>
+          </span>
+        </button>
+        <button
+          className="secondary"
+          disabled={!mintAssistantRunning}
+          onClick={() => stopMintAssistant()}
+          type="button"
+        >
+          <span className="button-content">
+            <X size={16} />
+            <span>Stop</span>
+          </span>
+        </button>
+      </div>
+      <p className="field-note">
+        Opens the next NFT mint after the previous broadcast. You still click
+        Sign in UniSat. Each mint pays this collection operator registry.
+      </p>
+    </div>
+  );
   const pageStyle: CSSProperties = compact
     ? {
         ...NFT_PAGE_STYLE,
@@ -21103,11 +21828,12 @@ function NftWorkspace({
                 {address
                   ? canMintSelectedCollection
                     ? `Mint ${selectedCollection.displayName}`
-                    : "Use canonical AK operator"
+                    : "Use collection registry"
                   : "Connect wallet"}
               </span>
             </span>
           </button>
+          {renderNftMintAssistant()}
         </form>
       </div>
 

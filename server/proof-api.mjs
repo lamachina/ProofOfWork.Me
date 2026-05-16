@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
+import fs from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
+import path from "node:path";
 import { URL } from "node:url";
 import bip322 from "bip322-js";
 import * as bitcoin from "bitcoinjs-lib";
@@ -64,6 +66,8 @@ const BLOCK_TXID_FETCH_CONCURRENCY = Number(
 const MAX_TRANSACTION_CACHE_SIZE = Number(
   process.env.MAX_TRANSACTION_CACHE_SIZE ?? 100_000,
 );
+const PERSISTED_CACHE_DIR =
+  process.env.POW_API_CACHE_DIR ?? "/tmp/proofofwork-api-cache";
 const SLIPSTREAM_SUBMIT_TX_URL = "https://slipstream.mara.com/rest-api/submit-tx";
 const SLIPSTREAM_TX_URL = "https://slipstream.mara.com/tx";
 
@@ -188,6 +192,73 @@ function errorResponse(response, statusCode, message, details) {
   });
 }
 
+function shouldPersistJsonCache(cacheKey) {
+  return (
+    cacheKey === "activity:livenet" || cacheKey.startsWith("token:livenet:")
+  );
+}
+
+function persistedJsonCachePath(jsonKey) {
+  const file = Buffer.from(jsonKey).toString("base64url") + ".json";
+  return path.join(PERSISTED_CACHE_DIR, file);
+}
+
+async function readPersistedJsonCache(jsonKey) {
+  try {
+    const text = await fs.readFile(persistedJsonCachePath(jsonKey), "utf8");
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.body === "string") {
+      return parsed.body;
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+async function writePersistedJsonCache(jsonKey, body) {
+  try {
+    await fs.mkdir(PERSISTED_CACHE_DIR, { recursive: true });
+    const file = persistedJsonCachePath(jsonKey);
+    const tempFile = `${file}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(
+      tempFile,
+      JSON.stringify({ body, savedAt: new Date().toISOString() }),
+      "utf8",
+    );
+    await fs.rename(tempFile, file);
+  } catch (error) {
+    console.error(`Persisted cache write failed for ${jsonKey}:`, error);
+  }
+}
+
+function cacheJsonBody(jsonKey, body, ttlMs, staleMs) {
+  RESPONSE_CACHE.set(jsonKey, {
+    body,
+    expiresAt: Date.now() + ttlMs,
+    staleUntil: Date.now() + ttlMs + staleMs,
+  });
+}
+
+async function hydratePersistedJsonCache(jsonKey, staleMs) {
+  if (RESPONSE_CACHE.get(jsonKey)?.body) {
+    return;
+  }
+
+  const body = await readPersistedJsonCache(jsonKey);
+  if (!body) {
+    return;
+  }
+
+  const now = Date.now();
+  RESPONSE_CACHE.set(jsonKey, {
+    body,
+    expiresAt: now - 1,
+    staleUntil: now + staleMs,
+  });
+}
+
 async function cachedPayload(
   cacheKey,
   producer,
@@ -260,6 +331,10 @@ async function cachedJsonResponse(
 ) {
   const jsonKey = `json:${cacheKey}`;
   const now = Date.now();
+  if (shouldPersistJsonCache(cacheKey)) {
+    await hydratePersistedJsonCache(jsonKey, staleMs);
+  }
+
   const cached = RESPONSE_CACHE.get(jsonKey);
   if (cached?.body && now < cached.expiresAt) {
     writeJsonBody(response, 200, cached.body, cacheControl, "HIT");
@@ -271,11 +346,10 @@ async function cachedJsonResponse(
       cached.promise = producer()
         .then((payload) => {
           const body = JSON.stringify(payload);
-          RESPONSE_CACHE.set(jsonKey, {
-            body,
-            expiresAt: Date.now() + ttlMs,
-            staleUntil: Date.now() + staleMs,
-          });
+          cacheJsonBody(jsonKey, body, ttlMs, staleMs);
+          if (shouldPersistJsonCache(cacheKey)) {
+            void writePersistedJsonCache(jsonKey, body);
+          }
           return body;
         })
         .catch((error) => {
@@ -301,11 +375,10 @@ async function cachedJsonResponse(
   const promise = producer()
     .then((payload) => {
       const body = JSON.stringify(payload);
-      RESPONSE_CACHE.set(jsonKey, {
-        body,
-        expiresAt: Date.now() + ttlMs,
-        staleUntil: Date.now() + staleMs,
-      });
+      cacheJsonBody(jsonKey, body, ttlMs, staleMs);
+      if (shouldPersistJsonCache(cacheKey)) {
+        void writePersistedJsonCache(jsonKey, body);
+      }
       return body;
     })
     .catch((error) => {
@@ -320,6 +393,47 @@ async function cachedJsonResponse(
   });
   const body = await promise;
   writeJsonBody(response, 200, body, cacheControl, "MISS");
+}
+
+function warmJsonCache(cacheKey, producer, ttlMs, staleMs) {
+  const jsonKey = `json:${cacheKey}`;
+  void (async () => {
+    await hydratePersistedJsonCache(jsonKey, staleMs);
+    const cached = RESPONSE_CACHE.get(jsonKey);
+    if (cached?.promise) {
+      return;
+    }
+
+    const promise = producer()
+      .then((payload) => {
+        const body = JSON.stringify(payload);
+        cacheJsonBody(jsonKey, body, ttlMs, staleMs);
+        void writePersistedJsonCache(jsonKey, body);
+        return body;
+      })
+      .catch((error) => {
+        if (cached?.body) {
+          RESPONSE_CACHE.set(jsonKey, { ...cached, promise: null });
+          console.error(`Startup cache refresh failed for ${cacheKey}:`, error);
+          return cached.body;
+        }
+
+        RESPONSE_CACHE.delete(jsonKey);
+        console.error(`Startup cache warm failed for ${cacheKey}:`, error);
+        return "";
+      });
+
+    RESPONSE_CACHE.set(
+      jsonKey,
+      cached?.body
+        ? { ...cached, promise }
+        : {
+            expiresAt: Date.now() + ttlMs,
+            promise,
+            staleUntil: Date.now() + staleMs,
+          },
+    );
+  })();
 }
 
 function networkFromSearch(searchParams) {
@@ -5419,7 +5533,23 @@ const server = http.createServer((request, response) => {
   void handleRequest(request, response);
 });
 
+function prewarmExpensiveReadCaches() {
+  warmJsonCache(
+    "token:livenet:",
+    () => cachedTokenPayload("livenet"),
+    TOKEN_CACHE_TTL_MS,
+    TOKEN_CACHE_STALE_MS,
+  );
+  warmJsonCache(
+    "activity:livenet",
+    () => globalActivityPayload("livenet"),
+    ACTIVITY_CACHE_TTL_MS,
+    ACTIVITY_CACHE_STALE_MS,
+  );
+}
+
 server.listen(PORT, HOST, () => {
   console.log(`ProofOfWork OP_RETURN API listening on http://${HOST}:${PORT}`);
   console.log(`Mainnet mempool source: ${MEMPOOL_BASE_MAINNET}`);
+  prewarmExpensiveReadCaches();
 });

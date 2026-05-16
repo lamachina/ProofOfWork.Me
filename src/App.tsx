@@ -9127,6 +9127,7 @@ async function fetchOwnedNftMints(
 
 async function fetchTokenState(
   targetNetwork: BitcoinNetwork,
+  fresh = false,
 ): Promise<PowTokenState> {
   const indexAddress = tokenIndexAddressForNetwork(targetNetwork);
   if (!indexAddress) {
@@ -9135,7 +9136,7 @@ async function fetchTokenState(
 
   if (POW_API_BASE) {
     const payload = await fetchProofApiJson<PowTokenApiResponse>(
-      "/api/v1/token",
+      fresh ? "/api/v1/token?fresh=1" : "/api/v1/token",
       targetNetwork,
     );
     return {
@@ -12402,7 +12403,7 @@ export default function App() {
 
         if (tokenMode || workTokenMode) {
           await switchWalletNetwork(window.unisat as UnisatWallet, "livenet");
-          const state = await fetchTokenState("livenet");
+          const state = await fetchTokenState("livenet", true);
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
           setTokenCreationSats(state.creationSats);
@@ -13303,7 +13304,7 @@ export default function App() {
     }
   }
 
-  async function refreshToken(silent = false) {
+  async function refreshToken(silent = false, fresh = false) {
     if (!tokenIndexAddress) {
       setTokenDefinitions([]);
       setTokenMints([]);
@@ -13323,7 +13324,7 @@ export default function App() {
     }
 
     try {
-      const state = await fetchTokenState(network);
+      const state = await fetchTokenState(network, fresh || !silent);
       setTokenDefinitions(state.tokens);
       setTokenMints(state.mints);
       setTokenCreationSats(state.creationSats);
@@ -13366,7 +13367,7 @@ export default function App() {
         fetchGlobalActivity("livenet").catch(() => []),
         fetchPay2SpeakState("livenet"),
         fetchAkState("livenet"),
-        fetchTokenState("livenet"),
+        fetchTokenState("livenet", !silent),
       ]);
       const deployedNftCollections = (akState.collections ?? []).filter(
         (collection) => collection.txid,
@@ -13577,7 +13578,7 @@ export default function App() {
         }
 
         if (tokenMode || workTokenMode) {
-          const state = await fetchTokenState("livenet");
+          const state = await fetchTokenState("livenet", true);
           setTokenDefinitions(state.tokens);
           setTokenMints(state.mints);
           setTokenCreationSats(state.creationSats);
@@ -15957,7 +15958,7 @@ export default function App() {
         tone: "good",
         text: `${ticker} create broadcast: ${shortAddress(txid)}.`,
       });
-      await refreshToken(true);
+      await refreshToken(true, true);
       setTokenDefinitions((current) =>
         current.some((item) => item.tokenId === txid)
           ? current
@@ -16009,7 +16010,7 @@ export default function App() {
     setStatus({ tone: "idle", text: `Checking ${selectedToken.ticker} supply...` });
 
     try {
-      const latestState = await fetchTokenState("livenet");
+      const latestState = await fetchTokenState("livenet", true);
       setTokenDefinitions(latestState.tokens);
       setTokenMints(latestState.mints);
       setTokenCreationSats(latestState.creationSats);
@@ -16096,7 +16097,7 @@ export default function App() {
         tone: "good",
         text: `${latestToken.mintAmount.toLocaleString()} ${latestToken.ticker} mint broadcast: ${shortAddress(txid)}.`,
       });
-      await refreshToken(true);
+      await refreshToken(true, true);
       setTokenMints((current) =>
         current.some((item) => item.txid === txid) ? current : [mint, ...current],
       );

@@ -53,6 +53,8 @@ const RESPONSE_CACHE_TTL_MS = Number(
 const RESPONSE_CACHE_STALE_MS = Number(
   process.env.RESPONSE_CACHE_STALE_MS ?? 120_000,
 );
+const TOKEN_CACHE_TTL_MS = Number(process.env.TOKEN_CACHE_TTL_MS ?? 5_000);
+const TOKEN_CACHE_STALE_MS = Number(process.env.TOKEN_CACHE_STALE_MS ?? 0);
 const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
 const BLOCK_TXID_FETCH_CONCURRENCY = Number(
   process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4,
@@ -133,6 +135,7 @@ const READ_CACHE_CONTROL =
   "public, max-age=15, stale-while-revalidate=60, stale-if-error=120";
 const EXPENSIVE_READ_CACHE_CONTROL =
   "public, max-age=900, stale-while-revalidate=3600, stale-if-error=3600";
+const TOKEN_READ_CACHE_CONTROL = "no-store, max-age=0, must-revalidate";
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
@@ -316,6 +319,17 @@ function networkFromSearch(searchParams) {
   }
 
   return network;
+}
+
+function freshReadRequested(searchParams) {
+  return ["1", "true", "yes"].includes(
+    String(
+      searchParams.get("fresh") ??
+        searchParams.get("refresh") ??
+        searchParams.get("nocache") ??
+        "",
+    ).toLowerCase(),
+  );
 }
 
 function mempoolBase(network) {
@@ -3265,8 +3279,8 @@ function cachedTokenPayload(network) {
   return cachedPayload(
     `payload:token:${network}`,
     () => tokenPayload(network),
-    DERIVED_APP_CACHE_TTL_MS,
-    DERIVED_APP_CACHE_STALE_MS,
+    TOKEN_CACHE_TTL_MS,
+    TOKEN_CACHE_STALE_MS,
   );
 }
 
@@ -5213,14 +5227,23 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/token") {
-      await cachedJsonResponse(
-        response,
-        `token:${network}`,
-        () => cachedTokenPayload(network),
-        EXPENSIVE_READ_CACHE_CONTROL,
-        DERIVED_APP_CACHE_TTL_MS,
-        DERIVED_APP_CACHE_STALE_MS,
-      );
+      if (freshReadRequested(url.searchParams)) {
+        jsonResponse(
+          response,
+          200,
+          await tokenPayload(network),
+          TOKEN_READ_CACHE_CONTROL,
+        );
+      } else {
+        await cachedJsonResponse(
+          response,
+          `token:${network}`,
+          () => cachedTokenPayload(network),
+          TOKEN_READ_CACHE_CONTROL,
+          TOKEN_CACHE_TTL_MS,
+          TOKEN_CACHE_STALE_MS,
+        );
+      }
       return;
     }
 

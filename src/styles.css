@@ -3429,6 +3429,20 @@ pre {
   width: 100%;
 }
 
+.nft-workspace {
+  min-width: 0;
+  width: 100%;
+}
+
+.mail-layout > .nft-workspace {
+  align-content: start;
+  grid-column: 2 / -1;
+  margin: 0;
+  max-width: none;
+  min-height: 0;
+  overflow: auto;
+}
+
 .mail-layout > .token-workspace {
   align-content: start;
   grid-column: 2 / -1;
@@ -3444,9 +3458,28 @@ pre {
     grid-template-columns: 232px minmax(0, 1fr);
   }
 
+  .mail-layout.is-nft-workspace {
+    grid-template-columns: 232px minmax(0, 1fr);
+  }
+
   .mail-layout.is-token-workspace > .token-workspace {
     grid-column: 2;
   }
+
+  .mail-layout.is-nft-workspace > .nft-workspace {
+    grid-column: 2;
+  }
+}
+
+.nft-workspace-compact {
+  align-content: start;
+  gap: 18px;
+  justify-items: stretch;
+}
+
+.nft-workspace-compact .id-launch-card {
+  gap: 14px;
+  padding: 16px;
 }
 
 .token-workspace-compact {
@@ -3915,7 +3948,8 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .mail-layout > .token-workspace {
+  .mail-layout > .token-workspace,
+  .mail-layout > .nft-workspace {
     grid-column: auto;
     padding: 14px;
   }
@@ -4024,6 +4058,10 @@ pre {
   }
 
   .mail-layout.is-token-workspace {
+    grid-template-columns: 196px minmax(0, 1fr);
+  }
+
+  .mail-layout.is-nft-workspace {
     grid-template-columns: 196px minmax(0, 1fr);
   }
 
@@ -4258,6 +4296,7 @@ pre {
   .desktop-workspace,
   .browser-computer-workspace,
   .ids-workspace,
+  .nft-workspace,
   .contacts-workspace {
     border-right: 0;
   }
@@ -4284,6 +4323,7 @@ pre {
   .desktop-workspace,
   .browser-computer-workspace,
   .ids-workspace,
+  .nft-workspace,
   .contacts-workspace {
     grid-column: auto;
   }

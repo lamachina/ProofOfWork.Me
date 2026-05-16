@@ -16538,7 +16538,9 @@ export default function App() {
         className={`mail-layout ${address ? "" : "is-onboarding"} ${
           activeFolder === "token" || activeFolder === "work"
             ? "is-token-workspace"
-            : ""
+            : activeFolder === "nft"
+              ? "is-nft-workspace"
+              : ""
         }`}
       >
         <aside className="sidebar">
@@ -16980,6 +16982,7 @@ export default function App() {
             busy={busy}
             canDeployCollection={canDeployNft}
             canMint={canMintAk}
+            compact
             collectionPage={nftCollectionPage}
             collectionUrl={nftCollectionUrl(
               nftSelectedCollection,
@@ -20116,6 +20119,7 @@ type NftWorkspaceProps = {
   address: string;
   busy: boolean;
   canMint: boolean;
+  compact?: boolean;
   collectionPage: boolean;
   collectionUrl: string;
   collections: NftCollectionRecord[];
@@ -20299,6 +20303,7 @@ function NftWorkspace({
   busy,
   canDeployCollection,
   canMint,
+  compact = false,
   collectionPage,
   collectionUrl,
   collections,
@@ -20338,11 +20343,32 @@ function NftWorkspace({
   const canMintSelectedCollection =
     selectedCollection.id === "ak21" &&
     operatorAddress === selectedCollection.defaultOperatorAddress;
+  const pageStyle: CSSProperties = compact
+    ? {
+        ...NFT_PAGE_STYLE,
+        gap: 18,
+        margin: 0,
+        maxWidth: "none",
+        padding: 18,
+      }
+    : NFT_PAGE_STYLE;
+  const headerStyle: CSSProperties = compact
+    ? {
+        ...NFT_CENTER_HEADER_STYLE,
+        justifyItems: "start",
+        margin: 0,
+        maxWidth: 780,
+        textAlign: "left",
+      }
+    : NFT_CENTER_HEADER_STYLE;
 
   if (!collectionPage) {
     return (
-      <section style={NFT_PAGE_STYLE}>
-        <header style={NFT_CENTER_HEADER_STYLE}>
+      <section
+        className={`nft-workspace${compact ? " nft-workspace-compact" : ""}`}
+        style={pageStyle}
+      >
+        <header style={headerStyle}>
           <p className="eyebrow">NFT</p>
           <h2 style={{ margin: 0 }}>Collections</h2>
           <p style={{ margin: 0 }}>
@@ -20547,8 +20573,11 @@ function NftWorkspace({
   }
 
   return (
-    <section style={NFT_PAGE_STYLE}>
-      <header style={NFT_CENTER_HEADER_STYLE}>
+    <section
+      className={`nft-workspace${compact ? " nft-workspace-compact" : ""}`}
+      style={pageStyle}
+    >
+      <header style={headerStyle}>
         <a className="secondary small link-button" href="/?nft=1">
           <span className="button-content">
             <ArrowLeft size={14} />
@@ -23695,13 +23724,13 @@ function LandingApp({
         <div className="landing-hero-content">
           <span className="landing-kicker">
             Bitcoin-native identity, mail, files, pages, markets, funding,
-            tokens, logs, and growth
+            NFTs, tokens, logs, and growth
           </span>
           <h2>ProofOfWork.Me</h2>
           <p>
             Claim a permanent on-chain ID, then use the Bitcoin Computer for
             mail, files, HTML pages, marketplace actions, Pay2Speak campaigns,
-            token mints, and chain-readable proof.
+            NFT collections, token mints, and chain-readable proof.
           </p>
           <div className="landing-actions">
             <a
@@ -23756,6 +23785,15 @@ function LandingApp({
               <span className="button-content">
                 <Mic2 size={17} />
                 <span>Pay2Speak</span>
+              </span>
+            </a>
+            <a
+              className="secondary link-button"
+              href={appHref(NFT_APP_URL, LOCAL_NFT_APP_URL)}
+            >
+              <span className="button-content">
+                <Star size={17} />
+                <span>NFT</span>
               </span>
             </a>
             <a
@@ -23998,6 +24036,29 @@ function LandingApp({
               <span className="button-content">
                 <Mic2 size={16} />
                 <span>Open Pay2Speak</span>
+              </span>
+            </a>
+          </article>
+
+          <article className="landing-choice">
+            <div className="empty-icon" aria-hidden="true">
+              <Star size={24} />
+            </div>
+            <div>
+              <h3>Open NFT</h3>
+              <p>
+                Create Bitcoin-native NFT collections, mint visual records, and
+                browse confirmed galleries indexed from <code>nft</code> deploy
+                and mint events.
+              </p>
+            </div>
+            <a
+              className="secondary link-button"
+              href={appHref(NFT_APP_URL, LOCAL_NFT_APP_URL)}
+            >
+              <span className="button-content">
+                <Star size={16} />
+                <span>Open NFT</span>
               </span>
             </a>
           </article>

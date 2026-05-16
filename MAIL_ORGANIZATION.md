@@ -44,7 +44,7 @@ Mail organization features that are already implemented in the full app:
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
 - Marketplace workspace for confirmed ID listings, delistings, and buyer-funded transfers.
 - Pay2Speak workspace for mainnet X Space campaign creation, funding, and ranked questions.
-- NFT workspace for mainnet NFT collections. AK is the first collection, with visual generation, optional Genesis Tag minting, and gallery reads from valid operator-address mints.
+- NFT workspace for mainnet NFT collections. AK is the first collection, with visual generation, optional Genesis Tag minting, gallery reads from valid operator-address mints, and product credit to `machina@proofofwork.me`.
 - Token workspace for mainnet token creation and minting, plus a WORK workspace for the dedicated WORK token dashboard. Creation pays the `tokens@proofofwork.me` index fee; mints pay each token registry directly.
 - Log surface for tx-backed registry, marketplace, mail, reply, file, attachment, Pay2Speak, NFT, and token actions.
 - Growth surface for canonical modeled network value versus real confirmed registry, log, file, marketplace, Pay2Speak, NFT, and Token value metrics.

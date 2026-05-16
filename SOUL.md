@@ -74,7 +74,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `marketplace.proofofwork.me` is the standalone ID marketplace.
 - `pay2speak.proofofwork.me` is the standalone Pay2Speak app for campaign funding and ranked questions.
-- `nft.proofofwork.me` is the standalone NFT collections app. AK is the first collection, with local visual generation, wallet-signed minting, and chain-readable gallery records.
+- `nft.proofofwork.me` is the standalone NFT collections app. AK is the first collection, with local visual generation, wallet-signed minting, chain-readable gallery records, and public credit to `machina@proofofwork.me`.
 - `token.proofofwork.me` is the standalone token creation and mint app.
 - `tokens.proofofwork.me` redirects to `https://token.proofofwork.me/`.
 - `work.proofofwork.me` is the standalone WORK token dashboard.

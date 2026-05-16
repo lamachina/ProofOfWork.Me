@@ -2,6 +2,8 @@
 
 NFT is a mainnet-only ProofOfWork.Me app for minting and indexing Bitcoin-native NFT collections from transaction records. V1 ships with AK as the first supported collection and treats each collection as a decoder rule set plus an operator address to scan.
 
+Launch credit: `machina@proofofwork.me` should be credited in public NFT docs and launch copy. This is creator/product provenance, not a protocol ownership rule; canonical NFT state still comes from confirmed Bitcoin transactions.
+
 ## Collection Subpages
 
 Collection views are addressable by collection name and operator address. The pair is the collection identity because multiple operators can use the same collection name.

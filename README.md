@@ -49,7 +49,7 @@ Production app roles:
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
 - `marketplace.proofofwork.me` is the standalone ProofOfWork ID listing and buyer-funded transfer app.
 - `pay2speak.proofofwork.me` is the standalone mainnet Pay2Speak app for X Space crowdfunding records and funded questions.
-- `nft.proofofwork.me` is the standalone mainnet NFT collections app. AK is the first collection, with local visual generation, wallet-signed minting, and valid mint gallery reads.
+- `nft.proofofwork.me` is the standalone mainnet NFT collections app. AK is the first collection, with local visual generation, wallet-signed minting, valid mint gallery reads, and launch credit to `machina@proofofwork.me`.
 - `token.proofofwork.me` is the standalone mainnet token creation and mint app.
 - `tokens.proofofwork.me` redirects permanently to `https://token.proofofwork.me/`.
 - `work.proofofwork.me` is the standalone WORK token dashboard and mint page.
@@ -143,7 +143,7 @@ Launch invariants for future developers/agents:
 - Shows pending ID receiver updates, direct transfers, listings, delistings, and marketplace buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes Marketplace as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Exposes Pay2Speak as a mainnet-only X Space crowdfunding surface with campaign creation, funding splits, optional questions, and a Computer workspace.
-- Exposes NFT as a mainnet-only collection surface. AK is the first collection, with local pixel-art generation, optional Genesis Tag minting, a Computer workspace, and collection subpages that scan a selected operator address with AK decoding rules.
+- Exposes NFT as a mainnet-only collection surface. AK is the first collection, with local pixel-art generation, optional Genesis Tag minting, a Computer workspace, collection subpages that scan a selected operator address with AK decoding rules, and product credit to `machina@proofofwork.me`.
 - Exposes Tokens as a mainnet-only creation and mint surface, plus a dedicated WORK token dashboard. Token creation pays the built-in index fee to `tokens@proofofwork.me`; mints pay each token's own registry at the owner-set price.
 - Exposes Growth as a public dashboard for modeled Bitcoin Computer network value versus real confirmed registry, log, file, marketplace, Pay2Speak, NFT, and Token value metrics.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
@@ -200,7 +200,7 @@ Current production behavior:
 - Token surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per token and per mint from BTC/USD.
 - `work.proofofwork.me` shows only the WORK dashboard: mint progress, holders, token facts, mint action, and mint log. `token.proofofwork.me` stays focused on token creation and mint selection.
 - WORK defaults are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. The launch price is exactly 1 sat per WORK. These are editable create-form defaults, not hardcoded limits for other tokens.
-- The NFT API indexes deploy records and supported collection operators. Deploy records derive the operator from `vin0`, require at least 1,000 sats to `bc1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk7whapn`, and canonical collection subpages use `collection=<name>&operator=<operator-address>` because collection names are not globally unique.
+- The NFT API indexes deploy records and supported collection operators. Deploy records derive the operator from `vin0`, require at least 1,000 sats to `bc1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk7whapn`, and canonical collection subpages use `collection=<name>&operator=<operator-address>` because collection names are not globally unique. Public NFT docs and launch copy credit `machina@proofofwork.me`; this credit is provenance, not a protocol validation field.
 - The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT deploys/mints, token creations, and token mints. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
 - Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside carrier; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
 - Confirmed Browser pages may run scripts in an opaque sandbox, but wallet signing remains outside Browser pages. Pending Browser pages render as visibility only and cannot run scripts.

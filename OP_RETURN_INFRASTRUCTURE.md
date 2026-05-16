@@ -181,6 +181,7 @@ The NFT endpoint:
 - Defines the token identifier as `<mint-txid>:2` and the initial owner as vout2's Bitcoin address.
 - Broadcasts NFT deploys and mints with multiple OP_RETURN outputs through the first-party Slipstream proxy. Wallet signing and PSBT finalization stay client-side; the API only receives the final raw transaction hex.
 - Treats pending NFT records as visibility only; confirmed records are canonical.
+- Public NFT docs and launch copy should credit `machina@proofofwork.me`. This is product provenance and does not change endpoint validation, operator derivation, or ownership rules.
 
 The token endpoint:
 

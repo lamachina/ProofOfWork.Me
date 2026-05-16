@@ -59,6 +59,9 @@ const TX_FETCH_CONCURRENCY = Number(process.env.TX_FETCH_CONCURRENCY ?? 8);
 const BLOCK_TXID_FETCH_CONCURRENCY = Number(
   process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4,
 );
+const MAX_TRANSACTION_CACHE_SIZE = Number(
+  process.env.MAX_TRANSACTION_CACHE_SIZE ?? 100_000,
+);
 const SLIPSTREAM_SUBMIT_TX_URL = "https://slipstream.mara.com/rest-api/submit-tx";
 const SLIPSTREAM_TX_URL = "https://slipstream.mara.com/tx";
 
@@ -129,6 +132,7 @@ const TOKEN_INDEX_ADDRESSES = {
 
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
 const BLOCK_TXID_INDEX_CACHE = new Map();
+const TRANSACTION_CACHE = new Map();
 const GLOBAL_ACTIVITY_CACHE = new Map();
 const RESPONSE_CACHE = new Map();
 const READ_CACHE_CONTROL =
@@ -681,7 +685,22 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 }
 
 async function fetchTransaction(txid, network) {
-  return fetchJson(`${mempoolBase(network)}/api/tx/${txid}`);
+  const normalizedTxid = String(txid ?? "").toLowerCase();
+  const cacheKey = `${network}:${normalizedTxid}`;
+  const cached = TRANSACTION_CACHE.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const tx = await fetchJson(`${mempoolBase(network)}/api/tx/${normalizedTxid}`);
+  if (transactionConfirmed(tx)) {
+    TRANSACTION_CACHE.set(cacheKey, tx);
+    if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
+      TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
+    }
+  }
+
+  return tx;
 }
 
 async function fetchTransactionFromBase(baseUrl, txid) {

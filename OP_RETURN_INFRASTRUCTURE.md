@@ -200,20 +200,6 @@ The token endpoint:
 - WORK defaults are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 sat per WORK. These are editable create-form defaults, not hardcoded limits for other tokens.
 - Treats pending token records as visibility only; confirmed records are canonical.
 
-## Stream Console
-
-High-volume token registries can collect more UTXOs than browser wallets, public mempool endpoints, or Electrum UI can comfortably handle. Consolidation is a local wallet operation, not a production custody flow.
-
-`scripts/stream-console.mjs` is the local Stream Console:
-
-```bash
-npm run stream:console -- plan --source work --destination bitcoin --wallet <local-wallet>
-npm run stream:console -- build --source work --destination bitcoin --fee-rate 0.5 --batch-size 100 --wallet <local-wallet>
-npm run stream:console -- broadcast --yes --source work --destination bitcoin --fee-rate 0.5 --batch-size 50 --wallet <local-wallet>
-```
-
-It talks to a local Bitcoin Core RPC wallet, writes PSBT/hex artifacts under `output/stream-console/`, tests signed batches with `testmempoolaccept`, and only broadcasts with the explicit `broadcast --yes` command. Production servers may help index and display registry state, but they must not custody or sign registry consolidation transactions.
-
 The mail endpoint:
 
 - Scans address history.

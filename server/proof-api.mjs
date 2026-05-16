@@ -36,10 +36,16 @@ const MAX_ACTIVITY_ADDRESS_GRAPH_PASSES = Number(
   process.env.MAX_ACTIVITY_ADDRESS_GRAPH_PASSES ?? 1,
 );
 const ACTIVITY_CACHE_TTL_MS = Number(
-  process.env.ACTIVITY_CACHE_TTL_MS ?? 60_000,
+  process.env.ACTIVITY_CACHE_TTL_MS ?? 5 * 60_000,
 );
 const ACTIVITY_CACHE_STALE_MS = Number(
   process.env.ACTIVITY_CACHE_STALE_MS ?? 3_600_000,
+);
+const DERIVED_APP_CACHE_TTL_MS = Number(
+  process.env.DERIVED_APP_CACHE_TTL_MS ?? 5 * 60_000,
+);
+const DERIVED_APP_CACHE_STALE_MS = Number(
+  process.env.DERIVED_APP_CACHE_STALE_MS ?? 3_600_000,
 );
 const RESPONSE_CACHE_TTL_MS = Number(
   process.env.RESPONSE_CACHE_TTL_MS ?? 15_000,
@@ -125,6 +131,8 @@ const GLOBAL_ACTIVITY_CACHE = new Map();
 const RESPONSE_CACHE = new Map();
 const READ_CACHE_CONTROL =
   "public, max-age=15, stale-while-revalidate=60, stale-if-error=120";
+const EXPENSIVE_READ_CACHE_CONTROL =
+  "public, max-age=300, stale-while-revalidate=3600, stale-if-error=3600";
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
@@ -5140,7 +5148,7 @@ async function handleRequest(request, response) {
         response,
         `activity:${network}`,
         () => globalActivityPayload(network),
-        READ_CACHE_CONTROL,
+        EXPENSIVE_READ_CACHE_CONTROL,
         ACTIVITY_CACHE_TTL_MS,
         ACTIVITY_CACHE_STALE_MS,
       );
@@ -5165,7 +5173,9 @@ async function handleRequest(request, response) {
         response,
         `nft:${network}:${collection}:${operator}:${owner}`,
         () => akPayload(network, owner, collection, operator),
-        READ_CACHE_CONTROL,
+        EXPENSIVE_READ_CACHE_CONTROL,
+        DERIVED_APP_CACHE_TTL_MS,
+        DERIVED_APP_CACHE_STALE_MS,
       );
       return;
     }
@@ -5175,7 +5185,9 @@ async function handleRequest(request, response) {
         response,
         `token:${network}`,
         () => tokenPayload(network),
-        READ_CACHE_CONTROL,
+        EXPENSIVE_READ_CACHE_CONTROL,
+        DERIVED_APP_CACHE_TTL_MS,
+        DERIVED_APP_CACHE_STALE_MS,
       );
       return;
     }

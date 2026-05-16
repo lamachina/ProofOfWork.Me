@@ -904,6 +904,8 @@ const SLIPSTREAM_TX_URL = "https://slipstream.mara.com/tx";
 const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_REGISTRY_TX_PAGES = 100;
+const ACTIVITY_FEED_RENDER_LIMIT = 250;
+const GROWTH_AUTO_REFRESH_MS = 5 * 60_000;
 const BLOCK_TXID_INDEX_CACHE = new Map<string, Promise<Map<string, number>>>();
 const PROTOCOL_PREFIX = "pwm1:";
 
@@ -10900,6 +10902,8 @@ export default function App() {
   const [checkingBroadcasts, setCheckingBroadcasts] = useState(false);
   const allSentRef = useRef(allSent);
   const chainSentRef = useRef(chainSent);
+  const idRefreshInFlightRef = useRef(false);
+  const growthRefreshInFlightRef = useRef(false);
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   const protocolPayloads = useMemo(
@@ -12009,7 +12013,13 @@ export default function App() {
       return;
     }
 
-    if (pay2SpeakMode || nftMode || tokenMode || workTokenMode) {
+    if (
+      growthMode ||
+      pay2SpeakMode ||
+      nftMode ||
+      tokenMode ||
+      workTokenMode
+    ) {
       return;
     }
 
@@ -12017,6 +12027,7 @@ export default function App() {
     void refreshIds(true);
   }, [
     nftMode,
+    growthMode,
     mainnetRegistryMode,
     network,
     pay2SpeakMode,
@@ -12084,7 +12095,10 @@ export default function App() {
       }
     };
     refreshGrowthMetrics();
-    const interval = window.setInterval(refreshGrowthMetrics, 30_000);
+    const interval = window.setInterval(
+      refreshGrowthMetrics,
+      GROWTH_AUTO_REFRESH_MS,
+    );
     window.addEventListener("focus", refreshGrowthMetrics);
 
     return () => {
@@ -13182,6 +13196,11 @@ export default function App() {
   }
 
   async function refreshGrowth(silent = false) {
+    if (growthRefreshInFlightRef.current) {
+      return;
+    }
+
+    growthRefreshInFlightRef.current = true;
     setBusy(true);
     if (!silent) {
       setStatus({ tone: "idle", text: "Refreshing Growth metrics..." });
@@ -13231,6 +13250,7 @@ export default function App() {
         text: errorMessage(error, "Growth metrics refresh failed."),
       });
     } finally {
+      growthRefreshInFlightRef.current = false;
       setBusy(false);
     }
   }
@@ -13553,6 +13573,11 @@ export default function App() {
       return;
     }
 
+    if (idRefreshInFlightRef.current) {
+      return;
+    }
+
+    idRefreshInFlightRef.current = true;
     setBusy(true);
     if (!silent) {
       setStatus({
@@ -13616,6 +13641,7 @@ export default function App() {
         text: errorMessage(error, "ID registry scan failed."),
       });
     } finally {
+      idRefreshInFlightRef.current = false;
       setBusy(false);
     }
   }
@@ -18428,6 +18454,8 @@ function ActivityWorkspace({
   const confirmedCount = items.filter((item) => item.confirmed).length;
   const pendingCount = items.length - confirmedCount;
   const dataBytes = totalActivityDataBytes(items);
+  const visibleItems = items.slice(0, ACTIVITY_FEED_RENDER_LIMIT);
+  const hiddenCount = Math.max(0, items.length - visibleItems.length);
   const title = profile
     ? `${profile.label} log`
     : query.trim()
@@ -18524,16 +18552,29 @@ function ActivityWorkspace({
               Confirmed records are canonical. Pending records are visible until
               they confirm or disappear.
             </p>
+            {hiddenCount > 0 ? (
+              <p>
+                Showing the newest {visibleItems.length.toLocaleString()} of{" "}
+                {items.length.toLocaleString()} matching actions. Search an
+                address, ID, txid, or app label to narrow the feed.
+              </p>
+            ) : null}
           </div>
         </div>
-        <ActivityFeed items={items} />
+        <ActivityFeed items={visibleItems} totalCount={items.length} />
       </section>
     </section>
   );
 }
 
-function ActivityFeed({ items }: { items: PowActivityItem[] }) {
-  if (items.length === 0) {
+function ActivityFeed({
+  items,
+  totalCount,
+}: {
+  items: PowActivityItem[];
+  totalCount: number;
+}) {
+  if (totalCount === 0) {
     return (
       <div className="empty-state activity-empty">
         <div className="empty-icon" aria-hidden="true">
@@ -18550,81 +18591,84 @@ function ActivityFeed({ items }: { items: PowActivityItem[] }) {
 
   return (
     <div className="activity-feed">
-      {items.map((item) => (
-        <article className="activity-row" key={activityKey(item)}>
-          <div className="activity-row-main">
-            <div>
-              <h4>{item.id ? `${item.id}@proofofwork.me` : item.title}</h4>
-              <strong>{item.id ? item.title : item.description}</strong>
-              {item.id ? <p>{item.description}</p> : null}
-              {item.detail ? (
-                <span className="activity-detail">{item.detail}</span>
-              ) : null}
+      {items.map((item) => {
+        const key = activityKey(item);
+        return (
+          <article className="activity-row" key={key}>
+            <div className="activity-row-main">
+              <div>
+                <h4>{item.id ? `${item.id}@proofofwork.me` : item.title}</h4>
+                <strong>{item.id ? item.title : item.description}</strong>
+                {item.id ? <p>{item.description}</p> : null}
+                {item.detail ? (
+                  <span className="activity-detail">{item.detail}</span>
+                ) : null}
+              </div>
+              <time dateTime={item.createdAt}>{formatDate(item.createdAt)}</time>
             </div>
-            <time dateTime={item.createdAt}>{formatDate(item.createdAt)}</time>
-          </div>
 
-          <div className="activity-tags">
-            {item.tags.map((tag) => (
-              <span key={`${activityKey(item)}-${tag}`}>{tag}</span>
-            ))}
-          </div>
+            <div className="activity-tags">
+              {item.tags.map((tag) => (
+                <span key={`${key}-${tag}`}>{tag}</span>
+              ))}
+            </div>
 
-          <dl className="activity-meta">
-            {item.actor ? (
-              <div>
-                <dt>Actor</dt>
-                <dd>{shortAddress(item.actor)}</dd>
-              </div>
-            ) : null}
-            {item.counterparty ? (
-              <div>
-                <dt>Counterparty</dt>
-                <dd>{shortAddress(item.counterparty)}</dd>
-              </div>
-            ) : null}
-            {item.listingId ? (
-              <div>
-                <dt>Listing</dt>
-                <dd>{shortAddress(item.listingId)}</dd>
-              </div>
-            ) : null}
-            {item.utxo ? (
-              <div>
-                <dt>UTXO</dt>
-                <dd>{shortAddress(item.utxo)}</dd>
-              </div>
-            ) : null}
-          </dl>
+            <dl className="activity-meta">
+              {item.actor ? (
+                <div>
+                  <dt>Actor</dt>
+                  <dd>{shortAddress(item.actor)}</dd>
+                </div>
+              ) : null}
+              {item.counterparty ? (
+                <div>
+                  <dt>Counterparty</dt>
+                  <dd>{shortAddress(item.counterparty)}</dd>
+                </div>
+              ) : null}
+              {item.listingId ? (
+                <div>
+                  <dt>Listing</dt>
+                  <dd>{shortAddress(item.listingId)}</dd>
+                </div>
+              ) : null}
+              {item.utxo ? (
+                <div>
+                  <dt>UTXO</dt>
+                  <dd>{shortAddress(item.utxo)}</dd>
+                </div>
+              ) : null}
+            </dl>
 
-          <div className="id-record-actions">
-            <a
-              className="secondary small"
-              href={mempoolTxUrl(item.txid, item.network)}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="button-content">
-                <ArrowUpRight size={15} />
-                <span>View TX</span>
-              </span>
-            </a>
-            {item.listingId && item.listingId !== item.txid ? (
+            <div className="id-record-actions">
               <a
                 className="secondary small"
-                href={mempoolTxUrl(item.listingId, item.network)}
+                href={mempoolTxUrl(item.txid, item.network)}
                 rel="noreferrer"
                 target="_blank"
               >
                 <span className="button-content">
                   <ArrowUpRight size={15} />
-                  <span>View Listing</span>
+                  <span>View TX</span>
                 </span>
               </a>
-            ) : null}
-          </div>
-        </article>
-      ))}
+              {item.listingId && item.listingId !== item.txid ? (
+                <a
+                  className="secondary small"
+                  href={mempoolTxUrl(item.listingId, item.network)}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <span className="button-content">
+                    <ArrowUpRight size={15} />
+                    <span>View Listing</span>
+                  </span>
+                </a>
+              ) : null}
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }

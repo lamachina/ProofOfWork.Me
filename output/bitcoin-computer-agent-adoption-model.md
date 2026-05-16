@@ -362,6 +362,17 @@ bitcoin_computer_value_sats =
 
 The BTC column is a sats-denominated valuation converted into BTC as a unit of account. It is not a claim that those sats are locked in the protocol.
 
+### WORK Floor
+
+WORK has a permanent floor tied to this confirmed Bitcoin Computer network value:
+
+```text
+work_floor_sats =
+  confirmed_bitcoin_computer_value_sats / 21,000,000 WORK
+```
+
+For price-per-token displays, use `confirmed_bitcoin_computer_value_sats / 21,000,000`. The inverse, `21,000,000 / confirmed_bitcoin_computer_value_sats`, is the WORK-per-sat ratio. Pending mempool records are useful visibility but do not change the canonical floor until confirmed.
+
 ## Canonical Product Growth
 
 This is the canonical lowest-fee success path at 0.00001 sat/vB.

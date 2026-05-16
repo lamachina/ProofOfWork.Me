@@ -159,6 +159,7 @@ The Growth app:
 - Compares modeled Bitcoin Computer network value to confirmed chain-derived value in sats and USD.
 - Auto-refreshes confirmed registry, log, file, marketplace, Pay2Speak, NFT, and Token metrics while the page is visible.
 - Treats each modeled product consistently: real input, usage rate, value assumption, fee elasticity, and blockspace accounting.
+- Feeds the permanent WORK floor: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. Pending records are visible but do not change this canonical floor until confirmed.
 
 The Pay2Speak endpoint:
 
@@ -198,6 +199,7 @@ The token endpoint:
 - Token UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per token and per mint from BTC/USD.
 - `token.proofofwork.me` is the create/mint surface, `tokens.proofofwork.me` redirects to it, and `work.proofofwork.me` is the dedicated WORK dashboard.
 - WORK defaults are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 sat per WORK. These are editable create-form defaults, not hardcoded limits for other tokens.
+- WORK's permanent price floor is derived from the confirmed Bitcoin Computer network value, not from pending mempool visibility: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / confirmed_network_value_sats` is the WORK-per-sat ratio.
 - Treats pending token records as visibility only; confirmed records are canonical.
 
 The mail endpoint:

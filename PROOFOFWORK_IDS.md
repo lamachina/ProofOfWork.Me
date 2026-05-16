@@ -121,7 +121,7 @@ The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listi
 The Log subdomain is read-only. It exposes a unified Bitcoin Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT deploys/mints, token creations, and token mints.
 NFT launch docs and social copy should credit `machina@proofofwork.me`. This credit is product provenance, while NFT deploy/mint validity remains defined by confirmed Bitcoin records.
 The Token subdomain creates and mints mint-first `pwt1:` tokens. The `tokens` subdomain redirects to Token. The WORK subdomain is the dedicated WORK token dashboard.
-The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Pay2Speak/NFT/Token network-value model with confirmed registry, log, file, marketplace, Pay2Speak, NFT, and token value metrics in sats and USD.
+The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Pay2Speak/NFT/Token network-value model with confirmed registry, log, file, marketplace, Pay2Speak, NFT, and token value metrics in sats and USD. WORK has a permanent floor derived from this confirmed network value: `work_floor_sats = confirmed_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / confirmed_network_value_sats` is the WORK-per-sat ratio.
 
 Local preview:
 

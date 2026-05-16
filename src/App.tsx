@@ -1050,6 +1050,21 @@ const WORK_TOKEN_REGISTRY_RECORD: PowIdRecord = {
   receiveAddress: WORK_TOKEN_REGISTRY_ADDRESS,
   txid: WORK_TOKEN_REGISTRY_TXID,
 };
+const WORK_TOKEN_DEFINITION: PowTokenDefinition = {
+  confirmed: true,
+  createdAt: "2026-05-15T02:57:28.000Z",
+  creationFeeSats: TOKEN_CREATION_PRICE_SATS,
+  creatorAddress: TOKEN_INDEX_ADDRESSES.livenet ?? "",
+  dataBytes: 70,
+  maxSupply: WORK_TOKEN_MAX_SUPPLY,
+  mintAmount: WORK_TOKEN_MINT_AMOUNT,
+  mintPriceSats: WORK_TOKEN_MINT_PRICE_SATS,
+  network: "livenet",
+  registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+  ticker: WORK_TOKEN_TICKER,
+  tokenId: WORK_TOKEN_ID,
+  txid: WORK_TOKEN_ID,
+};
 const ESTIMATED_INPUT_VBYTES = 160;
 const ESTIMATED_PAYMENT_OUTPUT_VBYTES = 31;
 const DUST_SATS = 546;
@@ -11628,6 +11643,19 @@ export default function App() {
     () => tokenDefinitions.slice().sort(compareTokensByConfirmation),
     [tokenDefinitions],
   );
+  const dashboardTokenDefinitions = useMemo(() => {
+    if (!workTokenMode && activeFolder !== "work") {
+      return orderedTokenDefinitions;
+    }
+
+    const hasWork = orderedTokenDefinitions.some(
+      (token) =>
+        token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
+    );
+    return hasWork
+      ? orderedTokenDefinitions
+      : [WORK_TOKEN_DEFINITION, ...orderedTokenDefinitions];
+  }, [activeFolder, orderedTokenDefinitions, workTokenMode]);
   const effectiveTokenDetailTarget =
     workTokenMode || activeFolder === "work"
       ? WORK_TOKEN_TICKER
@@ -11640,29 +11668,29 @@ export default function App() {
           : tokenSelectedId;
       const selectedTicker = normalizeTokenTicker(effectiveTokenSelection);
       return (
-        orderedTokenDefinitions.find(
+        dashboardTokenDefinitions.find(
           (token) =>
             token.tokenId === effectiveTokenSelection ||
             (selectedTicker && token.ticker === selectedTicker),
         ) ??
-        orderedTokenDefinitions.find(
+        dashboardTokenDefinitions.find(
           (token) => token.ticker === WORK_TOKEN_TICKER,
         ) ??
-        orderedTokenDefinitions[0]
+        dashboardTokenDefinitions[0]
       );
     },
-    [activeFolder, orderedTokenDefinitions, tokenSelectedId, workTokenMode],
+    [activeFolder, dashboardTokenDefinitions, tokenSelectedId, workTokenMode],
   );
   const tokenDetailToken = useMemo(() => {
     const detailTicker = normalizeTokenTicker(effectiveTokenDetailTarget);
     return (
-      orderedTokenDefinitions.find(
+      dashboardTokenDefinitions.find(
         (token) =>
           token.tokenId === effectiveTokenDetailTarget ||
           (detailTicker && token.ticker === detailTicker),
       ) ?? undefined
     );
-  }, [effectiveTokenDetailTarget, orderedTokenDefinitions]);
+  }, [dashboardTokenDefinitions, effectiveTokenDetailTarget]);
   const tokenDetailLedger = useMemo(
     () => tokenLedgerFor(tokenDetailToken, tokenMints),
     [tokenDetailToken, tokenMints],
@@ -11671,8 +11699,11 @@ export default function App() {
     () =>
       orderedTokenDefinitions.find(
         (token) => token.ticker === WORK_TOKEN_TICKER,
+      ) ??
+      dashboardTokenDefinitions.find(
+        (token) => token.ticker === WORK_TOKEN_TICKER,
       ),
-    [orderedTokenDefinitions],
+    [dashboardTokenDefinitions, orderedTokenDefinitions],
   );
   const workTokenLedger = useMemo(
     () => tokenLedgerFor(workTokenDefinition, tokenMints),

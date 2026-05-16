@@ -12317,6 +12317,7 @@ export default function App() {
 
     const refreshWorkFloorMetrics = () => {
       if (document.visibilityState === "visible") {
+        void refreshTokenBtcUsd();
         void refreshWorkFloor(true);
       }
     };
@@ -12356,6 +12357,14 @@ export default function App() {
       canceled = true;
     };
   }, [activeFolder, tokenMode, workTokenMode]);
+
+  async function refreshTokenBtcUsd() {
+    try {
+      setTokenBtcUsd(await fetchBtcUsdPrice());
+    } catch {
+      setTokenBtcUsd(GROWTH_MODEL_INPUTS.currentBtcUsd);
+    }
+  }
 
   useEffect(() => {
     if (!growthMode || network !== "livenet") {
@@ -17083,6 +17092,7 @@ export default function App() {
         theme={theme}
         workTokenOnly={workTokenMode}
         onRefresh={() => {
+          void refreshTokenBtcUsd();
           void refreshToken();
           if (workTokenMode) {
             void refreshWorkFloor();
@@ -17897,6 +17907,7 @@ export default function App() {
             stopMintAssistant={stopTokenMintAssistant}
             workTokenOnly={activeFolder === "work"}
             onRefresh={() => {
+              void refreshTokenBtcUsd();
               void refreshToken();
               if (activeFolder === "work") {
                 void refreshWorkFloor();

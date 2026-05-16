@@ -67,7 +67,7 @@ const MAX_TRANSACTION_CACHE_SIZE = Number(
   process.env.MAX_TRANSACTION_CACHE_SIZE ?? 100_000,
 );
 const PERSISTED_CACHE_DIR =
-  process.env.POW_API_CACHE_DIR ?? "/tmp/proofofwork-api-cache";
+  process.env.POW_API_CACHE_DIR ?? path.join(process.cwd(), ".pow-api-cache");
 const SLIPSTREAM_SUBMIT_TX_URL = "https://slipstream.mara.com/rest-api/submit-tx";
 const SLIPSTREAM_TX_URL = "https://slipstream.mara.com/tx";
 

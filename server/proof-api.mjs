@@ -36,13 +36,13 @@ const MAX_ACTIVITY_ADDRESS_GRAPH_PASSES = Number(
   process.env.MAX_ACTIVITY_ADDRESS_GRAPH_PASSES ?? 1,
 );
 const ACTIVITY_CACHE_TTL_MS = Number(
-  process.env.ACTIVITY_CACHE_TTL_MS ?? 5 * 60_000,
+  process.env.ACTIVITY_CACHE_TTL_MS ?? 15 * 60_000,
 );
 const ACTIVITY_CACHE_STALE_MS = Number(
   process.env.ACTIVITY_CACHE_STALE_MS ?? 3_600_000,
 );
 const DERIVED_APP_CACHE_TTL_MS = Number(
-  process.env.DERIVED_APP_CACHE_TTL_MS ?? 5 * 60_000,
+  process.env.DERIVED_APP_CACHE_TTL_MS ?? 15 * 60_000,
 );
 const DERIVED_APP_CACHE_STALE_MS = Number(
   process.env.DERIVED_APP_CACHE_STALE_MS ?? 3_600_000,
@@ -132,7 +132,7 @@ const RESPONSE_CACHE = new Map();
 const READ_CACHE_CONTROL =
   "public, max-age=15, stale-while-revalidate=60, stale-if-error=120";
 const EXPENSIVE_READ_CACHE_CONTROL =
-  "public, max-age=300, stale-while-revalidate=3600, stale-if-error=3600";
+  "public, max-age=900, stale-while-revalidate=3600, stale-if-error=3600";
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");

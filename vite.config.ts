@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { prodProofApiProxy } from "./test-api/prodApiProxy";
 
 export default defineConfig({
   build: {
@@ -35,4 +36,7 @@ export default defineConfig({
     },
   },
   plugins: [react()],
+  server: {
+    proxy: prodProofApiProxy(),
+  },
 });

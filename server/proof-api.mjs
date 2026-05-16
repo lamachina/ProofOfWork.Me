@@ -8,13 +8,18 @@ import { URL } from "node:url";
 import bip322 from "bip322-js";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
+import {
+  errorResponse,
+  jsonResponse,
+  optionsResponse,
+  writeJsonBody,
+} from "./http/responses.mjs";
 
 bitcoin.initEccLib(ecc);
 const { Verifier } = bip322;
 
 const HOST = process.env.HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PORT ?? 8081);
-const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "*";
 const MEMPOOL_BASE_MAINNET = stripTrailingSlash(
   process.env.MEMPOOL_BASE ?? "http://127.0.0.1:8080",
 );
@@ -153,43 +158,6 @@ const FRESH_READ_CACHE_CONTROL = "no-store, max-age=0, must-revalidate";
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
-}
-
-function jsonResponse(
-  response,
-  statusCode,
-  payload,
-  cacheControl = "no-store",
-) {
-  writeJsonBody(response, statusCode, JSON.stringify(payload), cacheControl);
-}
-
-function writeJsonBody(
-  response,
-  statusCode,
-  body,
-  cacheControl = "no-store",
-  cacheStatus = "",
-) {
-  response.writeHead(statusCode, {
-    "Access-Control-Allow-Headers":
-      "Accept, Authorization, Cache-Control, Content-Type",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Origin": CORS_ORIGIN,
-    "Cache-Control": cacheControl,
-    "Content-Length": Buffer.byteLength(body),
-    "Content-Type": "application/json; charset=utf-8",
-    ...(cacheStatus ? { "X-PoW-Cache": cacheStatus } : {}),
-  });
-  response.end(body);
-}
-
-function errorResponse(response, statusCode, message, details) {
-  jsonResponse(response, statusCode, {
-    details,
-    error: message,
-    ok: false,
-  });
 }
 
 function shouldPersistJsonCache(cacheKey) {
@@ -5313,13 +5281,7 @@ async function healthPayload() {
 
 async function handleRequest(request, response) {
   if (request.method === "OPTIONS") {
-    response.writeHead(204, {
-      "Access-Control-Allow-Headers":
-        "Accept, Authorization, Cache-Control, Content-Type",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Origin": CORS_ORIGIN,
-    });
-    response.end();
+    optionsResponse(response);
     return;
   }
 

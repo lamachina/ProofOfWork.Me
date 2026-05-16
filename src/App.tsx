@@ -49,6 +49,135 @@ import {
   X,
 } from "lucide-react";
 import * as ecc from "@bitcoinerlab/secp256k1";
+import {
+  BROWSER_APP_URL,
+  COMPUTER_APP_URL,
+  DESKTOP_APP_URL,
+  GROWTH_APP_URL,
+  HOME_APP_URL,
+  ID_APP_URL,
+  LOCAL_BROWSER_APP_URL,
+  LOCAL_COMPUTER_APP_URL,
+  LOCAL_DESKTOP_APP_URL,
+  LOCAL_GROWTH_APP_URL,
+  LOCAL_ID_APP_URL,
+  LOCAL_LOG_APP_URL,
+  LOCAL_MARKETPLACE_APP_URL,
+  LOCAL_NFT_APP_URL,
+  LOCAL_PAY2SPEAK_APP_URL,
+  LOCAL_TOKEN_APP_URL,
+  LOCAL_WORK_TOKEN_APP_URL,
+  LOG_APP_URL,
+  MARKETPLACE_APP_URL,
+  NFT_APP_URL,
+  PAY2SPEAK_APP_URL,
+  TOKEN_APP_URL,
+  WORK_TOKEN_APP_URL,
+} from "./app/appLinks";
+import {
+  appHref,
+  isActivityRoute,
+  isBrowserRoute,
+  isDesktopRoute,
+  isGrowthRoute,
+  isIdLaunchRoute,
+  isLandingRoute,
+  isLocalPreviewHost,
+  isMarketplaceRoute,
+  isNftRoute,
+  isPay2SpeakRoute,
+  isTokenRoute,
+  isWorkTokenRoute,
+} from "./app/routeRegistry";
+import { BrowserNetworkTabs } from "./shared/components/BrowserNetworkTabs";
+import {
+  CHAINED_MINT_BROADCAST_STRATEGY,
+  CHAINED_MINT_MAX_COUNT,
+  executeChainedMintRun,
+} from "./chained-mint";
+import { LandingApp } from "./features/landing/LandingApp";
+import {
+  AK_OPERATOR_ADDRESS,
+  AK_OPERATOR_MIN_SATS,
+  AK_OWNER_ANCHOR_SATS,
+  AK_PROTOCOL_MINT,
+  NFT_COLLECTIONS,
+  NFT_DEPLOY_FEE_ADDRESS,
+  NFT_DEPLOY_MIN_FEE_SATS,
+  nftCollectionByNameAndOperator,
+  nftCollectionUrl,
+  nftRouteCollection,
+  nftRouteCollectionId,
+  nftRouteOperatorAddress,
+  nftRouteOperatorParam,
+  nftSyntheticCollectionDefinition,
+  randomAkTraits,
+  type AkLayerConfig,
+  type AkMintRecord,
+  type AkState,
+  type AkTraits,
+  type NftCollectionDefinition,
+  type NftCollectionRecord,
+} from "./features/nft/nftProtocol";
+import { NftApp, NftWorkspace } from "./features/nft/NftApp";
+import {
+  PAY2SPEAK_PROTOCOL_PREFIX,
+  PAY2SPEAK_REGISTRY_PRICE_SATS,
+  PAY2SPEAK_SPLIT_THRESHOLD_SATS,
+  pay2SpeakRegistryAddressForNetwork,
+  type Pay2SpeakCampaign,
+  type Pay2SpeakFunding,
+  type Pay2SpeakQuestion,
+  type Pay2SpeakState,
+} from "./features/pay2speak/pay2speakProtocol";
+import {
+  Pay2SpeakApp,
+  Pay2SpeakWorkspace,
+} from "./features/pay2speak/Pay2SpeakApp";
+import { DomainNav } from "./shared/components/DomainNav";
+import { FeeRateControl } from "./shared/components/FeeRateControl";
+import { HeaderActionsMenu } from "./shared/components/HeaderActionsMenu";
+import { ProgressBar } from "./shared/components/ProgressBar";
+import { SocialFooter } from "./shared/components/SocialFooter";
+import {
+  mempoolBase,
+  mempoolTxUrl,
+} from "./shared/bitcoin/networks";
+import { MAX_DATA_CARRIER_BYTES } from "./shared/bitcoin/protocolLimits";
+import {
+  fetchProofApiJson,
+  POW_API_BASE,
+  proofApiUrl,
+} from "./shared/api/proofApiClient";
+import {
+  base64FromBase64Url,
+  base64UrlDecodeBytes,
+  base64UrlEncodeBytes,
+  base64UrlFromBase64,
+  byteLength,
+  bytesToHex,
+  chunkAscii,
+  chunkUtf8,
+  decodeTextBase64Url,
+  encodeTextBase64Url,
+  sha256Hex,
+} from "./shared/utils/encoding";
+import {
+  dustFeeAbsorptionCanceledText,
+  errorMessage,
+  formatBytes,
+  formatDate,
+  isPlainRecord,
+  normalizeSearchQuery,
+  normalizeSubject,
+  pay2SpeakCreatorRouteAddress,
+  satsToUsd,
+  searchIncludes,
+  shortAddress,
+  tokenSatsPerUnit,
+  tokenRouteTarget,
+  tokenUsd,
+} from "./functions";
 
 bitcoin.initEccLib(ecc);
 
@@ -335,125 +464,6 @@ type PowIdMarketplaceSale = {
   sellerAddress: string;
   transferVersion?: PowIdMarketplaceTransferVersion;
   txid: string;
-};
-
-type Pay2SpeakCampaign = {
-  confirmed: boolean;
-  createdAt: string;
-  creatorAddress: string;
-  dataBytes?: number;
-  fundedGrossSats: number;
-  fundingCount: number;
-  handle: string;
-  network: BitcoinNetwork;
-  registrySats: number;
-  spaceNumber: number;
-  status: "Funding" | "Funded";
-  targetGrossSats: number;
-  title: string;
-  txid: string;
-};
-
-type Pay2SpeakFunding = {
-  campaignId: string;
-  confirmed: boolean;
-  createdAt: string;
-  creatorAddress: string;
-  creatorSats: number;
-  dataBytes?: number;
-  donorAddress: string;
-  grossSats: number;
-  network: BitcoinNetwork;
-  question?: string;
-  registrySats: number;
-  txid: string;
-};
-
-type Pay2SpeakQuestion = {
-  campaignId: string;
-  confirmed: boolean;
-  createdAt: string;
-  grossSats: number;
-  question: string;
-  txid: string;
-};
-
-type Pay2SpeakState = {
-  campaigns: Pay2SpeakCampaign[];
-  funding: Pay2SpeakFunding[];
-  questions: Pay2SpeakQuestion[];
-};
-
-type AkLayerConfig = {
-  count: number;
-  folder: string;
-  hasLeadingZeros: boolean;
-  id: string;
-  name: string;
-  prefix: string;
-};
-
-type AkTraits = Record<string, number>;
-
-type NftCollectionDefinition = {
-  defaultOperatorAddress: string;
-  description: string;
-  displayName: string;
-  id: string;
-  maxSupply: number;
-  mintProtocolPayload: string;
-  name: string;
-  operatorMinSats: number;
-  ownerAnchorSats: number;
-  slug: string;
-};
-
-type NftCollectionRecord = NftCollectionDefinition & {
-  confirmed: boolean;
-  createdAt: string;
-  dataBytes?: number;
-  deployedHeight?: number;
-  deployedTime?: number;
-  deployFeeSats: number;
-  genesisTag: string | null;
-  imageBase64: string;
-  imageDataUrl: string;
-  network: BitcoinNetwork;
-  operatorAddress: string;
-  txid: string;
-};
-
-type AkMintRecord = {
-  collectionId?: string;
-  collectionName?: string;
-  confirmed: boolean;
-  createdAt: string;
-  dataBytes?: number;
-  genesisTag: string | null;
-  imageBase64: string;
-  imageDataUrl: string;
-  mintedHeight?: number;
-  mintedTime?: number;
-  network: BitcoinNetwork;
-  operatorAddress: string;
-  operatorSats: number;
-  ownerAddress: string;
-  tokenIdentifier: string;
-  txid: string;
-  voutIndex: number;
-};
-
-type AkState = {
-  collection?: NftCollectionDefinition;
-  collections?: NftCollectionRecord[];
-  indexedAt?: string;
-  mints: AkMintRecord[];
-  operatorAddress?: string;
-  stats?: {
-    confirmed?: number;
-    pending?: number;
-    total?: number;
-  };
 };
 
 type PowTokenDefinition = {
@@ -796,6 +806,23 @@ type PaymentOutputSpec = {
   script?: Uint8Array;
 };
 
+type ChainedMintInput = {
+  previousOutput?: bitcoin.Transaction["outs"][number];
+  previousTxHex?: string;
+  script?: Uint8Array;
+  txid: string;
+  value: number;
+  vout: number;
+};
+
+type ChainedMintBuildResult = {
+  dustFeeSats: number;
+  feeSats: number;
+  inputCount: number;
+  nextInput?: ChainedMintInput;
+  psbtHex: string;
+};
+
 type PowRegistryApiResponse = {
   activity?: PowActivityItem[];
   listings?: PowIdListing[];
@@ -861,38 +888,6 @@ const BACKUP_APP = "ProofOfWork.Me";
 const BACKUP_VERSION = 1;
 const BACKUP_MAX_BYTES = 5 * 1024 * 1024;
 const UNISAT_DOWNLOAD_URL = "https://unisat.io/download";
-const DISCORD_URL = "https://discord.com/invite/mRA4zbqB";
-const GITHUB_URL = "https://github.com/proofofworkme";
-const X_URL = "https://x.com/proofofworkme";
-const YOUTUBE_URL = "https://www.youtube.com/@proofofworkme";
-const LANDING_VIDEO_URL = "https://www.youtube.com/watch?v=Tx28MqnxoUA";
-const LANDING_VIDEO_EMBED_URL = "https://www.youtube.com/embed/Tx28MqnxoUA";
-const HOME_APP_URL = "https://www.proofofwork.me/";
-const ID_APP_URL = "https://id.proofofwork.me";
-const COMPUTER_APP_URL = "https://computer.proofofwork.me";
-const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
-const BROWSER_APP_URL = "https://browser.proofofwork.me";
-const MARKETPLACE_APP_URL = "https://marketplace.proofofwork.me";
-const PAY2SPEAK_APP_URL = "https://pay2speak.proofofwork.me";
-const NFT_APP_URL = "https://nft.proofofwork.me";
-const TOKEN_APP_URL = "https://token.proofofwork.me";
-const WORK_TOKEN_APP_URL = "https://work.proofofwork.me";
-const LOG_APP_URL = "https://log.proofofwork.me";
-const GROWTH_APP_URL = "https://growth.proofofwork.me";
-const LOCAL_HOME_APP_URL = HOME_APP_URL;
-const LOCAL_ID_APP_URL = "/?id-launch=1";
-const LOCAL_COMPUTER_APP_URL = "/";
-const LOCAL_DESKTOP_APP_URL = "/?desktop=1";
-const LOCAL_BROWSER_APP_URL = "/?browser=1";
-const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
-const LOCAL_PAY2SPEAK_APP_URL = "/?pay2speak=1";
-const LOCAL_NFT_APP_URL = "/?nft=1";
-const LOCAL_TOKEN_APP_URL = "/?token=1";
-const LOCAL_WORK_TOKEN_APP_URL = "/?work=1";
-const LOCAL_LOG_APP_URL = "/?log=1";
-const LOCAL_GROWTH_APP_URL = "/?growth=1";
-const LANDING_TESTIMONIAL_TXID = "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
-const LANDING_TESTIMONIAL_TX_URL = `https://mempool.space/tx/${LANDING_TESTIMONIAL_TXID}`;
 const CANONICAL_WELCOME_TXID =
   "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b";
 const CANONICAL_WELCOME_HTML =
@@ -900,13 +895,9 @@ const CANONICAL_WELCOME_HTML =
 const CANONICAL_WELCOME_SENDER = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
 const CANONICAL_WELCOME_RECIPIENT = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
 const CANONICAL_WELCOME_CREATED_AT = "2026-05-13T17:58:01.000Z";
-const POW_API_BASE = (import.meta.env.VITE_POW_API_BASE ?? "")
-  .trim()
-  .replace(/\/+$/u, "");
 const SLIPSTREAM_SUBMIT_TX_URL =
   "https://slipstream.mara.com/rest-api/submit-tx";
 const SLIPSTREAM_TX_URL = "https://slipstream.mara.com/tx";
-const MAX_DATA_CARRIER_BYTES = 100_000;
 const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_REGISTRY_TX_PAGES = 100;
 const ACTIVITY_FEED_RENDER_LIMIT = 250;
@@ -935,84 +926,6 @@ const ID_LISTING_ANCHOR_SEAL_FEE_SATS = 500;
 const ID_REGISTRY_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
 };
-const PAY2SPEAK_PROTOCOL_PREFIX = "pws1:";
-const PAY2SPEAK_REGISTRY_PRICE_SATS = 1000;
-const PAY2SPEAK_SPLIT_THRESHOLD_SATS = 5460;
-const PAY2SPEAK_REGISTRY_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
-  livenet: "bc1q4k34zlkgwtuhfpfrcpml2ajvj66x22x20an2t4",
-};
-const AK_PROTOCOL_MINT = '{"p":"nft","op":"mint","name":"ak21"}';
-const AK_OPERATOR_ADDRESS = "bc1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk7whapn";
-const NFT_DEPLOY_FEE_ADDRESS = AK_OPERATOR_ADDRESS;
-const NFT_DEPLOY_MIN_FEE_SATS = 1000;
-const AK_OPERATOR_MIN_SATS = 1000;
-const AK_OWNER_ANCHOR_SATS = 762;
-const AK_LAYER_BASE_PATH = "/nft/layers";
-const NFT_COLLECTIONS: NftCollectionDefinition[] = [
-  {
-    defaultOperatorAddress: AK_OPERATOR_ADDRESS,
-    description:
-      "AK21 visual NFT mints with an operator payment, mint JSON, owner anchor, optional Genesis Tag, and image OP_RETURN.",
-    displayName: "AK",
-    id: "ak21",
-    maxSupply: 1000,
-    mintProtocolPayload: AK_PROTOCOL_MINT,
-    name: "ak21",
-    operatorMinSats: AK_OPERATOR_MIN_SATS,
-    ownerAnchorSats: AK_OWNER_ANCHOR_SATS,
-    slug: "ak",
-  },
-];
-const AK_LAYERS: AkLayerConfig[] = [
-  {
-    count: 34,
-    folder: "1-dot",
-    hasLeadingZeros: false,
-    id: "dot",
-    name: "Dot",
-    prefix: "dot_",
-  },
-  {
-    count: 34,
-    folder: "2-frame",
-    hasLeadingZeros: false,
-    id: "frame",
-    name: "Frame",
-    prefix: "frame_",
-  },
-  {
-    count: 34,
-    folder: "3-grip",
-    hasLeadingZeros: true,
-    id: "grip",
-    name: "Grip",
-    prefix: "grip_",
-  },
-  {
-    count: 34,
-    folder: "4-metal",
-    hasLeadingZeros: true,
-    id: "metal",
-    name: "Metal",
-    prefix: "metal_",
-  },
-  {
-    count: 34,
-    folder: "5-nail",
-    hasLeadingZeros: false,
-    id: "nail",
-    name: "Nail",
-    prefix: "nail_",
-  },
-  {
-    count: 34,
-    folder: "6-rail",
-    hasLeadingZeros: false,
-    id: "rail",
-    name: "Rail",
-    prefix: "rail_",
-  },
-];
 const TOKEN_PROTOCOL_PREFIX = "pwt1:";
 const TOKEN_CREATE_ACTION = "create";
 const TOKEN_MINT_ACTION = "mint";
@@ -1081,41 +994,6 @@ const DEFAULT_FEE_RATE = 0.1;
 const DEFAULT_BROWSER_INTENT_FEE_RATE = 1;
 const DEFAULT_MEMO = "";
 const MAX_RECIPIENTS = 10;
-
-const APP_LINKS = [
-  { href: HOME_APP_URL, label: "Home", localHref: LOCAL_HOME_APP_URL },
-  { href: ID_APP_URL, label: "IDs", localHref: LOCAL_ID_APP_URL },
-  {
-    href: COMPUTER_APP_URL,
-    label: "Computer",
-    localHref: LOCAL_COMPUTER_APP_URL,
-  },
-  { href: DESKTOP_APP_URL, label: "Desktop", localHref: LOCAL_DESKTOP_APP_URL },
-  { href: BROWSER_APP_URL, label: "Browser", localHref: LOCAL_BROWSER_APP_URL },
-  {
-    href: MARKETPLACE_APP_URL,
-    label: "Marketplace",
-    localHref: LOCAL_MARKETPLACE_APP_URL,
-  },
-  {
-    href: PAY2SPEAK_APP_URL,
-    label: "Pay2Speak",
-    localHref: LOCAL_PAY2SPEAK_APP_URL,
-  },
-  { href: NFT_APP_URL, label: "NFT", localHref: LOCAL_NFT_APP_URL },
-  {
-    href: TOKEN_APP_URL,
-    label: "Token",
-    localHref: LOCAL_TOKEN_APP_URL,
-  },
-  {
-    href: WORK_TOKEN_APP_URL,
-    label: "WORK",
-    localHref: LOCAL_WORK_TOKEN_APP_URL,
-  },
-  { href: LOG_APP_URL, label: "Log", localHref: LOCAL_LOG_APP_URL },
-  { href: GROWTH_APP_URL, label: "Growth", localHref: LOCAL_GROWTH_APP_URL },
-];
 
 type GrowthModelRow = {
   adoption: number;
@@ -1525,303 +1403,6 @@ function growthModelStartRow(): GrowthModelRow {
 const GROWTH_MODEL_ROWS = GROWTH_MODEL_INPUTS.horizons.map(growthModelRow);
 const GROWTH_MODEL_CHART_ROWS = [growthModelStartRow(), ...GROWTH_MODEL_ROWS];
 
-function isIdLaunchRoute() {
-  if (import.meta.env.VITE_ID_LAUNCH_ONLY === "1") {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  // Production subdomain: id.proofofwork.me. Local/dev preview: ?id-launch=1.
-  return (
-    hostname === "id.proofofwork.me" ||
-    window.location.search.includes("id-launch=1")
-  );
-}
-
-function isLandingRoute() {
-  if (import.meta.env.VITE_LANDING_ONLY === "1") {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  // Production front door: proofofwork.me. Local/dev preview: ?landing=1.
-  return (
-    hostname === "proofofwork.me" ||
-    hostname === "www.proofofwork.me" ||
-    window.location.search.includes("landing=1")
-  );
-}
-
-function isLocalPreviewHost() {
-  const hostname = window.location.hostname.toLowerCase();
-  return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1" ||
-    hostname.endsWith(".localhost")
-  );
-}
-
-function appHref(productionHref: string, localHref: string) {
-  return isLocalPreviewHost() ? localHref : productionHref;
-}
-
-function isDesktopRoute() {
-  if (import.meta.env.VITE_DESKTOP_ONLY === "1") {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  // Production public file desktop: desktop.proofofwork.me. Local/dev preview: ?desktop=1.
-  return (
-    hostname === "desktop.proofofwork.me" ||
-    window.location.search.includes("desktop=1")
-  );
-}
-
-function isBrowserRoute() {
-  if (import.meta.env.VITE_BROWSER_ONLY === "1") {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  // Production Bitcoin Browser: browser.proofofwork.me. Local/dev preview: ?browser=1.
-  return (
-    hostname === "browser.proofofwork.me" ||
-    window.location.search.includes("browser=1")
-  );
-}
-
-function isMarketplaceRoute() {
-  if (import.meta.env.VITE_MARKETPLACE_ONLY === "1") {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  // Production ID marketplace: marketplace.proofofwork.me. Local/dev preview: ?marketplace=1.
-  return (
-    hostname === "marketplace.proofofwork.me" ||
-    window.location.search.includes("marketplace=1")
-  );
-}
-
-function isPay2SpeakRoute() {
-  if (import.meta.env.VITE_PAY2SPEAK_ONLY === "1") {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  // Production X Space crowdfunding: pay2speak.proofofwork.me. Local/dev preview: ?pay2speak=1.
-  return (
-    hostname === "pay2speak.proofofwork.me" ||
-    window.location.search.includes("pay2speak=1")
-  );
-}
-
-function isNftRoute() {
-  if (
-    import.meta.env.VITE_NFT_ONLY === "1" ||
-    import.meta.env.VITE_AK_ONLY === "1"
-  ) {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  // Production NFT collections app: nft.proofofwork.me. AK route flags are kept as compatibility aliases.
-  return (
-    hostname === "nft.proofofwork.me" ||
-    hostname === "ak.proofofwork.me" ||
-    window.location.search.includes("nft=1") ||
-    window.location.search.includes("ak=1")
-  );
-}
-
-function nftCollectionById(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return (
-    NFT_COLLECTIONS.find(
-      (collection) =>
-        collection.id.toLowerCase() === normalized ||
-        collection.name.toLowerCase() === normalized ||
-        collection.slug.toLowerCase() === normalized,
-    ) ?? NFT_COLLECTIONS[0]
-  );
-}
-
-function nftSyntheticCollectionDefinition(
-  name: string,
-  operatorAddress = "",
-): NftCollectionDefinition {
-  const normalizedName = (name.trim() || "nft").toLowerCase();
-  return {
-    defaultOperatorAddress: operatorAddress || AK_OPERATOR_ADDRESS,
-    description: `${name.trim() || "NFT"} NFT collection.`,
-    displayName: name.trim() || "NFT",
-    id: normalizedName,
-    maxSupply: 0,
-    mintProtocolPayload: JSON.stringify({
-      p: "nft",
-      op: "mint",
-      name: normalizedName,
-    }),
-    name: name.trim() || normalizedName,
-    operatorMinSats: AK_OPERATOR_MIN_SATS,
-    ownerAnchorSats: AK_OWNER_ANCHOR_SATS,
-    slug: normalizedName,
-  };
-}
-
-function nftCollectionByNameAndOperator(value: string, operatorAddress: string) {
-  const normalized = value.trim().toLowerCase();
-  const normalizedOperator = operatorAddress.trim().toLowerCase();
-  if (!normalized) {
-    return NFT_COLLECTIONS[0];
-  }
-  const matches = NFT_COLLECTIONS.filter(
-    (collection) =>
-      collection.id.toLowerCase() === normalized ||
-      collection.name.toLowerCase() === normalized ||
-      collection.slug.toLowerCase() === normalized,
-  );
-
-  if (normalizedOperator) {
-    const operatorMatch = matches.find(
-      (collection) =>
-        collection.defaultOperatorAddress.toLowerCase() === normalizedOperator,
-    );
-    if (operatorMatch) {
-      return operatorMatch;
-    }
-  }
-
-  return (
-    matches[0] ??
-    NFT_COLLECTIONS.find(
-      (collection) =>
-        normalizedOperator &&
-        collection.defaultOperatorAddress.toLowerCase() === normalizedOperator,
-    ) ??
-    nftSyntheticCollectionDefinition(value, operatorAddress)
-  );
-}
-
-function nftRouteCollection() {
-  if (typeof window === "undefined") {
-    return NFT_COLLECTIONS[0];
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  return nftCollectionById(params.get("collection") ?? params.get("c") ?? "");
-}
-
-function nftRouteCollectionId() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  return (params.get("collection") ?? params.get("c") ?? "").trim();
-}
-
-function nftRouteOperatorAddress(collection: NftCollectionDefinition) {
-  if (typeof window === "undefined") {
-    return collection.defaultOperatorAddress;
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  return (
-    params.get("operator") ??
-    params.get("operatorAddress") ??
-    collection.defaultOperatorAddress
-  ).trim();
-}
-
-function nftRouteOperatorParam() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  return (params.get("operator") ?? params.get("operatorAddress") ?? "").trim();
-}
-
-function nftCollectionUrl(
-  collection: NftCollectionDefinition,
-  operatorAddress = collection.defaultOperatorAddress,
-) {
-  const params = new URLSearchParams();
-  params.set("nft", "1");
-  params.set("collection", collection.name);
-  params.set("operator", operatorAddress || collection.defaultOperatorAddress);
-  return `/?${params.toString()}`;
-}
-
-function isTokenRoute() {
-  if (import.meta.env.VITE_TOKEN_ONLY === "1") {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  return (
-    hostname === "token.proofofwork.me" ||
-    hostname === "tokens.proofofwork.me" ||
-    window.location.search.includes("token=1")
-  );
-}
-
-function isWorkTokenRoute() {
-  if (import.meta.env.VITE_WORK_TOKEN_ONLY === "1") {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  return (
-    hostname === "work.proofofwork.me" ||
-    window.location.search.includes("work=1")
-  );
-}
-
-function tokenRouteTarget() {
-  const params = new URLSearchParams(window.location.search);
-  return (params.get("asset") ?? params.get("ticker") ?? "").trim();
-}
-
-function pay2SpeakCreatorRouteAddress() {
-  const params = new URLSearchParams(window.location.search);
-  return (params.get("creator") ?? "").trim();
-}
-
-function isActivityRoute() {
-  if (
-    import.meta.env.VITE_ACTIVITY_ONLY === "1" ||
-    import.meta.env.VITE_LOG_ONLY === "1"
-  ) {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  // Production Bitcoin Computer log: log.proofofwork.me. Local/dev preview: ?log=1 or ?activity=1.
-  return (
-    hostname === "log.proofofwork.me" ||
-    hostname === "activity.proofofwork.me" ||
-    window.location.search.includes("log=1") ||
-    window.location.search.includes("activity=1")
-  );
-}
-
-function isGrowthRoute() {
-  if (import.meta.env.VITE_GROWTH_ONLY === "1") {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  // Production growth model: growth.proofofwork.me. Local/dev preview: ?growth=1.
-  return (
-    hostname === "growth.proofofwork.me" ||
-    window.location.search.includes("growth=1")
-  );
-}
-
 function loadTheme(): ThemeMode {
   const stored = localStorage.getItem(THEME_KEY);
   if (stored === "light" || stored === "dark") {
@@ -1831,10 +1412,6 @@ function loadTheme(): ThemeMode {
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function isBackupStorageKey(key: string) {
@@ -1994,82 +1571,6 @@ function backupDataSummary(data: Record<string, string>) {
   return details.join(", ");
 }
 
-function byteLength(value: string) {
-  return new TextEncoder().encode(value).length;
-}
-
-function bytesToHex(bytes: Uint8Array) {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
-    "",
-  );
-}
-
-function sha256Hex(bytes: Uint8Array) {
-  return bytesToHex(bitcoin.crypto.sha256(Buffer.from(bytes)));
-}
-
-function base64UrlFromBase64(value: string) {
-  return value.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
-}
-
-function base64FromBase64Url(value: string) {
-  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
-  return base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-}
-
-function base64UrlEncodeBytes(bytes: Uint8Array) {
-  return base64UrlFromBase64(Buffer.from(bytes).toString("base64"));
-}
-
-function base64UrlDecodeBytes(value: string) {
-  if (!/^[A-Za-z0-9_-]*$/.test(value)) {
-    throw new Error("Invalid base64url data.");
-  }
-
-  return new Uint8Array(Buffer.from(base64FromBase64Url(value), "base64"));
-}
-
-function encodeTextBase64Url(value: string) {
-  return base64UrlEncodeBytes(new TextEncoder().encode(value));
-}
-
-function decodeTextBase64Url(value: string) {
-  return new TextDecoder("utf-8", { fatal: false }).decode(
-    base64UrlDecodeBytes(value),
-  );
-}
-
-function chunkAscii(value: string, maxBytes: number) {
-  const chunks: string[] = [];
-  for (let index = 0; index < value.length; index += maxBytes) {
-    chunks.push(value.slice(index, index + maxBytes));
-  }
-
-  return chunks.length ? chunks : [""];
-}
-
-function chunkUtf8(value: string, maxBytes: number) {
-  const chunks: string[] = [];
-  let current = "";
-
-  for (const character of value) {
-    const next = `${current}${character}`;
-    if (byteLength(next) > maxBytes) {
-      chunks.push(current);
-      current = character;
-      continue;
-    }
-
-    current = next;
-  }
-
-  if (current || chunks.length === 0) {
-    chunks.push(current);
-  }
-
-  return chunks;
-}
-
 function opReturnScriptForPayload(payload: string) {
   const output = bitcoin.payments.embed({
     data: [Buffer.from(payload, "utf8")],
@@ -2110,61 +1611,6 @@ function maxPayloadDataBytes(prefix: string) {
   return low;
 }
 
-function mempoolBase(network: BitcoinNetwork) {
-  if (network === "testnet4") {
-    return "https://mempool.space/testnet4";
-  }
-
-  if (network === "testnet") {
-    return "https://mempool.space/testnet";
-  }
-
-  return "https://mempool.space";
-}
-
-function mempoolTxUrl(txid: string, network: BitcoinNetwork) {
-  return `${mempoolBase(network)}/tx/${txid}`;
-}
-
-function satsToUsd(sats: number, btcUsd: number) {
-  return (sats / 100_000_000) * btcUsd;
-}
-
-function tokenUsd(value: number) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return "$0";
-  }
-
-  if (value < 0.000001) {
-    return "<$0.000001";
-  }
-
-  if (value < 0.01) {
-    return `$${value.toFixed(6)}`;
-  }
-
-  return value.toLocaleString(undefined, {
-    currency: "USD",
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    style: "currency",
-  });
-}
-
-function tokenSatsPerUnit(value: number) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return "0";
-  }
-
-  if (Number.isInteger(value)) {
-    return value.toLocaleString();
-  }
-
-  return value.toLocaleString(undefined, {
-    maximumFractionDigits: 8,
-  });
-}
-
 async function fetchBtcUsdPrice() {
   const response = await fetch(`${mempoolBase("livenet")}/api/v1/prices`, {
     headers: { Accept: "application/json" },
@@ -2180,32 +1626,6 @@ async function fetchBtcUsdPrice() {
   }
 
   return usd;
-}
-
-function proofApiUrl(path: string, network: BitcoinNetwork) {
-  const separator = path.includes("?") ? "&" : "?";
-  return `${POW_API_BASE}${path}${separator}network=${encodeURIComponent(network)}`;
-}
-
-async function fetchProofApiJson<T>(
-  path: string,
-  network: BitcoinNetwork,
-): Promise<T> {
-  const response = await fetch(proofApiUrl(path, network), {
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    const responseText = await response.text().catch(() => "");
-    throw new Error(
-      responseText || `ProofOfWork API returned ${response.status}.`,
-    );
-  }
-
-  return response.json() as Promise<T>;
 }
 
 async function fetchBlockTxidIndex(
@@ -2267,10 +1687,6 @@ function xVerificationUrl(record: PowIdRecord) {
 
 function registryAddressForNetwork(network: BitcoinNetwork) {
   return ID_REGISTRY_ADDRESSES[network] ?? "";
-}
-
-function pay2SpeakRegistryAddressForNetwork(network: BitcoinNetwork) {
-  return PAY2SPEAK_REGISTRY_ADDRESSES[network] ?? "";
 }
 
 function tokenIndexAddressForNetwork(network: BitcoinNetwork) {
@@ -2446,60 +1862,6 @@ function confirmDustFeeAbsorption({
   );
 }
 
-function dustFeeAbsorptionCanceledText() {
-  return "Signing canceled. Use a larger confirmed UTXO or batch payments to avoid below-dust change becoming fee.";
-}
-
-function BrowserNetworkTabs({
-  network,
-  onChange,
-}: {
-  network: BitcoinNetwork;
-  onChange: (network: BitcoinNetwork) => void;
-}) {
-  return (
-    <div className="browser-network-control">
-      <span>Network</span>
-      <div
-        className="network-tabs browser-network-tabs"
-        aria-label="Browser Bitcoin network"
-      >
-        <button
-          aria-pressed={network === "livenet"}
-          onClick={() => onChange("livenet")}
-          type="button"
-        >
-          Mainnet
-        </button>
-        <button
-          aria-pressed={network === "testnet4"}
-          onClick={() => onChange("testnet4")}
-          type="button"
-        >
-          Testnet4
-        </button>
-        <button
-          aria-pressed={network === "testnet"}
-          onClick={() => onChange("testnet")}
-          type="button"
-        >
-          Testnet3
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function shortAddress(value: string) {
-  if (!value) {
-    return "Unknown";
-  }
-
-  return value.length > 18
-    ? `${value.slice(0, 8)}...${value.slice(-8)}`
-    : value;
-}
-
 function mailKey(message: MailMessage) {
   return `${message.folder}-${message.network}-${message.txid}`;
 }
@@ -2593,26 +1955,6 @@ function ownedPowIds(records: PowIdRecord[], ownerOrReceiverAddress: string) {
     (record) =>
       record.ownerAddress === ownerOrReceiverAddress ||
       record.receiveAddress === ownerOrReceiverAddress,
-  );
-}
-
-function normalizeSearchQuery(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function searchIncludes(
-  values: Array<string | number | undefined>,
-  query: string,
-) {
-  const normalized = normalizeSearchQuery(query);
-  if (!normalized) {
-    return true;
-  }
-
-  return values.some((value) =>
-    String(value ?? "")
-      .toLowerCase()
-      .includes(normalized),
   );
 }
 
@@ -3334,10 +2676,6 @@ function mailSubject(memo: string) {
   return firstLine ? firstLine.slice(0, 90) : "OP_RETURN message";
 }
 
-function normalizeSubject(value: string) {
-  return value.trim().replace(/\s+/gu, " ").slice(0, 180);
-}
-
 function messageSubject(message: {
   attachment?: MailAttachment;
   memo: string;
@@ -3363,14 +2701,6 @@ function mailPreview(message: { attachment?: MailAttachment; memo: string }) {
   return message.attachment
     ? `${message.attachment.name} (${formatBytes(message.attachment.size)})`
     : "";
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  return `${(bytes / 1024).toFixed(bytes < 1024 * 10 ? 1 : 0)} KB`;
 }
 
 function attachmentHref(attachment: MailAttachment) {
@@ -4463,35 +3793,6 @@ function sortMessages(messages: MailMessage[], sortMode: SortMode) {
   });
 
   return sorted;
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === "string" && error) {
-    return error;
-  }
-
-  if (error && typeof error === "object") {
-    try {
-      return JSON.stringify(error);
-    } catch {
-      return fallback;
-    }
-  }
-
-  return fallback;
 }
 
 async function getWalletNetwork(
@@ -6307,28 +5608,6 @@ function comparePay2SpeakCampaigns(
   );
 }
 
-function akLayerFilename(layer: AkLayerConfig, index: number) {
-  const suffix = layer.hasLeadingZeros ? String(index).padStart(2, "0") : index;
-  return `${layer.prefix}${suffix}.png`;
-}
-
-function akLayerPath(layer: AkLayerConfig, traits: AkTraits) {
-  const index = Math.max(
-    0,
-    Math.min(layer.count - 1, Math.floor(traits[layer.id] ?? 0)),
-  );
-  return `${AK_LAYER_BASE_PATH}/${layer.folder}/${akLayerFilename(layer, index)}`;
-}
-
-function randomAkTraits(): AkTraits {
-  return Object.fromEntries(
-    AK_LAYERS.map((layer) => [
-      layer.id,
-      Math.floor(Math.random() * layer.count),
-    ]),
-  );
-}
-
 function buildAkImagePayload(imageBase64: string) {
   const value = imageBase64.trim();
   if (!value) {
@@ -6699,54 +5978,6 @@ function akStateFromTransactions(
       total: mints.length,
     },
   };
-}
-
-function pay2SpeakCampaignProgress(campaign: Pay2SpeakCampaign) {
-  if (campaign.targetGrossSats <= 0) {
-    return 0;
-  }
-
-  return Math.min(
-    100,
-    Math.round((campaign.fundedGrossSats / campaign.targetGrossSats) * 100),
-  );
-}
-
-function pay2SpeakCreatorUrl(creatorAddress: string) {
-  const localHref = `/?pay2speak=1&creator=${encodeURIComponent(creatorAddress)}`;
-  const productionHref = `${PAY2SPEAK_APP_URL}/?creator=${encodeURIComponent(creatorAddress)}`;
-  return appHref(productionHref, localHref);
-}
-
-function Pay2SpeakProgressBar({
-  label,
-  progress,
-}: {
-  label: string;
-  progress: number;
-}) {
-  return (
-    <div
-      aria-label={label}
-      style={{
-        background: "var(--surface-soft)",
-        border: "1px solid var(--border)",
-        borderRadius: 999,
-        height: 10,
-        overflow: "hidden",
-      }}
-    >
-      <span
-        style={{
-          background: "linear-gradient(90deg, var(--accent), var(--green))",
-          display: "block",
-          height: "100%",
-          minWidth: 2,
-          width: `${Math.max(0, Math.min(100, progress))}%`,
-        }}
-      />
-    </div>
-  );
 }
 
 function idEventMinimumPaymentSats(
@@ -9564,6 +8795,219 @@ function utxoInputData(
   };
 }
 
+function chainedMintInputData(input: ChainedMintInput) {
+  if (input.previousOutput && input.previousTxHex) {
+    return utxoInputData({
+      previousOutput: input.previousOutput,
+      previousTxHex: input.previousTxHex,
+      txid: input.txid,
+      value: input.value,
+      vout: input.vout,
+    });
+  }
+
+  if (!input.script) {
+    throw new Error("Chained mint input is missing witness script data.");
+  }
+
+  return {
+    witnessUtxo: {
+      script: input.script,
+      value: BigInt(input.value),
+    },
+  };
+}
+
+async function loadChainedInitialInputs(
+  selected: MempoolUtxo[],
+  network: BitcoinNetwork,
+): Promise<ChainedMintInput[]> {
+  return Promise.all(
+    selected.map(async (utxo) => {
+      const previousTxHex = await fetchTransactionHex(utxo.txid, network);
+      const previousTx = bitcoin.Transaction.fromHex(previousTxHex);
+      const previousOutput = previousTx.outs[utxo.vout];
+
+      if (!previousOutput) {
+        throw new Error(
+          `Previous output ${shortAddress(utxo.txid)}:${utxo.vout} could not be read.`,
+        );
+      }
+
+      return {
+        previousOutput,
+        previousTxHex,
+        txid: utxo.txid,
+        value: utxo.value,
+        vout: utxo.vout,
+      };
+    }),
+  );
+}
+
+async function selectChainedInitialInputs({
+  feeRate,
+  fromAddress,
+  network,
+  totalRequiredSats,
+}: {
+  feeRate: number;
+  fromAddress: string;
+  network: BitcoinNetwork;
+  totalRequiredSats: number;
+}) {
+  const walletUtxos = await fetchUtxos(fromAddress, network);
+  const utxos = walletUtxos.filter((utxo) => utxo.status?.confirmed);
+
+  if (walletUtxos.length === 0) {
+    throw new Error(
+      `No spendable UTXOs found for ${shortAddress(fromAddress)} on ${networkLabel(network)}.`,
+    );
+  }
+
+  if (utxos.length === 0) {
+    throw new Error(
+      `No confirmed UTXOs found for ${shortAddress(fromAddress)}. Wait for wallet funds to confirm before broadcasting.`,
+    );
+  }
+
+  const changeScript = scriptForAddress(
+    fromAddress,
+    network,
+    "Connected wallet",
+  );
+  const changeOutputVbytes = outputVbytesForScript(changeScript);
+  let selection: UtxoSelection;
+  try {
+    selection = selectUtxos(
+      utxos,
+      totalRequiredSats,
+      feeRate,
+      0,
+      changeOutputVbytes,
+    );
+  } catch (error) {
+    throw new Error(
+      `${errorMessage(error, "Insufficient confirmed funds.")} Chained minting uses confirmed wallet UTXOs for the first transaction, then spends its own chained outputs.`,
+    );
+  }
+
+  return loadChainedInitialInputs(selection.selected, network);
+}
+
+function buildChainedMintPsbt({
+  feeRate,
+  fixedOutputs,
+  fromAddress,
+  inputs,
+  isLast,
+  network,
+}: {
+  feeRate: number;
+  fixedOutputs: PaymentOutputSpec[];
+  fromAddress: string;
+  inputs: ChainedMintInput[];
+  isLast: boolean;
+  network: BitcoinNetwork;
+}): ChainedMintBuildResult {
+  const selectedNetwork = bitcoinNetwork(network);
+  const chainScript = scriptForAddress(
+    fromAddress,
+    network,
+    "Connected wallet",
+  );
+  const normalizedOutputs = fixedOutputs.map((output, index) => {
+    const amountSats = Math.floor(output.amountSats);
+    if (amountSats < 0) {
+      throw new Error(`Chained mint output ${index + 1} has a negative value.`);
+    }
+
+    const script =
+      output.script ??
+      scriptForAddress(
+        output.address ?? "",
+        network,
+        `Chained mint output ${index + 1}`,
+      );
+
+    return {
+      address: output.address,
+      amountSats,
+      script,
+    };
+  });
+  const fixedOutputVbytes =
+    normalizedOutputs.reduce(
+      (total, output) => total + outputVbytesForScript(output.script),
+      0,
+    ) + outputVbytesForScript(chainScript);
+  const totalInputSats = inputs.reduce((total, input) => total + input.value, 0);
+  const totalFixedSats = normalizedOutputs.reduce(
+    (total, output) => total + output.amountSats,
+    0,
+  );
+  const baseFeeSats = Math.ceil(
+    estimateTxVbytes(inputs.length, fixedOutputVbytes) * feeRate,
+  );
+  const chainValue = totalInputSats - totalFixedSats - baseFeeSats;
+  if (chainValue < 0) {
+    throw new Error("Chained mint input value is not enough for outputs plus fee.");
+  }
+
+  const includeChainOutput = chainValue >= DUST_SATS;
+  if (!includeChainOutput && !isLast) {
+    throw new Error(
+      `Chained mint output would be below dust (${DUST_SATS.toLocaleString()} sats).`,
+    );
+  }
+
+  const dustFeeSats = includeChainOutput ? 0 : chainValue;
+  const psbt = new bitcoin.Psbt({ network: selectedNetwork });
+  for (const input of inputs) {
+    psbt.addInput({
+      hash: input.txid,
+      index: input.vout,
+      ...chainedMintInputData(input),
+    });
+  }
+
+  for (const output of normalizedOutputs) {
+    if (output.address) {
+      psbt.addOutput({
+        address: output.address,
+        value: BigInt(output.amountSats),
+      });
+    } else {
+      psbt.addOutput({
+        script: output.script,
+        value: BigInt(output.amountSats),
+      });
+    }
+  }
+
+  let nextInput: ChainedMintInput | undefined;
+  if (includeChainOutput) {
+    psbt.addOutput({
+      address: fromAddress,
+      value: BigInt(chainValue),
+    });
+    nextInput = {
+      script: chainScript,
+      txid: "",
+      value: chainValue,
+      vout: normalizedOutputs.length,
+    };
+  }
+
+  return {
+    dustFeeSats,
+    feeSats: baseFeeSats + dustFeeSats,
+    inputCount: inputs.length,
+    nextInput,
+    psbtHex: psbt.toHex(),
+  };
+}
+
 async function buildPaymentPsbt({
   amountSats,
   excludeOutpoints,
@@ -10655,11 +10099,7 @@ function countOpReturnOutputs(rawTx: string, network: BitcoinNetwork) {
 }
 
 function slipstreamBroadcastUrl(path: string, network: BitcoinNetwork) {
-  if (POW_API_BASE) {
-    return proofApiUrl(path, network);
-  }
-
-  return SLIPSTREAM_SUBMIT_TX_URL;
+  return proofApiUrl(path, network);
 }
 
 async function broadcastRawTransaction(
@@ -10701,23 +10141,14 @@ async function broadcastRawTransactionViaSlipstream(
 
   const response = await fetch(
     slipstreamBroadcastUrl("/api/v1/broadcast/slipstream", ownerNetwork),
-    POW_API_BASE
-      ? {
-          body: JSON.stringify({ txHex: rawTx }),
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          method: "POST",
-        }
-      : {
-          body: JSON.stringify({ tx_hex: rawTx }),
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          method: "POST",
-        },
+    {
+      body: JSON.stringify({ txHex: rawTx }),
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    },
   );
   const responseText = await response.text().catch(() => "");
   let payload: Record<string, unknown> | null = null;
@@ -10730,13 +10161,9 @@ async function broadcastRawTransactionViaSlipstream(
   }
 
   const txid = normalizeBroadcastTxid(
-    POW_API_BASE
-      ? payload?.txid
-      : (payload?.message ?? payload?.txId ?? payload?.txid ?? payload?.result),
+    payload?.txid ?? payload?.message ?? payload?.txId ?? payload?.result,
   );
-  const slipstreamOk = POW_API_BASE
-    ? response.ok && Boolean(txid)
-    : response.ok && payload?.status === "success" && Boolean(txid);
+  const slipstreamOk = response.ok && Boolean(txid);
   if (!slipstreamOk) {
     throw new Error(
       String(
@@ -15814,6 +15241,165 @@ export default function App() {
     }
   }
 
+  async function runNftChainedMint({
+    collection,
+    count,
+    delayMs,
+    imageBase64,
+    imageDataUrl,
+    mintPayloadBytes,
+    onBroadcast,
+    operator,
+    requireActive,
+  }: {
+    collection: NftCollectionDefinition;
+    count: number;
+    delayMs: number;
+    imageBase64: string;
+    imageDataUrl: string;
+    mintPayloadBytes: number;
+    onBroadcast?: (completed: number, txid: string) => void;
+    operator: string;
+    requireActive: () => boolean;
+  }) {
+    const wallet = window.unisat;
+    if (!wallet?.signPsbt) {
+      throw new Error("UniSat signPsbt is not available.");
+    }
+    const currentNetwork = await getWalletNetwork(wallet);
+    if (currentNetwork !== "livenet") {
+      await switchWalletNetwork(wallet, "livenet");
+    }
+
+    const total = Math.min(
+      CHAINED_MINT_MAX_COUNT,
+      Math.max(1, Math.floor(count)),
+    );
+    const payloads = buildNftMintPayloads(collection, akGenesisTag, imageBase64);
+    const opReturnScripts = protocolOutputScripts(payloads);
+    const operatorScript = scriptForAddress(
+      operator,
+      "livenet",
+      `${collection.displayName} operator`,
+    );
+    const ownerScript = scriptForAddress(address, "livenet", "NFT owner");
+    const changeScript = scriptForAddress(
+      address,
+      "livenet",
+      "Connected wallet",
+    );
+    const fixedOutputVbytes =
+      outputVbytesForScript(operatorScript) +
+      outputVbytesForScript(ownerScript) +
+      opReturnScripts.reduce(
+        (totalVbytes, script) => totalVbytes + outputVbytesForScript(script),
+        0,
+      );
+    const changeOutputVbytes = outputVbytesForScript(changeScript);
+    const estimatedFeePerMint = Math.ceil(
+      estimateTxVbytes(1, fixedOutputVbytes + changeOutputVbytes) * feeRate,
+    );
+    const initialInputs = await selectChainedInitialInputs({
+      feeRate,
+      fromAddress: address,
+      network: "livenet",
+      totalRequiredSats:
+        total * (collection.operatorMinSats + collection.ownerAnchorSats) +
+        total * estimatedFeePerMint +
+        DUST_SATS,
+    });
+
+    const result = await executeChainedMintRun<ChainedMintInput, AkMintRecord>({
+      buildAndBroadcastStep: async ({ currentInputs, index, isLast }) => {
+        const fixedOutputs: PaymentOutputSpec[] = [
+          { address: operator, amountSats: collection.operatorMinSats },
+          { amountSats: 0, script: opReturnScripts[0] },
+          { address, amountSats: collection.ownerAnchorSats },
+          ...opReturnScripts.slice(1).map((script) => ({
+            amountSats: 0,
+            script,
+          })),
+        ];
+        const mintPsbt = buildChainedMintPsbt({
+          feeRate,
+          fixedOutputs,
+          fromAddress: address,
+          inputs: currentInputs,
+          isLast,
+          network: "livenet",
+        });
+        if (
+          mintPsbt.dustFeeSats > 0 &&
+          !confirmDustFeeAbsorption({
+            dustFeeSats: mintPsbt.dustFeeSats,
+            feeRate,
+            feeSats: mintPsbt.feeSats,
+          })
+        ) {
+          throw new Error(dustFeeAbsorptionCanceledText());
+        }
+
+        setStatus({
+          tone: "idle",
+          text: `Waiting for UniSat signature ${index + 1}/${total}. Fee estimate: ${mintPsbt.feeSats.toLocaleString()} sats.`,
+        });
+        const broadcast = await signAndBroadcastPsbtDetailed({
+          broadcastStrategy: CHAINED_MINT_BROADCAST_STRATEGY,
+          inputCount: mintPsbt.inputCount,
+          network: "livenet",
+          psbtHex: mintPsbt.psbtHex,
+          wallet,
+        });
+        const txid = broadcast.txid;
+        const mint: AkMintRecord = {
+          confirmed: false,
+          collectionId: collection.id,
+          collectionName: collection.name,
+          createdAt: new Date().toISOString(),
+          dataBytes: mintPayloadBytes,
+          genesisTag: akGenesisTag.trim() || null,
+          imageBase64,
+          imageDataUrl,
+          network: "livenet",
+          operatorAddress: operator,
+          operatorSats: collection.operatorMinSats,
+          ownerAddress: address,
+          tokenIdentifier: `${txid}:2`,
+          txid,
+          voutIndex: 2,
+        };
+
+        setAkMints((current) => [mint, ...current]);
+        setStatus({
+          tone: "good",
+          text: `NFT mint ${index + 1}/${total} broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
+        });
+
+        const nextInput = mintPsbt.nextInput
+          ? { ...mintPsbt.nextInput, txid }
+          : undefined;
+        return {
+          feeSats: mintPsbt.feeSats,
+          nextInputs: nextInput ? [nextInput] : [],
+          pendingRecord: mint,
+          txid,
+        };
+      },
+      count: total,
+      delayMs,
+      initialInputs,
+      isActive: requireActive,
+      onProgress: (event) => {
+        if (event.kind === "broadcast") {
+          onBroadcast?.(event.index + 1, event.txid);
+        }
+      },
+    });
+
+    await refreshAk(true);
+    return result.txids;
+  }
+
   async function mintAk(
     event?: FormEvent<HTMLFormElement>,
     collectionOverride?: NftCollectionDefinition,
@@ -15909,63 +15495,17 @@ export default function App() {
         await switchWalletNetwork(window.unisat, "livenet");
       }
 
-      const mintPsbt = await buildAkMintPsbt({
+      const txids = await runNftChainedMint({
         collection: mintCollection,
-        feeRate,
-        fromAddress: address,
-        genesisTag: akGenesisTag,
-        imageBase64: akImageBase64,
-        network: "livenet",
-        operatorAddress: mintOperator,
-      });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: mintPsbt.dustFeeSats,
-          feeRate,
-          feeSats: mintPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return undefined;
-      }
-
-      setStatus({
-        tone: "idle",
-        text: `Waiting for UniSat signature. Fee estimate: ${mintPsbt.feeSats.toLocaleString()} sats.`,
-      });
-      const broadcast = await signAndBroadcastPsbtDetailed({
-        broadcastStrategy: "slipstream-if-multiple-op-return",
-        inputCount: mintPsbt.inputCount,
-        network: "livenet",
-        psbtHex: mintPsbt.psbtHex,
-        wallet: window.unisat,
-      });
-      const txid = broadcast.txid;
-      const mint: AkMintRecord = {
-        confirmed: false,
-        collectionId: mintCollection.id,
-        collectionName: mintCollection.name,
-        createdAt: new Date().toISOString(),
-        dataBytes: mintPayloadBytes,
-        genesisTag: akGenesisTag.trim() || null,
+        count: 1,
+        delayMs: 0,
         imageBase64: akImageBase64,
         imageDataUrl: akImageDataUrl || buildAkImagePayload(akImageBase64),
-        network: "livenet",
-        operatorAddress: mintOperator,
-        operatorSats: mintCollection.operatorMinSats,
-        ownerAddress: address,
-        tokenIdentifier: `${txid}:2`,
-        txid,
-        voutIndex: 2,
-      };
-
-      setAkMints((current) => [mint, ...current]);
-      setStatus({
-        tone: "good",
-        text: `NFT mint broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
+        mintPayloadBytes,
+        operator: mintOperator,
+        requireActive: () => true,
       });
-      await refreshAk(true);
-      return txid;
+      return txids[0];
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -15998,7 +15538,7 @@ export default function App() {
     }
 
     const target = Math.min(
-      NFT_MINT_ASSISTANT_MAX_COUNT,
+      CHAINED_MINT_MAX_COUNT,
       Math.max(1, Math.floor(nftMintAssistantTarget)),
     );
     const delayMs = Math.min(
@@ -16035,6 +15575,13 @@ export default function App() {
       });
       return;
     }
+    if (confirmedMintCount + target > nftSelectedCollection.maxSupply) {
+      setStatus({
+        tone: "bad",
+        text: `${target.toLocaleString()} mint${target === 1 ? "" : "s"} would exceed the remaining ${nftSelectedCollection.displayName} supply.`,
+      });
+      return;
+    }
 
     setNftMintAssistantTarget(target);
     setNftMintAssistantDelayMs(delayMs);
@@ -16046,13 +15593,60 @@ export default function App() {
       tone: "idle",
       text: `NFT mint assistant started for ${target.toLocaleString()} ${nftSelectedCollection.displayName} mint${target === 1 ? "" : "s"}. You still approve each UniSat prompt.`,
     });
-    void runNftMintAssistantStep(
-      target,
+    setBusy(true);
+    void runNftChainedMint({
+      collection: nftSelectedCollection,
+      count: target,
       delayMs,
-      target,
-      nftSelectedCollection,
+      imageBase64: akImageBase64,
+      imageDataUrl: akImageDataUrl || buildAkImagePayload(akImageBase64),
+      mintPayloadBytes: buildNftMintPayloads(
+        nftSelectedCollection,
+        akGenesisTag,
+        akImageBase64,
+      ).reduce(
+        (totalBytes, payload) =>
+          totalBytes + dataCarrierBytesForPayload(payload),
+        0,
+      ),
+      onBroadcast: (completed, txid) => {
+        setNftMintAssistantCompleted(completed);
+        setNftMintAssistantRemaining(Math.max(0, target - completed));
+        if (completed < target) {
+          setStatus({
+            tone: "good",
+            text: `NFT mint assistant broadcast ${completed.toLocaleString()} of ${target.toLocaleString()}: ${shortAddress(txid)}. Next prompt in ${(delayMs / 1000).toLocaleString()}s.`,
+          });
+        }
+      },
       operator,
-    );
+      requireActive: () => nftMintAssistantActiveRef.current,
+    })
+      .then((txids) => {
+        if (!nftMintAssistantActiveRef.current) {
+          return;
+        }
+
+        nftMintAssistantActiveRef.current = false;
+        setNftMintAssistantCompleted(txids.length);
+        setNftMintAssistantRemaining(0);
+        setNftMintAssistantRunning(false);
+        setStatus({
+          tone: "good",
+          text: `NFT mint assistant complete: ${txids.length.toLocaleString()} mint transaction${txids.length === 1 ? "" : "s"} broadcast.`,
+        });
+      })
+      .catch((error) => {
+        nftMintAssistantActiveRef.current = false;
+        setNftMintAssistantRunning(false);
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "NFT mint assistant paused."),
+        });
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   }
 
   async function runNftMintAssistantStep(
@@ -16407,6 +16001,152 @@ export default function App() {
     }
   }
 
+  async function runTokenChainedMint({
+    count,
+    delayMs,
+    mintPayloadBytes,
+    onBroadcast,
+    requireActive,
+    token,
+  }: {
+    count: number;
+    delayMs: number;
+    mintPayloadBytes: number;
+    onBroadcast?: (completed: number, txid: string) => void;
+    requireActive: () => boolean;
+    token: PowTokenDefinition;
+  }) {
+    const wallet = window.unisat;
+    if (!wallet?.signPsbt) {
+      throw new Error("UniSat signPsbt is not available.");
+    }
+    const currentNetwork = await getWalletNetwork(wallet);
+    if (currentNetwork !== "livenet") {
+      await switchWalletNetwork(wallet, "livenet");
+    }
+
+    const total = Math.min(
+      CHAINED_MINT_MAX_COUNT,
+      Math.max(1, Math.floor(count)),
+    );
+    const payload = buildTokenMintPayload(token.tokenId, token.mintAmount);
+    const opReturnScripts = protocolOutputScripts([payload]);
+    const registryScript = scriptForAddress(
+      token.registryAddress,
+      "livenet",
+      `${token.ticker} registry`,
+    );
+    const changeScript = scriptForAddress(
+      address,
+      "livenet",
+      "Connected wallet",
+    );
+    const fixedOutputVbytes =
+      outputVbytesForScript(registryScript) +
+      opReturnScripts.reduce(
+        (totalVbytes, script) => totalVbytes + outputVbytesForScript(script),
+        0,
+      );
+    const changeOutputVbytes = outputVbytesForScript(changeScript);
+    const estimatedFeePerMint = Math.ceil(
+      estimateTxVbytes(1, fixedOutputVbytes + changeOutputVbytes) * feeRate,
+    );
+    const initialInputs = await selectChainedInitialInputs({
+      feeRate,
+      fromAddress: address,
+      network: "livenet",
+      totalRequiredSats:
+        total * token.mintPriceSats + total * estimatedFeePerMint + DUST_SATS,
+    });
+
+    const result = await executeChainedMintRun<ChainedMintInput, PowTokenMint>({
+      buildAndBroadcastStep: async ({ currentInputs, index, isLast }) => {
+        const paymentPsbt = buildChainedMintPsbt({
+          feeRate,
+          fixedOutputs: [
+            {
+              address: token.registryAddress,
+              amountSats: token.mintPriceSats,
+            },
+            { amountSats: 0, script: opReturnScripts[0] },
+          ],
+          fromAddress: address,
+          inputs: currentInputs,
+          isLast,
+          network: "livenet",
+        });
+        if (
+          paymentPsbt.dustFeeSats > 0 &&
+          !confirmDustFeeAbsorption({
+            dustFeeSats: paymentPsbt.dustFeeSats,
+            feeRate,
+            feeSats: paymentPsbt.feeSats,
+          })
+        ) {
+          throw new Error(dustFeeAbsorptionCanceledText());
+        }
+
+        setStatus({
+          tone: "idle",
+          text: `Waiting for UniSat signature ${index + 1}/${total}. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} sats.`,
+        });
+        const broadcast = await signAndBroadcastPsbtDetailed({
+          broadcastStrategy: CHAINED_MINT_BROADCAST_STRATEGY,
+          inputCount: paymentPsbt.inputCount,
+          network: "livenet",
+          psbtHex: paymentPsbt.psbtHex,
+          wallet,
+        });
+        const txid = broadcast.txid;
+        const mint: PowTokenMint = {
+          amount: token.mintAmount,
+          confirmed: false,
+          createdAt: new Date().toISOString(),
+          dataBytes: mintPayloadBytes,
+          minterAddress: address,
+          network: "livenet",
+          paidSats: token.mintPriceSats,
+          registryAddress: token.registryAddress,
+          ticker: token.ticker,
+          tokenId: token.tokenId,
+          txid,
+        };
+
+        setTokenMints((current) =>
+          current.some((item) => item.txid === txid)
+            ? current
+            : [mint, ...current],
+        );
+        setStatus({
+          tone: "good",
+          text: `${token.ticker} mint ${index + 1}/${total} broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
+        });
+
+        const nextInput = paymentPsbt.nextInput
+          ? { ...paymentPsbt.nextInput, txid }
+          : undefined;
+        return {
+          feeSats: paymentPsbt.feeSats,
+          nextInputs: nextInput ? [nextInput] : [],
+          pendingRecord: mint,
+          txid,
+        };
+      },
+      count: total,
+      delayMs,
+      initialInputs,
+      isActive: requireActive,
+      onProgress: (event) => {
+        if (event.kind === "broadcast") {
+          onBroadcast?.(event.index + 1, event.txid);
+        }
+      },
+    });
+
+    await refreshToken(true, true);
+    return result.txids;
+  }
+
   async function mintToken(
     event?: FormEvent<HTMLFormElement>,
     tokenOverride?: PowTokenDefinition,
@@ -16489,59 +16229,14 @@ export default function App() {
         tone: "idle",
         text: `Minting ${latestToken.mintAmount.toLocaleString()} ${latestToken.ticker}...`,
       });
-      const paymentPsbt = await buildPaymentPsbt({
-        amountSats: latestToken.mintPriceSats,
-        feeRate,
-        fromAddress: address,
-        network: "livenet",
-        protocolPayloads: [
-          buildTokenMintPayload(latestToken.tokenId, latestToken.mintAmount),
-        ],
-        requireConfirmedUtxos: true,
-        toAddress: latestToken.registryAddress,
+      const txids = await runTokenChainedMint({
+        count: 1,
+        delayMs: 0,
+        mintPayloadBytes,
+        requireActive: () => true,
+        token: latestToken,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return undefined;
-      }
-
-      const txid = await signAndBroadcastPsbt({
-        inputCount: paymentPsbt.inputCount,
-        network: "livenet",
-        psbtHex: paymentPsbt.psbtHex,
-        wallet: window.unisat,
-      });
-      const mint: PowTokenMint = {
-        amount: latestToken.mintAmount,
-        confirmed: false,
-        createdAt: new Date().toISOString(),
-        minterAddress: address,
-        network: "livenet",
-        paidSats: latestToken.mintPriceSats,
-        registryAddress: latestToken.registryAddress,
-        ticker: latestToken.ticker,
-        tokenId: latestToken.tokenId,
-        txid,
-      };
-
-      setTokenMints((current) =>
-        current.some((item) => item.txid === txid) ? current : [mint, ...current],
-      );
-      setStatus({
-        tone: "good",
-        text: `${latestToken.mintAmount.toLocaleString()} ${latestToken.ticker} mint broadcast: ${shortAddress(txid)}.`,
-      });
-      await refreshToken(true, true);
-      setTokenMints((current) =>
-        current.some((item) => item.txid === txid) ? current : [mint, ...current],
-      );
-      return txid;
+      return txids[0];
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -16586,7 +16281,7 @@ export default function App() {
 
     const targetToken = tokenForAssistant(tokenId);
     const target = Math.min(
-      TOKEN_MINT_ASSISTANT_MAX_COUNT,
+      CHAINED_MINT_MAX_COUNT,
       Math.max(1, Math.floor(tokenMintAssistantTarget)),
     );
     const delayMs = Math.min(
@@ -16615,10 +16310,10 @@ export default function App() {
       });
       return;
     }
-    if (targetToken.mintAmount > targetRemainingSupply) {
+    if (targetToken.mintAmount * target > targetRemainingSupply) {
       setStatus({
         tone: "bad",
-        text: `Next mint needs ${targetToken.mintAmount.toLocaleString()} ${targetToken.ticker}, but only ${targetRemainingSupply.toLocaleString()} remain after pending mints.`,
+        text: `${target.toLocaleString()} mint${target === 1 ? "" : "s"} need ${(targetToken.mintAmount * target).toLocaleString()} ${targetToken.ticker}, but only ${targetRemainingSupply.toLocaleString()} remain after pending mints.`,
       });
       return;
     }
@@ -16633,7 +16328,53 @@ export default function App() {
       tone: "idle",
       text: `Mint assistant started for ${target.toLocaleString()} ${targetToken.ticker} mint${target === 1 ? "" : "s"}. You still approve each UniSat prompt.`,
     });
-    void runTokenMintAssistantStep(target, delayMs, target, targetToken);
+    setTokenAction("mint");
+    setBusy(true);
+    void runTokenChainedMint({
+      count: target,
+      delayMs,
+      mintPayloadBytes: dataCarrierBytesForPayload(
+        buildTokenMintPayload(targetToken.tokenId, targetToken.mintAmount),
+      ),
+      onBroadcast: (completed, txid) => {
+        setTokenMintAssistantCompleted(completed);
+        setTokenMintAssistantRemaining(Math.max(0, target - completed));
+        if (completed < target) {
+          setStatus({
+            tone: "good",
+            text: `Mint assistant broadcast ${completed.toLocaleString()} of ${target.toLocaleString()}: ${shortAddress(txid)}. Next prompt in ${(delayMs / 1000).toLocaleString()}s.`,
+          });
+        }
+      },
+      requireActive: () => tokenMintAssistantActiveRef.current,
+      token: targetToken,
+    })
+      .then((txids) => {
+        if (!tokenMintAssistantActiveRef.current) {
+          return;
+        }
+
+        tokenMintAssistantActiveRef.current = false;
+        setTokenMintAssistantCompleted(txids.length);
+        setTokenMintAssistantRemaining(0);
+        setTokenMintAssistantRunning(false);
+        setStatus({
+          tone: "good",
+          text: `Mint assistant complete: ${txids.length.toLocaleString()} mint transaction${txids.length === 1 ? "" : "s"} broadcast.`,
+        });
+      })
+      .catch((error) => {
+        tokenMintAssistantActiveRef.current = false;
+        setTokenMintAssistantRunning(false);
+        setStatus({
+          tone: "bad",
+          text: errorMessage(error, "Mint assistant paused."),
+        });
+      })
+      .finally(() => {
+        setTokenAction("");
+        setBusy(false);
+      });
   }
 
   async function runTokenMintAssistantStep(
@@ -16808,6 +16549,7 @@ export default function App() {
   if (landingMode) {
     return (
       <LandingApp
+        registryAddress={registryAddressForNetwork("livenet")}
         registryRecords={idRegistry.filter(
           (record) => record.network === "livenet",
         )}
@@ -17211,134 +16953,72 @@ export default function App() {
 
         <DomainNav compact />
 
-        <div className="topbar-controls">
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            disabled={busy}
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-          <button
-            className="secondary"
-            disabled={refreshDisabled}
-            onClick={() => {
-              if (activeFolder === "pay2speak") {
-                void refreshPay2Speak();
-                return;
-              }
+        <HeaderActionsMenu
+          address={address}
+          busy={busy}
+          connectWallet={connectWallet}
+          disconnectWallet={disconnectWallet}
+          hasUnisat={hasUnisat}
+          networkOptions={[
+            {
+              active: network === "testnet4",
+              disabled: busy,
+              label: "Testnet4",
+              onSelect: () => chooseNetwork("testnet4"),
+            },
+            {
+              active: network === "testnet",
+              disabled: busy,
+              label: "Testnet3",
+              onSelect: () => chooseNetwork("testnet"),
+            },
+            {
+              active: network === "livenet",
+              disabled: busy,
+              label: "Mainnet",
+              onSelect: () => chooseNetwork("livenet"),
+            },
+          ]}
+          onRefresh={
+            refreshDisabled
+              ? undefined
+              : () => {
+                  if (activeFolder === "pay2speak") {
+                    void refreshPay2Speak();
+                    return;
+                  }
 
-              if (activeFolder === "nft") {
-                void refreshAk();
-                return;
-              }
+                  if (activeFolder === "nft") {
+                    void refreshAk();
+                    return;
+                  }
 
-              if (activeFolder === "token" || activeFolder === "work") {
-                void refreshToken();
-                return;
-              }
+                  if (activeFolder === "token" || activeFolder === "work") {
+                    void refreshToken();
+                    return;
+                  }
 
-              if (
-                activeFolder === "ids" ||
-                activeFolder === "marketplace" ||
-                activeFolder === "log" ||
-                activeFolder === "contacts"
-              ) {
-                void refreshIds();
-                if (activeFolder === "log" && activityProfile) {
-                  void loadActivityTarget(activityProfile.query);
+                  if (
+                    activeFolder === "ids" ||
+                    activeFolder === "marketplace" ||
+                    activeFolder === "log" ||
+                    activeFolder === "contacts"
+                  ) {
+                    void refreshIds();
+                    if (activeFolder === "log" && activityProfile) {
+                      void loadActivityTarget(activityProfile.query);
+                    }
+                    return;
+                  }
+
+                  void (activeFolder === "desktop"
+                    ? loadDesktopTarget()
+                    : refreshMail(activeFolder));
                 }
-                return;
-              }
-
-              void (activeFolder === "desktop"
-                ? loadDesktopTarget()
-                : refreshMail(activeFolder));
-            }}
-            title="Refresh mail and transaction statuses"
-            type="button"
-          >
-            <span className="button-content">
-              <RefreshCw
-                className={refreshInProgress ? "refresh-spin" : ""}
-                size={16}
-              />
-              <span>{refreshInProgress ? "Refreshing" : "Refresh"}</span>
-            </span>
-          </button>
-          <div className="network-tabs" aria-label="Bitcoin network">
-            <button
-              aria-pressed={network === "testnet4"}
-              disabled={busy}
-              onClick={() => chooseNetwork("testnet4")}
-              type="button"
-            >
-              Testnet4
-            </button>
-            <button
-              aria-pressed={network === "testnet"}
-              disabled={busy}
-              onClick={() => chooseNetwork("testnet")}
-              type="button"
-            >
-              Testnet3
-            </button>
-            <button
-              aria-pressed={network === "livenet"}
-              disabled={busy}
-              onClick={() => chooseNetwork("livenet")}
-              type="button"
-            >
-              Mainnet
-            </button>
-          </div>
-          {hasUnisat ? (
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={connectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <Wallet size={16} />
-                <span>
-                  {address ? shortAddress(address) : "Connect UniSat"}
-                </span>
-              </span>
-            </button>
-          ) : (
-            <a
-              className="secondary link-button"
-              href={UNISAT_DOWNLOAD_URL}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="button-content">
-                <Wallet size={16} />
-                <span>Install UniSat</span>
-                <ArrowUpRight size={15} />
-              </span>
-            </a>
-          )}
-          {address ? (
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={disconnectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <LogOut size={16} />
-                <span>Disconnect</span>
-              </span>
-            </button>
-          ) : null}
-        </div>
+          }
+          setTheme={setTheme}
+          theme={theme}
+        />
       </header>
 
       <div className={`status ${status.tone}`}>
@@ -18214,21 +17894,6 @@ export default function App() {
         )}
       </section>
     </main>
-  );
-}
-
-function DomainNav({ compact = false }: { compact?: boolean }) {
-  return (
-    <nav
-      className={compact ? "domain-nav compact" : "domain-nav"}
-      aria-label="ProofOfWork.Me domains"
-    >
-      {APP_LINKS.map((link) => (
-        <a href={appHref(link.href, link.localHref)} key={link.href}>
-          {link.label}
-        </a>
-      ))}
-    </nav>
   );
 }
 
@@ -19597,56 +19262,15 @@ function TokenApp({
 
         <DomainNav compact />
 
-        <div className="topbar-controls">
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-          {address ? (
-            <button
-              className="secondary small"
-              disabled={busy}
-              onClick={disconnectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <LogOut size={15} />
-                <span>{shortAddress(address)}</span>
-              </span>
-            </button>
-          ) : hasUnisat ? (
-            <button
-              className="primary small"
-              disabled={busy}
-              onClick={connectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <Wallet size={15} />
-                <span>Connect</span>
-              </span>
-            </button>
-          ) : (
-            <a
-              className="primary small link-button"
-              href={UNISAT_DOWNLOAD_URL}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="button-content">
-                <Wallet size={15} />
-                <span>UniSat</span>
-              </span>
-            </a>
-          )}
-        </div>
+        <HeaderActionsMenu
+          address={address}
+          busy={busy}
+          connectWallet={connectWallet}
+          disconnectWallet={disconnectWallet}
+          hasUnisat={hasUnisat}
+          setTheme={setTheme}
+          theme={theme}
+        />
       </header>
 
       {status.tone !== "idle" ? (
@@ -20473,7 +20097,7 @@ function TokenWorkspace({
                   <span>Mint progress</span>
                   <strong>{tokenProgressLabel(detailConfirmedSupply, detailToken.maxSupply)}</strong>
                 </div>
-                <Pay2SpeakProgressBar
+                <ProgressBar
                   label={`${detailToken.ticker} mint progress`}
                   progress={detailProgress}
                 />
@@ -21014,7 +20638,7 @@ function TokenWorkspace({
                     {tokenProgressLabel(confirmedSupply, selectedToken.maxSupply)}
                   </strong>
                 </div>
-                <Pay2SpeakProgressBar
+                <ProgressBar
                   label={`${selectedToken.ticker} selected mint progress`}
                   progress={selectedProgress}
                 />
@@ -21251,7 +20875,7 @@ function TokenWorkspace({
                       </p>
                       <code>{shortAddress(token.tokenId)}</code>
                       <div className="token-record-meter">
-                        <Pay2SpeakProgressBar
+                        <ProgressBar
                           label={`${token.ticker} row mint progress`}
                           progress={rowProgress}
                         />
@@ -21286,2176 +20910,6 @@ function TokenWorkspace({
           </div>
         </section>
       </div>
-    </section>
-  );
-}
-
-type NftWorkspaceProps = {
-  address: string;
-  busy: boolean;
-  canMint: boolean;
-  compact?: boolean;
-  collectionPage: boolean;
-  collectionUrl: string;
-  collections: NftCollectionRecord[];
-  canDeployCollection: boolean;
-  deployBytes: number;
-  deployCollection: (event: FormEvent<HTMLFormElement>) => void;
-  deployGenesisTag: string;
-  deployImagePayload: string;
-  deployMaxSupply: number;
-  deployName: string;
-  feeRate: number;
-  genesisTag: string;
-  imageDataUrl: string;
-  incompleteCollectionRoute: boolean;
-  mintBytes: number;
-  mintAk: (
-    event: FormEvent<HTMLFormElement>,
-  ) => void | Promise<string | undefined>;
-  mintAssistantCompleted: number;
-  mintAssistantDelayMs: number;
-  mintAssistantRemaining: number;
-  mintAssistantRunning: boolean;
-  mintAssistantTarget: number;
-  mints: AkMintRecord[];
-  operatorAddress: string;
-  selectedCollection: NftCollectionDefinition;
-  setFeeRate: (value: number) => void;
-  setGenesisTag: (value: string) => void;
-  setImageBase64: (value: string) => void;
-  setImageDataUrl: (value: string) => void;
-  setMintAssistantDelayMs: (value: number) => void;
-  setMintAssistantTarget: (value: number) => void;
-  setOperatorAddress: (value: string) => void;
-  setDeployGenesisTag: (value: string) => void;
-  setDeployImagePayload: (value: string) => void;
-  setDeployMaxSupply: (value: number) => void;
-  setDeployName: (value: string) => void;
-  setSelectedCollectionId: (value: string) => void;
-  setTraits: (value: AkTraits | ((current: AkTraits) => AkTraits)) => void;
-  startMintAssistant: () => void;
-  stopMintAssistant: () => void;
-  traits: AkTraits;
-  onRefresh: () => void;
-};
-
-function NftApp({
-  address,
-  busy,
-  connectWallet,
-  disconnectWallet,
-  hasUnisat,
-  setTheme,
-  status,
-  theme,
-  ...workspaceProps
-}: NftWorkspaceProps & {
-  connectWallet: () => void;
-  disconnectWallet: () => void;
-  hasUnisat: boolean;
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
-  status: { tone: StatusTone; text: string };
-  theme: ThemeMode;
-}) {
-  return (
-    <main className="id-launch-app">
-      <header className="id-launch-topbar">
-        <a
-          className="brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            NFT
-          </div>
-          <div>
-            <h1>NFT</h1>
-            <span>Collections on Bitcoin</span>
-          </div>
-        </a>
-
-        <DomainNav compact />
-
-        <div className="topbar-controls">
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-          {address ? (
-            <button
-              className="secondary small"
-              disabled={busy}
-              onClick={disconnectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <LogOut size={15} />
-                <span>{shortAddress(address)}</span>
-              </span>
-            </button>
-          ) : hasUnisat ? (
-            <button
-              className="primary small"
-              disabled={busy}
-              onClick={connectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <Wallet size={15} />
-                <span>Connect</span>
-              </span>
-            </button>
-          ) : (
-            <a
-              className="primary small link-button"
-              href={UNISAT_DOWNLOAD_URL}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="button-content">
-                <Wallet size={15} />
-                <span>UniSat</span>
-              </span>
-            </a>
-          )}
-        </div>
-      </header>
-
-      {status.tone !== "idle" ? (
-        <div className={`status ${status.tone}`}>
-          <span className="status-dot" aria-hidden="true" />
-          <span>{status.text}</span>
-        </div>
-      ) : null}
-
-      <NftWorkspace address={address} busy={busy} {...workspaceProps} />
-      <SocialFooter />
-    </main>
-  );
-}
-
-const NFT_PAGE_STYLE: CSSProperties = {
-  display: "grid",
-  gap: "clamp(22px, 3vw, 36px)",
-  margin: "0 auto",
-  maxWidth: 1180,
-  padding: "clamp(20px, 4vw, 56px)",
-  width: "100%",
-};
-
-const NFT_CENTER_HEADER_STYLE: CSSProperties = {
-  display: "grid",
-  gap: 12,
-  justifyItems: "center",
-  margin: "0 auto",
-  maxWidth: 760,
-  textAlign: "center",
-};
-
-const NFT_AUTO_GRID_STYLE: CSSProperties = {
-  display: "grid",
-  gap: "clamp(16px, 2vw, 24px)",
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
-};
-
-const NFT_CARD_STYLE: CSSProperties = {
-  borderWidth: 2,
-  display: "grid",
-  gap: 18,
-  padding: "clamp(18px, 2.5vw, 28px)",
-};
-
-const NFT_PIXEL_STAGE_STYLE: CSSProperties = {
-  alignItems: "center",
-  background: "var(--surface-soft)",
-  border: "2px solid var(--border)",
-  borderRadius: 8,
-  display: "flex",
-  imageRendering: "pixelated",
-  justifyContent: "center",
-  overflow: "hidden",
-};
-
-function NftWorkspace({
-  address,
-  busy,
-  canDeployCollection,
-  canMint,
-  compact = false,
-  collectionPage,
-  collectionUrl,
-  collections,
-  deployBytes,
-  deployCollection,
-  deployGenesisTag,
-  deployImagePayload,
-  deployMaxSupply,
-  deployName,
-  feeRate,
-  genesisTag,
-  imageDataUrl,
-  incompleteCollectionRoute,
-  mintBytes,
-  mintAk,
-  mintAssistantCompleted,
-  mintAssistantDelayMs,
-  mintAssistantRemaining,
-  mintAssistantRunning,
-  mintAssistantTarget,
-  mints,
-  operatorAddress,
-  selectedCollection,
-  setFeeRate,
-  setGenesisTag,
-  setImageBase64,
-  setImageDataUrl,
-  setMintAssistantDelayMs,
-  setMintAssistantTarget,
-  setOperatorAddress,
-  setDeployGenesisTag,
-  setDeployImagePayload,
-  setDeployMaxSupply,
-  setDeployName,
-  setSelectedCollectionId,
-  setTraits,
-  startMintAssistant,
-  stopMintAssistant,
-  traits,
-  onRefresh,
-}: NftWorkspaceProps) {
-  const confirmedMints = mints.filter((mint) => mint.confirmed).length;
-  const mintProgress = selectedCollection.maxSupply
-    ? Math.min(100, (confirmedMints / selectedCollection.maxSupply) * 100)
-    : 0;
-  const canMintSelectedCollection =
-    selectedCollection.maxSupply > 0 &&
-    operatorAddress === selectedCollection.defaultOperatorAddress;
-  const normalizedNftMintAssistantTarget = Number.isFinite(
-    mintAssistantTarget,
-  )
-    ? Math.min(
-        NFT_MINT_ASSISTANT_MAX_COUNT,
-        Math.max(1, Math.floor(mintAssistantTarget)),
-      )
-    : NFT_MINT_ASSISTANT_DEFAULT_COUNT;
-  const normalizedNftMintAssistantDelayMs = Number.isFinite(
-    mintAssistantDelayMs,
-  )
-    ? Math.min(
-        NFT_MINT_ASSISTANT_MAX_DELAY_MS,
-        Math.max(0, Math.floor(mintAssistantDelayMs)),
-      )
-    : NFT_MINT_ASSISTANT_DEFAULT_DELAY_MS;
-  const nftMintAssistantDelaySeconds = Number(
-    (normalizedNftMintAssistantDelayMs / 1000).toFixed(2),
-  );
-  const nftMintAssistantCanStart = canMint && !mintAssistantRunning;
-  const renderNftMintAssistant = () => (
-    <div className="token-mint-assistant">
-      <div className="token-assistant-head">
-        <div>
-          <strong>Mint assistant</strong>
-          <span>
-            {mintAssistantRunning
-              ? `${mintAssistantCompleted.toLocaleString()} broadcast, ${mintAssistantRemaining.toLocaleString()} queued`
-              : `Queues ${selectedCollection.displayName} mints to ${shortAddress(operatorAddress)}`}
-          </span>
-        </div>
-        <div className="token-assistant-status" aria-label="NFT mint assistant progress">
-          <span>{mintAssistantCompleted.toLocaleString()} done</span>
-          <span>{mintAssistantRemaining.toLocaleString()} left</span>
-        </div>
-      </div>
-      <div className="token-form-grid token-assistant-grid">
-        <label>
-          Mints
-          <input
-            disabled={mintAssistantRunning}
-            max={NFT_MINT_ASSISTANT_MAX_COUNT}
-            min={1}
-            onChange={(event) =>
-              setMintAssistantTarget(Number(event.target.value))
-            }
-            type="number"
-            value={mintAssistantTarget || ""}
-          />
-        </label>
-        <label>
-          Delay seconds
-          <input
-            disabled={mintAssistantRunning}
-            max={NFT_MINT_ASSISTANT_MAX_DELAY_MS / 1000}
-            min={0}
-            onChange={(event) =>
-              setMintAssistantDelayMs(Number(event.target.value) * 1000)
-            }
-            step={0.1}
-            type="number"
-            value={nftMintAssistantDelaySeconds}
-          />
-        </label>
-      </div>
-      <div className="token-assistant-actions">
-        <button
-          className="secondary"
-          disabled={!nftMintAssistantCanStart}
-          onClick={startMintAssistant}
-          type="button"
-        >
-          <span className="button-content">
-            <Send size={16} />
-            <span>
-              {mintAssistantRunning
-                ? "Assistant running"
-                : `Start ${normalizedNftMintAssistantTarget.toLocaleString()} mints`}
-            </span>
-          </span>
-        </button>
-        <button
-          className="secondary"
-          disabled={!mintAssistantRunning}
-          onClick={() => stopMintAssistant()}
-          type="button"
-        >
-          <span className="button-content">
-            <X size={16} />
-            <span>Stop</span>
-          </span>
-        </button>
-      </div>
-      <p className="field-note">
-        Opens the next NFT mint after the previous broadcast. You still click
-        Sign in UniSat. Each mint pays this collection operator registry.
-      </p>
-    </div>
-  );
-  const pageStyle: CSSProperties = compact
-    ? {
-        ...NFT_PAGE_STYLE,
-        gap: 18,
-        margin: 0,
-        maxWidth: "none",
-        padding: 18,
-      }
-    : NFT_PAGE_STYLE;
-  const headerStyle: CSSProperties = compact
-    ? {
-        ...NFT_CENTER_HEADER_STYLE,
-        justifyItems: "start",
-        margin: 0,
-        maxWidth: 780,
-        textAlign: "left",
-      }
-    : NFT_CENTER_HEADER_STYLE;
-
-  if (!collectionPage) {
-    return (
-      <section
-        className={`nft-workspace${compact ? " nft-workspace-compact" : ""}`}
-        style={pageStyle}
-      >
-        <header style={headerStyle}>
-          <p className="eyebrow">NFT</p>
-          <h2 style={{ margin: 0 }}>Collections</h2>
-          <p style={{ margin: 0 }}>
-            Browse Bitcoin-native NFT collections indexed by ProofOfWork.Me.
-            Each collection is defined by a name, an operator address, and
-            deterministic decoding rules.
-          </p>
-        </header>
-
-        <section className="id-launch-card" style={NFT_CARD_STYLE}>
-          <div
-            style={{
-              alignItems: "center",
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 16,
-              justifyContent: "space-between",
-            }}
-          >
-            <div>
-              <p className="eyebrow">Available</p>
-              <h3 style={{ marginBottom: 0 }}>
-                {collections.length.toLocaleString()} collection
-              </h3>
-            </div>
-            <strong>{confirmedMints.toLocaleString()} indexed mints</strong>
-          </div>
-
-          {incompleteCollectionRoute ? (
-            <a className="primary small link-button" href={nftCollectionUrl(selectedCollection)}>
-              <span className="button-content">
-                <ArrowUpRight size={14} />
-                <span>Open canonical collection page</span>
-              </span>
-            </a>
-          ) : null}
-        </section>
-
-        <form
-          className="id-launch-card id-form"
-          onSubmit={deployCollection}
-          style={NFT_CARD_STYLE}
-        >
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Deploy</p>
-              <h3>Create NFT collection</h3>
-            </div>
-            <strong>{NFT_DEPLOY_MIN_FEE_SATS.toLocaleString()} sats</strong>
-          </div>
-
-          <label>
-            Collection name
-            <input
-              maxLength={32}
-              onChange={(event) => setDeployName(event.target.value)}
-              placeholder="AK21"
-              value={deployName}
-            />
-          </label>
-
-          <label>
-            Max supply
-            <input
-              min={1}
-              onChange={(event) => setDeployMaxSupply(Number(event.target.value))}
-              step={1}
-              type="number"
-              value={deployMaxSupply}
-            />
-          </label>
-
-          <label>
-            Genesis Tag
-            <input
-              maxLength={120}
-              onChange={(event) => setDeployGenesisTag(event.target.value)}
-              placeholder="I made it to protect Bitcoin"
-              value={deployGenesisTag}
-            />
-          </label>
-
-          <label>
-            Collection image payload
-            <textarea
-              onChange={(event) => setDeployImagePayload(event.target.value)}
-              placeholder="data:image/png;base64,..."
-              rows={4}
-              value={deployImagePayload}
-            />
-          </label>
-
-          <div className="id-record-list">
-            <div className="id-record">
-              <span>Deploy fee</span>
-              <strong>{NFT_DEPLOY_MIN_FEE_SATS.toLocaleString()} sats</strong>
-            </div>
-            <div className="id-record">
-              <span>Fee address</span>
-              <strong>{shortAddress(NFT_DEPLOY_FEE_ADDRESS)}</strong>
-            </div>
-            <div className="id-record">
-              <span>OP_RETURN data</span>
-              <strong>{deployBytes.toLocaleString()} bytes</strong>
-            </div>
-          </div>
-
-          <button className="primary" disabled={!canDeployCollection} type="submit">
-            <span className="button-content">
-              <Send size={16} />
-              <span>{address ? "Deploy collection" : "Connect wallet"}</span>
-            </span>
-          </button>
-        </form>
-
-        <div style={NFT_AUTO_GRID_STYLE}>
-          {collections.map((collection) => {
-            const collectionMints = mints.filter(
-              (mint) => mint.collectionId === collection.id,
-            );
-            const confirmed = collectionMints.filter(
-              (mint) => mint.confirmed,
-            ).length;
-            const previewMint = collectionMints.find((mint) => mint.imageDataUrl);
-            const previewImage = collection.imageDataUrl || previewMint?.imageDataUrl;
-
-            return (
-              <a
-                className="id-launch-card"
-                href={nftCollectionUrl(collection)}
-                key={collection.id}
-                style={{
-                  ...NFT_CARD_STYLE,
-                  color: "inherit",
-                  minHeight: "100%",
-                  textDecoration: "none",
-                }}
-              >
-                <div className="section-heading">
-                  <div>
-                    <p className="eyebrow">Collection</p>
-                    <h3>{collection.displayName}</h3>
-                  </div>
-                  <ArrowUpRight size={18} />
-                </div>
-
-                <div
-                  aria-hidden="true"
-                  style={{
-                    ...NFT_PIXEL_STAGE_STYLE,
-                    aspectRatio: "3 / 1",
-                    marginBottom: 16,
-                    width: "100%",
-                  }}
-                >
-                  {previewImage ? (
-                    <img
-                      alt=""
-                      src={previewImage}
-                      style={{
-                        height: "100%",
-                        imageRendering: "pixelated",
-                        objectFit: "contain",
-                        width: "100%",
-                      }}
-                    />
-                  ) : (
-                    <span style={{ color: "var(--muted)" }}>
-                      {collection.id}
-                    </span>
-                  )}
-                </div>
-
-                <p>{collection.description}</p>
-
-                <div className="id-record-list">
-                  <div className="id-record">
-                    <span>Name</span>
-                    <strong>{collection.name}</strong>
-                  </div>
-                  <div className="id-record">
-                    <span>Operator</span>
-                    <strong>{shortAddress(collection.defaultOperatorAddress)}</strong>
-                  </div>
-                  <div className="id-record">
-                    <span>Indexed</span>
-                    <strong>{confirmed.toLocaleString()} confirmed</strong>
-                  </div>
-                  {collection.txid ? (
-                    <div className="id-record">
-                      <span>Deploy tx</span>
-                      <strong>{shortAddress(collection.txid)}</strong>
-                    </div>
-                  ) : null}
-                </div>
-              </a>
-            );
-          })}
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section
-      className={`nft-workspace${compact ? " nft-workspace-compact" : ""}`}
-      style={pageStyle}
-    >
-      <header style={headerStyle}>
-        <a className="secondary small link-button" href="/?nft=1">
-          <span className="button-content">
-            <ArrowLeft size={14} />
-            <span>Collections</span>
-          </span>
-        </a>
-        <p className="eyebrow">NFT collection</p>
-        <h2 style={{ margin: 0 }}>
-          ASSEMBLE YOUR {selectedCollection.displayName}-21
-        </h2>
-        <p style={{ margin: 0 }}>
-          Generate a visual AK, forge a Genesis Tag, then inspect every valid
-          mint decoded from the collection operator.
-        </p>
-      </header>
-
-      <section className="id-launch-card" style={NFT_CARD_STYLE}>
-        <div
-          style={{
-            alignItems: "center",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 12,
-            justifyContent: "space-between",
-          }}
-        >
-          <strong>
-            NFTs Minted: {confirmedMints.toLocaleString()} /{" "}
-              {selectedCollection.maxSupply.toLocaleString()}
-          </strong>
-          <span style={{ color: "var(--muted)", fontFamily: "var(--mono)" }}>
-            Operator {shortAddress(operatorAddress)}
-          </span>
-        </div>
-        <div
-          aria-label="Mint progress"
-          style={{
-            background: "var(--surface-soft)",
-            border: "2px solid var(--border)",
-            borderRadius: 999,
-            height: 14,
-            overflow: "hidden",
-            width: "100%",
-          }}
-        >
-          <div
-            style={{
-              background: "var(--accent)",
-              height: "100%",
-              transition: "width 250ms ease",
-              width: `${mintProgress}%`,
-            }}
-          />
-        </div>
-      </section>
-
-      <div style={NFT_AUTO_GRID_STYLE}>
-        <NftAkGenerator
-          busy={busy}
-          imageDataUrl={imageDataUrl}
-          setImageBase64={setImageBase64}
-          setImageDataUrl={setImageDataUrl}
-          setTraits={setTraits}
-          traits={traits}
-        />
-
-        <form
-          className="id-launch-card id-form"
-          onSubmit={mintAk}
-          style={NFT_CARD_STYLE}
-        >
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Mint</p>
-              <h3>{selectedCollection.displayName} mint transaction</h3>
-            </div>
-            <button
-              className="secondary small"
-              disabled={busy}
-              onClick={onRefresh}
-              type="button"
-            >
-              <span className="button-content">
-                <RefreshCw size={15} />
-                <span>Refresh</span>
-              </span>
-            </button>
-          </div>
-
-          <div
-            aria-label="Selected AK"
-            style={{
-              alignItems: "center",
-              background: "var(--surface-soft)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              display: "flex",
-              height: 78,
-              justifyContent: "center",
-              padding: 8,
-            }}
-          >
-            {imageDataUrl ? (
-              <img
-                alt="Selected AK"
-                src={imageDataUrl}
-                style={{
-                  height: 60,
-                  imageRendering: "pixelated",
-                  objectFit: "contain",
-                  width: 180,
-                }}
-              />
-            ) : (
-              <span style={{ color: "var(--muted)" }}>No AK selected</span>
-            )}
-          </div>
-
-          <label>
-            Genesis Tag
-            <input
-              maxLength={80}
-              onChange={(event) => setGenesisTag(event.target.value)}
-              placeholder="Optional"
-              value={genesisTag}
-            />
-          </label>
-
-          <label>
-            Fee rate
-            <input
-              min={0.1}
-              onChange={(event) => setFeeRate(Number(event.target.value))}
-              step={0.1}
-              type="number"
-              value={feeRate}
-            />
-          </label>
-
-          <div className="id-record-list">
-            <div className="id-record">
-              <span>Owner anchor</span>
-              <strong>
-                {selectedCollection.ownerAnchorSats.toLocaleString()} sats
-              </strong>
-            </div>
-            <div className="id-record">
-              <span>Operator payment</span>
-              <strong>
-                {selectedCollection.operatorMinSats.toLocaleString()} sats
-              </strong>
-            </div>
-            <div className="id-record">
-              <span>OP_RETURN data</span>
-              <strong>{mintBytes.toLocaleString()} bytes</strong>
-            </div>
-          </div>
-
-          <button className="primary" disabled={!canMint} type="submit">
-            <span className="button-content">
-              <Send size={16} />
-              <span>
-                {address
-                  ? canMintSelectedCollection
-                    ? `Mint ${selectedCollection.displayName}`
-                    : "Use collection registry"
-                  : "Connect wallet"}
-              </span>
-            </span>
-          </button>
-          {renderNftMintAssistant()}
-        </form>
-      </div>
-
-      <NftCollectionGallery
-        collection={selectedCollection}
-        confirmedCount={confirmedMints}
-        mints={mints}
-        operatorAddress={operatorAddress}
-      />
-    </section>
-  );
-}
-
-function NftAkGenerator({
-  busy,
-  imageDataUrl,
-  setImageBase64,
-  setImageDataUrl,
-  setTraits,
-  traits,
-}: {
-  busy: boolean;
-  imageDataUrl: string;
-  setImageBase64: (value: string) => void;
-  setImageDataUrl: (value: string) => void;
-  setTraits: (value: AkTraits | ((current: AkTraits) => AkTraits)) => void;
-  traits: AkTraits;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const previewLayers = AK_LAYERS.map((layer) => akLayerPath(layer, traits));
-
-  const composeCurrent = async () => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context) {
-      return;
-    }
-
-    canvas.width = 60;
-    canvas.height = 20;
-    context.imageSmoothingEnabled = false;
-    context.clearRect(0, 0, canvas.width, canvas.height);
-
-    for (const source of previewLayers) {
-      await new Promise<void>((resolve, reject) => {
-        const image = new Image();
-        image.onload = () => {
-          context.drawImage(image, 0, 0, canvas.width, canvas.height);
-          resolve();
-        };
-        image.onerror = () => reject(new Error(`AK layer failed: ${source}`));
-        image.src = source;
-      });
-    }
-
-    const dataUrl = canvas.toDataURL("image/png");
-    setImageDataUrl(dataUrl);
-    setImageBase64(dataUrl.split(",")[1] ?? "");
-  };
-
-  return (
-    <div className="id-launch-card" style={NFT_CARD_STYLE}>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Generator</p>
-          <h3>Visual AK</h3>
-        </div>
-      </div>
-
-      <div
-        aria-label="AK preview"
-        style={{
-          aspectRatio: "3 / 1",
-          ...NFT_PIXEL_STAGE_STYLE,
-          display: "grid",
-          minHeight: "clamp(150px, 18vw, 220px)",
-          marginBottom: 16,
-          placeItems: "center",
-          position: "relative",
-          width: "100%",
-        }}
-      >
-        {imageDataUrl ? (
-          <img
-            alt="Selected AK"
-            src={imageDataUrl}
-            style={{
-              height: "100%",
-              imageRendering: "pixelated",
-              objectFit: "contain",
-              width: "100%",
-            }}
-          />
-        ) : (
-          previewLayers.map((source, index) => (
-            <img
-              alt=""
-              key={source}
-              src={source}
-              style={{
-                gridArea: "1 / 1",
-                height: "100%",
-                imageRendering: "pixelated",
-                objectFit: "contain",
-                width: "100%",
-                zIndex: index,
-              }}
-            />
-          ))
-        )}
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gap: 12,
-          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-        }}
-      >
-        <button
-          className="secondary"
-          disabled={busy}
-          onClick={() => {
-            setTraits(randomAkTraits());
-            setImageDataUrl("");
-            setImageBase64("");
-          }}
-          style={{ flex: 1 }}
-          type="button"
-        >
-          <span className="button-content">
-            <RefreshCw size={15} />
-            <span>Generate</span>
-          </span>
-        </button>
-
-        <button
-          className="primary"
-          disabled={busy}
-          onClick={() => void composeCurrent()}
-          style={{ flex: 1 }}
-          type="button"
-        >
-          <span className="button-content">
-            <CheckCircle2 size={16} />
-            <span>Select</span>
-          </span>
-        </button>
-      </div>
-
-      <canvas ref={canvasRef} style={{ display: "none" }} />
-    </div>
-  );
-}
-
-function NftCollectionGallery({
-  collection,
-  confirmedCount,
-  mints,
-  operatorAddress,
-}: {
-  collection: NftCollectionDefinition;
-  confirmedCount: number;
-  mints: AkMintRecord[];
-  operatorAddress: string;
-}) {
-  const [selectedTokenIdentifier, setSelectedTokenIdentifier] = useState("");
-  const selectedMint =
-    mints.find((mint) => mint.tokenIdentifier === selectedTokenIdentifier) ??
-    mints[0] ??
-    null;
-
-  return (
-    <section className="id-launch-card" style={NFT_CARD_STYLE}>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Explorer</p>
-          <h3>{collection.displayName} indexer</h3>
-        </div>
-        <strong>{confirmedCount.toLocaleString()} confirmed</strong>
-      </div>
-      <div className="id-record-list" style={{ marginBottom: 16 }}>
-        <div className="id-record">
-          <span>Operator</span>
-          <strong>{shortAddress(operatorAddress)}</strong>
-        </div>
-        <div className="id-record">
-          <span>Collection</span>
-          <strong>{collection.id}</strong>
-        </div>
-      </div>
-
-      {mints.length === 0 ? (
-        <div className="empty-state">
-          <strong>No valid {collection.displayName} mints indexed yet.</strong>
-          <span>Change operator address or refresh after a mint confirms.</span>
-        </div>
-      ) : (
-        <>
-          {selectedMint ? (
-            <div
-              style={{
-                border: "2px solid var(--border)",
-                borderRadius: 8,
-                display: "grid",
-                gap: "clamp(16px, 2.5vw, 28px)",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
-                marginBottom: 18,
-                padding: "clamp(16px, 2.5vw, 24px)",
-              }}
-            >
-              <div
-                style={{
-                  ...NFT_PIXEL_STAGE_STYLE,
-                  borderRadius: 6,
-                  minHeight: "clamp(140px, 18vw, 220px)",
-                  padding: "clamp(14px, 2vw, 22px)",
-                }}
-              >
-                <img
-                  alt={`${collection.displayName} selected NFT`}
-                  src={selectedMint.imageDataUrl}
-                  style={{
-                    aspectRatio: "3 / 1",
-                    imageRendering: "pixelated",
-                    objectFit: "contain",
-                    width: "100%",
-                  }}
-                />
-              </div>
-
-              <div
-                style={{
-                  alignContent: "center",
-                  display: "grid",
-                  gap: 12,
-                  minWidth: 0,
-                }}
-              >
-                <div>
-                  <p className="eyebrow">Selected NFT</p>
-                  <h3>
-                    {collection.displayName} #
-                    {String(
-                      Math.max(
-                        1,
-                        mints.findIndex(
-                          (mint) =>
-                            mint.tokenIdentifier ===
-                            selectedMint.tokenIdentifier,
-                        ) + 1,
-                      ),
-                    ).padStart(4, "0")}
-                  </h3>
-                </div>
-                <div className="id-record-list">
-                  <div className="id-record">
-                    <span>Genesis Tag</span>
-                    <strong>{selectedMint.genesisTag || "No Genesis Tag"}</strong>
-                  </div>
-                  <div className="id-record">
-                    <span>Owner</span>
-                    <strong>{shortAddress(selectedMint.ownerAddress)}</strong>
-                  </div>
-                  <div className="id-record">
-                    <span>Token</span>
-                    <strong>{selectedMint.tokenIdentifier}</strong>
-                  </div>
-                </div>
-                <a
-                  className="secondary small link-button"
-                  href={mempoolTxUrl(selectedMint.txid, selectedMint.network)}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  <span className="button-content">
-                    <span>Open tx</span>
-                    <ArrowUpRight size={14} />
-                  </span>
-                </a>
-              </div>
-            </div>
-          ) : null}
-
-          <div
-            style={{
-              display: "grid",
-              gap: 16,
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
-            }}
-          >
-            {mints.map((mint, index) => (
-              <button
-                key={mint.tokenIdentifier}
-                onClick={() => setSelectedTokenIdentifier(mint.tokenIdentifier)}
-                style={{
-                  background: "var(--surface)",
-                  border:
-                    selectedMint?.tokenIdentifier === mint.tokenIdentifier
-                      ? "2px solid var(--accent)"
-                      : "2px solid var(--border)",
-                  borderRadius: 8,
-                  color: "var(--text)",
-                  cursor: "pointer",
-                  display: "grid",
-                  gap: 12,
-                  padding: 14,
-                  textAlign: "left",
-                  width: "100%",
-                }}
-                type="button"
-              >
-                <div
-                  style={{
-                    ...NFT_PIXEL_STAGE_STYLE,
-                    borderRadius: 6,
-                    padding: 16,
-                  }}
-                >
-                <img
-                  alt={`${collection.displayName} ${shortAddress(mint.txid)}`}
-                  src={mint.imageDataUrl}
-                  style={{
-                    aspectRatio: "3 / 1",
-                    imageRendering: "pixelated",
-                    objectFit: "contain",
-                    width: "100%",
-                  }}
-                />
-                </div>
-                <strong>
-                  {collection.displayName} #{String(index + 1).padStart(4, "0")}
-                </strong>
-                <span>{mint.confirmed ? "Confirmed" : "Pending"}</span>
-                <span>{mint.genesisTag || shortAddress(mint.ownerAddress)}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-type Pay2SpeakWorkspaceProps = {
-  address: string;
-  busy: boolean;
-  campaignBytes: number;
-  campaigns: Pay2SpeakCampaign[];
-  canCreateCampaign: boolean;
-  canFundCampaign: boolean;
-  compact?: boolean;
-  contributionSats: number;
-  createCampaign: (event: FormEvent<HTMLFormElement>) => void;
-  creatorRouteAddress?: string;
-  feeRate: number;
-  fundCampaign: (event: FormEvent<HTMLFormElement>) => void;
-  fundingBytes: number;
-  fundingRecords: Pay2SpeakFunding[];
-  handle: string;
-  network: BitcoinNetwork;
-  question: string;
-  questions: Pay2SpeakQuestion[];
-  registryAddress: string;
-  selectedCampaignId: string;
-  setContributionSats: (value: number) => void;
-  setFeeRate: (value: number) => void;
-  setHandle: (value: string) => void;
-  setQuestion: (value: string) => void;
-  setSelectedCampaignId: (value: string) => void;
-  setSpaceNumber: (value: number) => void;
-  setTargetSats: (value: number) => void;
-  spaceNumber: number;
-  split?: { creatorSats: number; grossSats: number; registrySats: number };
-  targetSats: number;
-  onRefresh: () => void;
-};
-
-function Pay2SpeakApp({
-  address,
-  busy,
-  connectWallet,
-  disconnectWallet,
-  hasUnisat,
-  setTheme,
-  status,
-  theme,
-  ...workspaceProps
-}: Pay2SpeakWorkspaceProps & {
-  connectWallet: () => void;
-  disconnectWallet: () => void;
-  hasUnisat: boolean;
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
-  status: { tone: StatusTone; text: string };
-  theme: ThemeMode;
-}) {
-  const creatorRouteAddress = workspaceProps.creatorRouteAddress?.trim() ?? "";
-  const showCreatorPage =
-    creatorRouteAddress &&
-    isValidBitcoinAddress(creatorRouteAddress, "livenet");
-
-  return (
-    <main className="id-launch-app pay2speak-public-app">
-      <header className="id-launch-topbar">
-        <a
-          className="brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>Pay2Speak</h1>
-            <span>X Space crowdfunding</span>
-          </div>
-        </a>
-
-        <DomainNav compact />
-
-        <div className="topbar-controls">
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-          {address ? (
-            <button
-              className="secondary small"
-              disabled={busy}
-              onClick={disconnectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <LogOut size={15} />
-                <span>{shortAddress(address)}</span>
-              </span>
-            </button>
-          ) : hasUnisat ? (
-            <button
-              className="primary small"
-              disabled={busy}
-              onClick={connectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <Wallet size={15} />
-                <span>Connect</span>
-              </span>
-            </button>
-          ) : (
-            <a
-              className="primary small link-button"
-              href={UNISAT_DOWNLOAD_URL}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="button-content">
-                <Wallet size={15} />
-                <span>UniSat</span>
-              </span>
-            </a>
-          )}
-        </div>
-      </header>
-
-      {status.tone !== "idle" ? (
-        <div className={`status ${status.tone}`}>
-          <span className="status-dot" aria-hidden="true" />
-          <span>{status.text}</span>
-        </div>
-      ) : null}
-
-      {showCreatorPage ? (
-        <Pay2SpeakCreatorPage
-          address={address}
-          busy={busy}
-          creatorAddress={creatorRouteAddress}
-          {...workspaceProps}
-        />
-      ) : (
-        <Pay2SpeakWorkspace address={address} busy={busy} {...workspaceProps} />
-      )}
-      <SocialFooter />
-    </main>
-  );
-}
-
-function Pay2SpeakCreatorPage({
-  address,
-  busy,
-  campaigns,
-  canFundCampaign,
-  contributionSats,
-  creatorAddress,
-  feeRate,
-  fundCampaign,
-  fundingBytes,
-  fundingRecords,
-  question,
-  questions,
-  selectedCampaignId,
-  setContributionSats,
-  setFeeRate,
-  setQuestion,
-  setSelectedCampaignId,
-  split,
-}: Pay2SpeakWorkspaceProps & {
-  creatorAddress: string;
-}) {
-  const creatorCampaigns = campaigns.filter(
-    (campaign) => campaign.creatorAddress === creatorAddress,
-  );
-  const selectedCampaign =
-    creatorCampaigns.find((campaign) => campaign.txid === selectedCampaignId) ??
-    creatorCampaigns.find((campaign) => campaign.status === "Funding") ??
-    creatorCampaigns[0];
-  const creatorFunding = fundingRecords.filter((funding) =>
-    creatorCampaigns.some((campaign) => campaign.txid === funding.campaignId),
-  );
-  const campaignQuestions = selectedCampaign
-    ? questions.filter((item) => item.campaignId === selectedCampaign.txid)
-    : [];
-  const totalGross = creatorCampaigns.reduce(
-    (total, campaign) => total + campaign.fundedGrossSats,
-    0,
-  );
-  const totalTarget = creatorCampaigns.reduce(
-    (total, campaign) => total + campaign.targetGrossSats,
-    0,
-  );
-  const hostHandle =
-    selectedCampaign?.handle ?? creatorCampaigns[0]?.handle ?? "creator";
-  const hostTitle = selectedCampaign?.title ?? `@${hostHandle}`;
-  const pageProgress = selectedCampaign
-    ? pay2SpeakCampaignProgress(selectedCampaign)
-    : 0;
-  const creatorInitial = hostHandle.slice(0, 1).toUpperCase() || "P";
-  const hostPanelStyle: CSSProperties = {
-    background: "var(--text)",
-    border: "1px solid var(--border-strong)",
-    borderRadius: 12,
-    color: "var(--bg)",
-    display: "grid",
-    gap: 18,
-    padding: 16,
-  };
-  const avatarStyle: CSSProperties = {
-    alignItems: "center",
-    aspectRatio: "1 / 1",
-    background: "var(--surface)",
-    border: "1px solid var(--border)",
-    borderRadius: "50%",
-    color: "var(--text)",
-    display: "flex",
-    fontSize: "clamp(2.2rem, 10vw, 5rem)",
-    fontWeight: 900,
-    justifyContent: "center",
-    maxWidth: 150,
-    width: "38vw",
-  };
-  const ctaStyle: CSSProperties = {
-    background: "var(--amber)",
-    borderColor: "var(--amber)",
-    color: "var(--text)",
-    justifyContent: "center",
-    minHeight: 46,
-  };
-
-  if (creatorCampaigns.length === 0) {
-    return (
-      <section className="id-launch-main">
-        <div className="id-launch-card">
-          <div className="id-card-head">
-            <div className="empty-icon" aria-hidden="true">
-              <Mic2 size={24} />
-            </div>
-            <div>
-              <h2>No Pay2Speak campaign for this creator</h2>
-              <p>
-                Campaign pages are built from creation transactions signed by
-                the creator address.
-              </p>
-            </div>
-          </div>
-          <code>{creatorAddress}</code>
-          <a
-            className="secondary link-button"
-            href={appHref(PAY2SPEAK_APP_URL, LOCAL_PAY2SPEAK_APP_URL)}
-          >
-            <span className="button-content">
-              <ArrowUpRight size={15} />
-              <span>Back to Pay2Speak</span>
-            </span>
-          </a>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="id-launch-main">
-      <div className="id-launch-hero">
-        <aside
-          className="id-launch-card"
-          style={hostPanelStyle}
-          aria-label="Pay2Speak host"
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: 18,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={avatarStyle} aria-hidden="true">
-              {creatorInitial}
-            </div>
-            <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
-              <span
-                style={{
-                  color: "var(--bg)",
-                  fontSize: ".78rem",
-                  fontWeight: 850,
-                  textTransform: "uppercase",
-                }}
-              >
-                Pay2Speak host
-              </span>
-              <h2
-                style={{
-                  color: "var(--bg)",
-                  fontSize: "clamp(2rem, 7vw, 4.3rem)",
-                  lineHeight: ".96",
-                  overflowWrap: "anywhere",
-                }}
-              >
-                @{hostHandle}
-              </h2>
-              <p
-                style={{
-                  color: "var(--bg)",
-                  fontSize: "1rem",
-                  lineHeight: 1.5,
-                }}
-              >
-                {hostTitle}
-              </p>
-              <code style={{ color: "var(--bg)" }}>
-                {shortAddress(creatorAddress)}
-              </code>
-            </div>
-          </div>
-          <a
-            href="#pay2speak-fund"
-            className="primary link-button"
-            style={ctaStyle}
-          >
-            <span className="button-content">
-              <Mic2 size={17} />
-              <span>Fund this Space</span>
-            </span>
-          </a>
-        </aside>
-
-        <div className="id-launch-stats" aria-label="Creator campaign stats">
-          <div>
-            <strong>{creatorCampaigns.length.toLocaleString()}</strong>
-            <span>Campaigns</span>
-          </div>
-          <div>
-            <strong>{totalGross.toLocaleString()}</strong>
-            <span>Gross sats</span>
-          </div>
-          <div>
-            <strong>{totalTarget.toLocaleString()}</strong>
-            <span>Target sats</span>
-          </div>
-          <div>
-            <strong>{creatorFunding.length.toLocaleString()}</strong>
-            <span>Funding txs</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="id-launch-grid">
-        <section className="id-launch-card id-claim-card">
-          <div className="id-card-head">
-            <div className="empty-icon" aria-hidden="true">
-              <TrendingUp size={24} />
-            </div>
-            <div>
-              <h2>{selectedCampaign?.title ?? "Pay2Speak campaign"}</h2>
-              <p>
-                {selectedCampaign?.status ?? "Funding"} from creator address{" "}
-                {shortAddress(creatorAddress)}.
-              </p>
-            </div>
-          </div>
-          {selectedCampaign ? (
-            <>
-              <Pay2SpeakProgressBar
-                label={`${selectedCampaign.title} funding progress`}
-                progress={pageProgress}
-              />
-              <div
-                className="id-launch-stats"
-                aria-label="Selected campaign stats"
-              >
-                <div>
-                  <span>Progress</span>
-                  <strong>{pageProgress}%</strong>
-                </div>
-                <div>
-                  <span>Gross funded</span>
-                  <strong>
-                    {selectedCampaign.fundedGrossSats.toLocaleString()} sats
-                  </strong>
-                </div>
-                <div>
-                  <span>Target</span>
-                  <strong>
-                    {selectedCampaign.targetGrossSats.toLocaleString()} sats
-                  </strong>
-                </div>
-                <div>
-                  <span>Questions</span>
-                  <strong>{campaignQuestions.length.toLocaleString()}</strong>
-                </div>
-              </div>
-            </>
-          ) : null}
-          <div className="id-record-actions">
-            <a
-              className="secondary small"
-              href={mempoolBase("livenet") + `/address/${creatorAddress}`}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="button-content">
-                <ArrowUpRight size={15} />
-                <span>Creator Address</span>
-              </span>
-            </a>
-            {selectedCampaign ? (
-              <a
-                className="secondary small"
-                href={mempoolTxUrl(selectedCampaign.txid, "livenet")}
-                rel="noreferrer"
-                target="_blank"
-              >
-                <span className="button-content">
-                  <ArrowUpRight size={15} />
-                  <span>Campaign TX</span>
-                </span>
-              </a>
-            ) : null}
-          </div>
-        </section>
-
-        <section id="pay2speak-fund" className="id-launch-card">
-          <div className="id-card-head">
-            <div className="empty-icon" aria-hidden="true">
-              <MessageCircle size={24} />
-            </div>
-            <div>
-              <h3>Send sats and a question</h3>
-              <p>
-                One Pay2Speak funding transaction records your gross
-                contribution and optional question on chain.
-              </p>
-            </div>
-          </div>
-          <form className="id-form" onSubmit={fundCampaign}>
-            <label>
-              Campaign
-              <select
-                onChange={(event) => setSelectedCampaignId(event.target.value)}
-                value={selectedCampaign?.txid ?? ""}
-              >
-                {creatorCampaigns.map((campaign) => (
-                  <option key={campaign.txid} value={campaign.txid}>
-                    {campaign.title} - {campaign.status}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Gross sats
-              <input
-                min={1001}
-                onChange={(event) =>
-                  setContributionSats(Number(event.target.value))
-                }
-                type="number"
-                value={contributionSats}
-              />
-            </label>
-            <label>
-              Question
-              <textarea
-                maxLength={500}
-                onChange={(event) => setQuestion(event.target.value)}
-                placeholder="Optional question for the host"
-                value={question}
-              />
-            </label>
-            <div className="id-launch-stats" aria-label="Contribution preview">
-              <div>
-                <span>Contribution</span>
-                <strong>
-                  {(split?.grossSats ?? contributionSats).toLocaleString()} sats
-                </strong>
-              </div>
-              <div>
-                <span>Question</span>
-                <strong>{question.trim() ? "Attached" : "Optional"}</strong>
-              </div>
-              <div>
-                <span>Network fee</span>
-                <strong>Shown by wallet</strong>
-              </div>
-            </div>
-            <div
-              className={
-                fundingBytes > MAX_DATA_CARRIER_BYTES
-                  ? "counter bad"
-                  : "counter"
-              }
-            >
-              {fundingBytes.toLocaleString()} /{" "}
-              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
-              bytes
-            </div>
-            <button
-              className="primary"
-              disabled={!canFundCampaign}
-              style={ctaStyle}
-              type="submit"
-            >
-              <span className="button-content">
-                <Send size={16} />
-                <span>{busy ? "Funding" : "Fund Campaign"}</span>
-              </span>
-            </button>
-            {!address ? (
-              <p className="field-note">
-                Connect UniSat to fund this campaign.
-              </p>
-            ) : null}
-          </form>
-        </section>
-      </div>
-
-      <div className="id-launch-grid">
-        <section className="id-launch-card">
-          <div className="id-card-head">
-            <div className="empty-icon" aria-hidden="true">
-              <MessageSquareQuote size={24} />
-            </div>
-            <div>
-              <h3>Top questions</h3>
-              <p>
-                Ranked by gross sats attached to valid funding transactions.
-              </p>
-            </div>
-          </div>
-          <div className="activity-feed">
-            {campaignQuestions.length === 0 ? (
-              <div className="empty-state">
-                <h3>No questions yet</h3>
-                <p>Be the first to attach a question to this Space.</p>
-              </div>
-            ) : (
-              campaignQuestions.map((item) => (
-                <article
-                  className="activity-row"
-                  key={`${item.txid}-${item.question}`}
-                >
-                  <div className="activity-row-main">
-                    <div>
-                      <h4>{item.grossSats.toLocaleString()} sats</h4>
-                      <strong>{item.question}</strong>
-                    </div>
-                    <time dateTime={item.createdAt}>
-                      {formatDate(item.createdAt)}
-                    </time>
-                  </div>
-                  <div className="id-record-actions">
-                    <a
-                      className="secondary small"
-                      href={mempoolTxUrl(item.txid, "livenet")}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      <span className="button-content">
-                        <ArrowUpRight size={15} />
-                        <span>View TX</span>
-                      </span>
-                    </a>
-                  </div>
-                </article>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="id-launch-card">
-          <div className="id-card-head">
-            <div className="empty-icon" aria-hidden="true">
-              <Mic2 size={24} />
-            </div>
-            <div>
-              <h3>Creator campaigns</h3>
-              <p>
-                {creatorCampaigns.length.toLocaleString()} campaign
-                {creatorCampaigns.length === 1 ? "" : "s"} from this creator
-                address. Total gross: {totalGross.toLocaleString()} /{" "}
-                {totalTarget.toLocaleString()} sats.
-              </p>
-            </div>
-          </div>
-          <div className="id-record-list">
-            {creatorCampaigns.map((campaign) => (
-              <article className="id-record" key={campaign.txid}>
-                <div className="id-record-main">
-                  <div>
-                    <h4>{campaign.title}</h4>
-                    <span>
-                      {campaign.status} -{" "}
-                      {campaign.confirmed ? "Confirmed" : "Pending"} -{" "}
-                      {formatDate(campaign.createdAt)}
-                    </span>
-                  </div>
-                  <strong>{pay2SpeakCampaignProgress(campaign)}%</strong>
-                </div>
-                <Pay2SpeakProgressBar
-                  label={`${campaign.title} funding progress`}
-                  progress={pay2SpeakCampaignProgress(campaign)}
-                />
-                <dl className="activity-meta">
-                  <div>
-                    <dt>Gross</dt>
-                    <dd>
-                      {campaign.fundedGrossSats.toLocaleString()} /{" "}
-                      {campaign.targetGrossSats.toLocaleString()}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Funds</dt>
-                    <dd>{campaign.fundingCount.toLocaleString()}</dd>
-                  </div>
-                  <div>
-                    <dt>TX</dt>
-                    <dd>{shortAddress(campaign.txid)}</dd>
-                  </div>
-                </dl>
-                <div className="id-record-actions">
-                  <button
-                    className="secondary small"
-                    onClick={() => setSelectedCampaignId(campaign.txid)}
-                    type="button"
-                  >
-                    <span className="button-content">
-                      <MessageCircle size={15} />
-                      <span>Select</span>
-                    </span>
-                  </button>
-                  <a
-                    className="secondary small"
-                    href={mempoolTxUrl(campaign.txid, "livenet")}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    <span className="button-content">
-                      <ArrowUpRight size={15} />
-                      <span>View TX</span>
-                    </span>
-                  </a>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      </div>
-    </section>
-  );
-}
-
-function Pay2SpeakWorkspace({
-  address,
-  busy,
-  campaignBytes,
-  campaigns,
-  canCreateCampaign,
-  canFundCampaign,
-  compact = false,
-  contributionSats,
-  createCampaign,
-  feeRate,
-  fundCampaign,
-  fundingBytes,
-  fundingRecords,
-  handle,
-  network,
-  question,
-  questions,
-  registryAddress,
-  selectedCampaignId,
-  setContributionSats,
-  setFeeRate,
-  setHandle,
-  setQuestion,
-  setSelectedCampaignId,
-  setSpaceNumber,
-  setTargetSats,
-  spaceNumber,
-  split,
-  targetSats,
-  onRefresh,
-}: Pay2SpeakWorkspaceProps) {
-  const selectedCampaign =
-    campaigns.find((campaign) => campaign.txid === selectedCampaignId) ??
-    campaigns[0];
-  const campaignQuestions = selectedCampaign
-    ? questions.filter((item) => item.campaignId === selectedCampaign.txid)
-    : [];
-  const confirmedFunding = fundingRecords.filter((item) => item.confirmed);
-  const totalGross = campaigns.reduce(
-    (total, campaign) => total + campaign.fundedGrossSats,
-    0,
-  );
-  const fundedCount = campaigns.filter(
-    (campaign) => campaign.status === "Funded",
-  ).length;
-
-  return (
-    <section className={compact ? "ids-workspace compact" : "id-launch-main"}>
-      <div className="id-launch-hero">
-        <div>
-          <span className="landing-kicker">Mainnet only</span>
-          <h2>Fund an X Space with sats.</h2>
-          <p>
-            Campaign creation and every funded question are small `pws1:`
-            OP_RETURN records. Confirmed Bitcoin history is canonical.
-          </p>
-        </div>
-        <div className="id-record-actions">
-          <button
-            className="secondary"
-            disabled={busy}
-            onClick={onRefresh}
-            type="button"
-          >
-            <span className="button-content">
-              <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
-              <span>{busy ? "Refreshing" : "Refresh"}</span>
-            </span>
-          </button>
-          <a
-            className="secondary link-button"
-            href={mempoolBase("livenet") + `/address/${registryAddress}`}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <span className="button-content">
-              <ArrowUpRight size={15} />
-              <span>Protocol TXs</span>
-            </span>
-          </a>
-        </div>
-      </div>
-
-      <div className="id-launch-stats" aria-label="Pay2Speak stats">
-        <div>
-          <strong>{campaigns.length.toLocaleString()}</strong>
-          <span>Campaigns</span>
-        </div>
-        <div>
-          <strong>{fundedCount.toLocaleString()}</strong>
-          <span>Funded</span>
-        </div>
-        <div>
-          <strong>{totalGross.toLocaleString()}</strong>
-          <span>Gross sats</span>
-        </div>
-        <div>
-          <strong>{confirmedFunding.length.toLocaleString()}</strong>
-          <span>Confirmed funds</span>
-        </div>
-      </div>
-
-      <div className="id-launch-grid">
-        <section className="id-launch-card id-claim-card">
-          <div className="id-card-head">
-            <div className="empty-icon" aria-hidden="true">
-              <Mic2 size={24} />
-            </div>
-            <div>
-              <h3>Create campaign</h3>
-              <p>
-                Writes
-                `pws1:c:&lt;space-number&gt;:&lt;x-handle&gt;:&lt;target-gross-sats&gt;`
-                as a mainnet campaign record.
-              </p>
-            </div>
-          </div>
-          <form className="id-form" onSubmit={createCampaign}>
-            <label>
-              X handle
-              <input
-                autoComplete="off"
-                onChange={(event) => setHandle(event.target.value)}
-                placeholder="handle"
-                value={handle}
-              />
-            </label>
-            <div className="id-form-grid">
-              <label>
-                Space #
-                <input
-                  min={0}
-                  onChange={(event) =>
-                    setSpaceNumber(Number(event.target.value))
-                  }
-                  type="number"
-                  value={spaceNumber}
-                />
-              </label>
-              <label>
-                Target gross sats
-                <input
-                  min={1001}
-                  onChange={(event) =>
-                    setTargetSats(Number(event.target.value))
-                  }
-                  type="number"
-                  value={targetSats}
-                />
-              </label>
-            </div>
-            <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
-            <div
-              className={
-                campaignBytes > MAX_DATA_CARRIER_BYTES
-                  ? "counter bad"
-                  : "counter"
-              }
-            >
-              {campaignBytes.toLocaleString()} /{" "}
-              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
-              bytes
-            </div>
-            <button
-              className="primary"
-              disabled={!canCreateCampaign}
-              type="submit"
-            >
-              <span className="button-content">
-                <Send size={16} />
-                <span>{busy ? "Creating" : "Create Campaign"}</span>
-              </span>
-            </button>
-          </form>
-        </section>
-
-        <section className="id-launch-card">
-          <div className="id-card-head">
-            <div className="empty-icon" aria-hidden="true">
-              <MessageCircle size={24} />
-            </div>
-            <div>
-              <h3>Fund campaign</h3>
-              <p>
-                Funding records count gross donor spend. Questions are optional
-                and ranked by attached sats.
-              </p>
-            </div>
-          </div>
-          <form className="id-form" onSubmit={fundCampaign}>
-            <label>
-              Campaign
-              <select
-                onChange={(event) => setSelectedCampaignId(event.target.value)}
-                value={selectedCampaign?.txid ?? ""}
-              >
-                {campaigns.map((campaign) => (
-                  <option key={campaign.txid} value={campaign.txid}>
-                    {campaign.title} · {campaign.status}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Gross sats
-              <input
-                min={1001}
-                onChange={(event) =>
-                  setContributionSats(Number(event.target.value))
-                }
-                type="number"
-                value={contributionSats}
-              />
-            </label>
-            <label>
-              Question
-              <textarea
-                maxLength={500}
-                onChange={(event) => setQuestion(event.target.value)}
-                placeholder="Optional question for the Space"
-                value={question}
-              />
-            </label>
-            <div className="id-launch-stats" aria-label="Contribution preview">
-              <div>
-                <span>Contribution</span>
-                <strong>
-                  {(split?.grossSats ?? contributionSats).toLocaleString()} sats
-                </strong>
-              </div>
-              <div>
-                <span>Question</span>
-                <strong>{question.trim() ? "Attached" : "Optional"}</strong>
-              </div>
-              <div>
-                <span>Network fee</span>
-                <strong>Shown by wallet</strong>
-              </div>
-            </div>
-            <div
-              className={
-                fundingBytes > MAX_DATA_CARRIER_BYTES
-                  ? "counter bad"
-                  : "counter"
-              }
-            >
-              {fundingBytes.toLocaleString()} /{" "}
-              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
-              bytes
-            </div>
-            <button
-              className="primary"
-              disabled={!canFundCampaign}
-              type="submit"
-            >
-              <span className="button-content">
-                <Send size={16} />
-                <span>{busy ? "Funding" : "Fund Campaign"}</span>
-              </span>
-            </button>
-            {!address ? (
-              <p className="field-note">
-                Connect UniSat to create or fund Pay2Speak campaigns.
-              </p>
-            ) : null}
-          </form>
-        </section>
-      </div>
-
-      <section className="id-launch-card">
-        <div className="id-card-head">
-          <div className="empty-icon" aria-hidden="true">
-            <TrendingUp size={24} />
-          </div>
-          <div>
-            <h3>Campaigns</h3>
-            <p>
-              Campaign ID is the creation txid. Pending records are visible;
-              confirmed records are the durable source of truth.
-            </p>
-          </div>
-        </div>
-        <div className="id-record-list pay2speak-campaign-list">
-          {campaigns.length === 0 ? (
-            <div className="empty-state">
-              <h3>No campaigns yet</h3>
-              <p>Create the first Pay2Speak Space campaign on mainnet.</p>
-            </div>
-          ) : (
-            campaigns.map((campaign) => (
-              <article className="id-record" key={campaign.txid}>
-                <div className="id-record-main">
-                  <div>
-                    <h4>{campaign.title}</h4>
-                    <span>
-                      {campaign.status} ·{" "}
-                      {campaign.confirmed ? "Confirmed" : "Pending"} ·{" "}
-                      {formatDate(campaign.createdAt)}
-                    </span>
-                  </div>
-                  <strong>{pay2SpeakCampaignProgress(campaign)}%</strong>
-                </div>
-                <Pay2SpeakProgressBar
-                  label={`${campaign.title} funding progress`}
-                  progress={pay2SpeakCampaignProgress(campaign)}
-                />
-                <dl className="activity-meta">
-                  <div>
-                    <dt>Gross</dt>
-                    <dd>
-                      {campaign.fundedGrossSats.toLocaleString()} /{" "}
-                      {campaign.targetGrossSats.toLocaleString()}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Creator</dt>
-                    <dd>{shortAddress(campaign.creatorAddress)}</dd>
-                  </div>
-                  <div>
-                    <dt>Funds</dt>
-                    <dd>{campaign.fundingCount.toLocaleString()}</dd>
-                  </div>
-                </dl>
-                <div className="id-record-actions">
-                  <a
-                    className="secondary small"
-                    href={pay2SpeakCreatorUrl(campaign.creatorAddress)}
-                  >
-                    <span className="button-content">
-                      <Mic2 size={15} />
-                      <span>Creator Page</span>
-                    </span>
-                  </a>
-                  <button
-                    className="secondary small"
-                    onClick={() => setSelectedCampaignId(campaign.txid)}
-                    type="button"
-                  >
-                    <span className="button-content">
-                      <MessageCircle size={15} />
-                      <span>Fund</span>
-                    </span>
-                  </button>
-                  <a
-                    className="secondary small"
-                    href={mempoolTxUrl(campaign.txid, campaign.network)}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    <span className="button-content">
-                      <ArrowUpRight size={15} />
-                      <span>View TX</span>
-                    </span>
-                  </a>
-                </div>
-              </article>
-            ))
-          )}
-        </div>
-      </section>
-
-      <section className="id-card">
-        <div className="id-card-head">
-          <div className="empty-icon" aria-hidden="true">
-            <MessageSquareQuote size={24} />
-          </div>
-          <div>
-            <h3>
-              {selectedCampaign
-                ? `${selectedCampaign.title} questions`
-                : "Questions"}
-            </h3>
-            <p>Ranked by gross sats attached to valid funding transactions.</p>
-          </div>
-        </div>
-        <div className="activity-feed">
-          {campaignQuestions.length === 0 ? (
-            <div className="empty-state">
-              <h3>No questions yet</h3>
-              <p>Fund a campaign with an optional question to add one.</p>
-            </div>
-          ) : (
-            campaignQuestions.map((item) => (
-              <article
-                className="activity-row"
-                key={`${item.txid}-${item.question}`}
-              >
-                <div className="activity-row-main">
-                  <div>
-                    <h4>{item.grossSats.toLocaleString()} sats</h4>
-                    <strong>{item.question}</strong>
-                  </div>
-                  <time dateTime={item.createdAt}>
-                    {formatDate(item.createdAt)}
-                  </time>
-                </div>
-                <div className="id-record-actions">
-                  <a
-                    className="secondary small"
-                    href={mempoolTxUrl(item.txid, "livenet")}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    <span className="button-content">
-                      <ArrowUpRight size={15} />
-                      <span>View TX</span>
-                    </span>
-                  </a>
-                </div>
-              </article>
-            ))
-          )}
-        </div>
-      </section>
     </section>
   );
 }
@@ -24993,514 +22447,6 @@ function GrowthWorkspace({
   );
 }
 
-function LandingApp({
-  registryRecords,
-  setTheme,
-  theme,
-  onRefresh,
-}: {
-  registryRecords: PowIdRecord[];
-  setTheme: (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
-  theme: ThemeMode;
-  onRefresh: () => void;
-}) {
-  const confirmedRecords = registryRecords.filter((record) => record.confirmed);
-  const pendingRecords = registryRecords.filter((record) => !record.confirmed);
-  const registryAddress = registryAddressForNetwork("livenet");
-
-  return (
-    <main className="landing-app">
-      <header className="landing-topbar">
-        <a
-          className="landing-brand"
-          href={HOME_APP_URL}
-          aria-label="ProofOfWork.Me home"
-        >
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
-          <div>
-            <h1>ProofOfWork.Me</h1>
-            <span>The final network</span>
-          </div>
-        </a>
-
-        <div className="landing-nav">
-          <DomainNav />
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-        </div>
-      </header>
-
-      <section className="landing-hero">
-        <div className="landing-hero-content">
-          <span className="landing-kicker">
-            Bitcoin-native identity, mail, files, pages, markets, funding,
-            NFTs, tokens, logs, and growth
-          </span>
-          <h2>ProofOfWork.Me</h2>
-          <p>
-            Claim a permanent on-chain ID, then use the Bitcoin Computer for
-            mail, files, HTML pages, marketplace actions, Pay2Speak campaigns,
-            NFT collections, token mints, and chain-readable proof.
-          </p>
-          <div className="landing-actions">
-            <a
-              className="primary link-button"
-              href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}
-            >
-              <span className="button-content">
-                <AtSign size={17} />
-                <span>Claim an ID</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
-            >
-              <span className="button-content">
-                <Mail size={17} />
-                <span>Open Computer</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(DESKTOP_APP_URL, LOCAL_DESKTOP_APP_URL)}
-            >
-              <span className="button-content">
-                <Monitor size={17} />
-                <span>Open Desktop</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}
-            >
-              <span className="button-content">
-                <FileText size={17} />
-                <span>Open Browser</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL)}
-            >
-              <span className="button-content">
-                <Users size={17} />
-                <span>Marketplace</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(PAY2SPEAK_APP_URL, LOCAL_PAY2SPEAK_APP_URL)}
-            >
-              <span className="button-content">
-                <Mic2 size={17} />
-                <span>Pay2Speak</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(NFT_APP_URL, LOCAL_NFT_APP_URL)}
-            >
-              <span className="button-content">
-                <Star size={17} />
-                <span>NFT</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
-            >
-              <span className="button-content">
-                <FilePenLine size={17} />
-                <span>Tokens</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(WORK_TOKEN_APP_URL, LOCAL_WORK_TOKEN_APP_URL)}
-            >
-              <span className="button-content">
-                <TrendingUp size={17} />
-                <span>WORK</span>
-              </span>
-            </a>
-          </div>
-        </div>
-      </section>
-
-      <section className="landing-main" aria-label="ProofOfWork.Me onboarding">
-        <section
-          className="landing-video"
-          aria-label="ProofOfWork.Me overview video"
-        >
-          <div className="landing-video-copy">
-            <span className="landing-kicker">Video overview</span>
-            <h3>The Bitcoin Computer is live</h3>
-            <p>
-              Watch the current walkthrough, then open the apps below and verify
-              the records from Bitcoin.
-            </p>
-            <a
-              className="secondary link-button"
-              href={LANDING_VIDEO_URL}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="button-content">
-                <ArrowUpRight size={16} />
-                <span>Open on YouTube</span>
-              </span>
-            </a>
-          </div>
-          <div className="landing-video-frame">
-            <iframe
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              loading="lazy"
-              referrerPolicy="strict-origin-when-cross-origin"
-              src={LANDING_VIDEO_EMBED_URL}
-              title="ProofOfWork.Me Bitcoin Computer overview"
-            />
-          </div>
-        </section>
-
-        <section className="landing-testimonial" aria-label="On-chain testimonial">
-          <div className="empty-icon" aria-hidden="true">
-            <MessageSquareQuote size={24} />
-          </div>
-          <div>
-            <span className="landing-kicker">On-chain testimonial</span>
-            <blockquote>
-              "Truth above all else. We will not yield to foolish yet powerful
-              tyrants for the true power resides with us. We need only converge
-              on the truth."
-            </blockquote>
-            <p>
-              Published to Bitcoin through ProofOfWork.Me by D.D. Subject:{" "}
-              <strong>Freedom and love</strong>.
-            </p>
-          </div>
-          <a
-            className="secondary link-button"
-            href={LANDING_TESTIMONIAL_TX_URL}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <span className="button-content">
-              <ArrowUpRight size={16} />
-              <span>View TX</span>
-            </span>
-          </a>
-        </section>
-
-        <section
-          className="landing-stats"
-          aria-label="ProofOfWork ID registry stats"
-        >
-          <div>
-            <span>Total IDs</span>
-            <strong>{registryRecords.length.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span>Confirmed</span>
-            <strong>{confirmedRecords.length.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span>Pending</span>
-            <strong>{pendingRecords.length.toLocaleString()}</strong>
-          </div>
-          <button className="secondary" onClick={onRefresh} type="button">
-            <span className="button-content">
-              <RefreshCw size={16} />
-              <span>Refresh Registry</span>
-            </span>
-          </button>
-        </section>
-
-        <section className="landing-choice-grid" aria-label="Choose an app">
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <AtSign size={24} />
-            </div>
-            <div>
-              <h3>Claim Your ID</h3>
-              <p>
-                Register <code>user@proofofwork.me</code> to your Bitcoin
-                receive address through the canonical mainnet registry.
-              </p>
-            </div>
-            <a
-              className="primary link-button"
-              href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}
-            >
-              <span className="button-content">
-                <AtSign size={16} />
-                <span>Go to IDs</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Mail size={24} />
-            </div>
-            <div>
-              <h3>Open Computer</h3>
-              <p>
-                Send and receive Bitcoin-native mail, replies, and small files
-                with local drafts, archive, favorites, and backups.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
-            >
-              <span className="button-content">
-                <Mail size={16} />
-                <span>Open App</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Monitor size={24} />
-            </div>
-            <div>
-              <h3>Open Desktop</h3>
-              <p>
-                Search an address or confirmed ProofOfWork ID and browse public
-                confirmed files.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(DESKTOP_APP_URL, LOCAL_DESKTOP_APP_URL)}
-            >
-              <span className="button-content">
-                <Monitor size={16} />
-                <span>Open Desktop</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <FileText size={24} />
-            </div>
-            <div>
-              <h3>Open Browser</h3>
-              <p>
-                Paste a txid and render HTML from ProofOfWork message bodies or
-                verified <code>text/html</code> attachments.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}
-            >
-              <span className="button-content">
-                <FileText size={16} />
-                <span>Open Browser</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Users size={24} />
-            </div>
-            <div>
-              <h3>Open Marketplace</h3>
-              <p>
-                List confirmed ProofOfWork IDs, delist them, and execute
-                buyer-funded ownership transfers on chain.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL)}
-            >
-              <span className="button-content">
-                <Users size={16} />
-                <span>Open Marketplace</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Mic2 size={24} />
-            </div>
-            <div>
-              <h3>Open Pay2Speak</h3>
-              <p>
-                Create X Space campaigns, fund creators, and rank questions by
-                sats through confirmed <code>pws1:</code> records.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(PAY2SPEAK_APP_URL, LOCAL_PAY2SPEAK_APP_URL)}
-            >
-              <span className="button-content">
-                <Mic2 size={16} />
-                <span>Open Pay2Speak</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Star size={24} />
-            </div>
-            <div>
-              <h3>Open NFT</h3>
-              <p>
-                Create Bitcoin-native NFT collections, mint visual records, and
-                browse confirmed galleries indexed from <code>nft</code> deploy
-                and mint events.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(NFT_APP_URL, LOCAL_NFT_APP_URL)}
-            >
-              <span className="button-content">
-                <Star size={16} />
-                <span>Open NFT</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <FilePenLine size={24} />
-            </div>
-            <div>
-              <h3>Create Tokens</h3>
-              <p>
-                Launch mint-first <code>pwt1:</code> tokens, set the owner
-                registry, and let mints pay that registry directly.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
-            >
-              <span className="button-content">
-                <FilePenLine size={16} />
-                <span>Open Tokens</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <TrendingUp size={24} />
-            </div>
-            <div>
-              <h3>Track WORK</h3>
-              <p>
-                View the dedicated WORK dashboard, mint progress, holders,
-                confirmed supply, and mint log.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(WORK_TOKEN_APP_URL, LOCAL_WORK_TOKEN_APP_URL)}
-            >
-              <span className="button-content">
-                <TrendingUp size={16} />
-                <span>Open WORK</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Clock size={24} />
-            </div>
-            <div>
-              <h3>Open Log</h3>
-              <p>
-                Read the public Bitcoin Computer activity feed for IDs, mail,
-                replies, files, Browser pages, and marketplace events.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(LOG_APP_URL, LOCAL_LOG_APP_URL)}
-            >
-              <span className="button-content">
-                <Clock size={16} />
-                <span>Open Log</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <TrendingUp size={24} />
-            </div>
-            <div>
-              <h3>Open Growth</h3>
-              <p>
-                Compare the canonical Bitcoin Computer growth model against real
-                confirmed network value in sats and USD.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(GROWTH_APP_URL, LOCAL_GROWTH_APP_URL)}
-            >
-              <span className="button-content">
-                <TrendingUp size={16} />
-                <span>Open Growth</span>
-              </span>
-            </a>
-          </article>
-        </section>
-
-        <section className="landing-protocol">
-          <div>
-            <span className="landing-kicker">Canonical registry</span>
-            <h3>{shortAddress(registryAddress)}</h3>
-            <p>
-              ProofOfWork IDs are resolved from Bitcoin. First confirmed valid
-              registration wins, and the app only routes mail to confirmed IDs.
-            </p>
-          </div>
-          <a
-            className="secondary link-button"
-            href={`https://mempool.space/address/${registryAddress}`}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <span className="button-content">
-              <ArrowUpRight size={16} />
-              <span>View Registry</span>
-            </span>
-          </a>
-        </section>
-      </section>
-
-      <SocialFooter />
-    </main>
-  );
-}
-
 function IdLaunchApp({
   address,
   busy,
@@ -25597,72 +22543,16 @@ function IdLaunchApp({
 
         <DomainNav compact />
 
-        <div className="topbar-controls">
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            disabled={busy}
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-          <button
-            className="secondary"
-            disabled={busy}
-            onClick={onRefresh}
-            type="button"
-          >
-            <span className="button-content">
-              <RefreshCw className={busy ? "refresh-spin" : ""} size={16} />
-              <span>{busy ? "Refreshing" : "Refresh"}</span>
-            </span>
-          </button>
-          {hasUnisat ? (
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={connectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <Wallet size={16} />
-                <span>
-                  {address ? shortAddress(address) : "Connect UniSat"}
-                </span>
-              </span>
-            </button>
-          ) : (
-            <a
-              className="secondary link-button"
-              href={UNISAT_DOWNLOAD_URL}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="button-content">
-                <Wallet size={16} />
-                <span>Install UniSat</span>
-                <ArrowUpRight size={15} />
-              </span>
-            </a>
-          )}
-          {address ? (
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={disconnectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <LogOut size={16} />
-                <span>Disconnect</span>
-              </span>
-            </button>
-          ) : null}
-        </div>
+        <HeaderActionsMenu
+          address={address}
+          busy={busy}
+          connectWallet={connectWallet}
+          disconnectWallet={disconnectWallet}
+          hasUnisat={hasUnisat}
+          onRefresh={onRefresh}
+          setTheme={setTheme}
+          theme={theme}
+        />
       </header>
 
       <div className={`status ${status.tone}`}>
@@ -26009,72 +22899,16 @@ function MarketplaceApp({
 
         <DomainNav compact />
 
-        <div className="topbar-controls">
-          <button
-            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
-            className="icon-button"
-            disabled={busy}
-            onClick={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-          <button
-            className="secondary"
-            disabled={busy}
-            onClick={onRefresh}
-            type="button"
-          >
-            <span className="button-content">
-              <RefreshCw className={busy ? "refresh-spin" : ""} size={16} />
-              <span>{busy ? "Refreshing" : "Refresh"}</span>
-            </span>
-          </button>
-          {hasUnisat ? (
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={connectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <Wallet size={16} />
-                <span>
-                  {address ? shortAddress(address) : "Connect UniSat"}
-                </span>
-              </span>
-            </button>
-          ) : (
-            <a
-              className="secondary link-button"
-              href={UNISAT_DOWNLOAD_URL}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="button-content">
-                <Wallet size={16} />
-                <span>Install UniSat</span>
-                <ArrowUpRight size={15} />
-              </span>
-            </a>
-          )}
-          {address ? (
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={disconnectWallet}
-              type="button"
-            >
-              <span className="button-content">
-                <LogOut size={16} />
-                <span>Disconnect</span>
-              </span>
-            </button>
-          ) : null}
-        </div>
+        <HeaderActionsMenu
+          address={address}
+          busy={busy}
+          connectWallet={connectWallet}
+          disconnectWallet={disconnectWallet}
+          hasUnisat={hasUnisat}
+          onRefresh={onRefresh}
+          setTheme={setTheme}
+          theme={theme}
+        />
       </header>
 
       <div className={`status ${status.tone}`}>
@@ -26562,61 +23396,6 @@ function MarketplaceWorkspace({
         </section>
       </div>
     </section>
-  );
-}
-
-function SocialFooter({ compact = false }: { compact?: boolean }) {
-  return (
-    <footer className={compact ? "app-footer compact" : "app-footer"}>
-      <span>ProofOfWork.Me</span>
-      <DomainNav compact={compact} />
-      <nav className="social-nav" aria-label="Official ProofOfWork.Me links">
-        <a
-          href={X_URL}
-          rel="noreferrer"
-          target="_blank"
-          aria-label="ProofOfWork.Me on X"
-        >
-          <span className="button-content">
-            <X size={14} />
-            <span>X</span>
-          </span>
-        </a>
-        <a
-          href={YOUTUBE_URL}
-          rel="noreferrer"
-          target="_blank"
-          aria-label="ProofOfWork.Me on YouTube"
-        >
-          <span className="button-content">
-            <span aria-hidden="true">YT</span>
-            <span>YouTube</span>
-          </span>
-        </a>
-        <a
-          href={GITHUB_URL}
-          rel="noreferrer"
-          target="_blank"
-          aria-label="ProofOfWork.Me on GitHub"
-        >
-          <span className="button-content">
-            <GitBranch size={14} />
-            <span>GitHub</span>
-          </span>
-        </a>
-        <a
-          href={DISCORD_URL}
-          rel="noreferrer"
-          target="_blank"
-          aria-label="ProofOfWork.Me Discord"
-        >
-          <span className="button-content">
-            <MessageCircle size={14} />
-            <span>Discord</span>
-          </span>
-        </a>
-      </nav>
-    </footer>
   );
 }
 
@@ -27525,46 +24304,6 @@ function MarketplaceListingList({
         </div>
       )}
     </section>
-  );
-}
-
-function FeeRateControl({
-  feeRate,
-  setFeeRate,
-  sidecar,
-}: {
-  feeRate: number;
-  setFeeRate: (value: number) => void;
-  sidecar?: ReactNode;
-}) {
-  return (
-    <div className="fee-control">
-      <div className={sidecar ? "fee-control-grid" : undefined}>
-        <label>
-          Fee sat/vB
-          <input
-            min={0}
-            onChange={(event) => setFeeRate(Number(event.target.value))}
-            step={0.01}
-            type="number"
-            value={feeRate}
-          />
-        </label>
-        {sidecar}
-      </div>
-      <div className="fee-presets" aria-label="Fee presets">
-        {[0.1, 0.25, 0.5, 1].map((preset) => (
-          <button
-            aria-pressed={feeRate === preset}
-            key={preset}
-            onClick={() => setFeeRate(preset)}
-            type="button"
-          >
-            {preset}
-          </button>
-        ))}
-      </div>
-    </div>
   );
 }
 

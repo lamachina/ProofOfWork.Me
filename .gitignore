@@ -3,6 +3,7 @@ dist/
 .env
 .env.local
 npm-debug.log*
+dev-server.*.log
 
 # Local investor/fundraising materials. Do not commit or upload.
 *_ANGEL_DECK.md

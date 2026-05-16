@@ -3816,6 +3816,46 @@ pre {
   padding: 11px;
 }
 
+.token-utxo-dashboard {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.token-utxo-dashboard > div {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  padding: 10px;
+}
+
+.token-utxo-dashboard span,
+.token-utxo-stats span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.token-utxo-dashboard strong {
+  color: var(--text);
+  font-size: clamp(1.05rem, 1.8vw, 1.45rem);
+  line-height: 1.05;
+}
+
+.token-utxo-dashboard p {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.token-split-fee-presets {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
 .token-utxo-stats div {
   min-height: 66px;
 }
@@ -3944,6 +3984,7 @@ pre {
   .token-public-app .id-launch-grid,
   .token-workspace-compact .id-launch-grid,
   .token-registry-strip,
+  .token-utxo-dashboard,
   .token-detail-hero {
     grid-template-columns: 1fr;
   }
@@ -3970,6 +4011,8 @@ pre {
   .token-mint-grid,
   .token-search-row,
   .token-payment-lane,
+  .token-split-fee-presets,
+  .token-utxo-dashboard,
   .token-public-app .browser-meta,
   .token-public-app .id-launch-stats,
   .token-workspace-compact .id-launch-stats {

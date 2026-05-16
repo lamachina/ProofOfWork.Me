@@ -19310,24 +19310,57 @@ function TokenWorkspace({
       token.mintPriceSats + normalizedPrepareFeeReserveSats,
     );
     const totalPreparedSats = outputSats * normalizedPrepareMintCount;
-    const estimatedSplitFeeSats =
+    const estimatedSplitVbytes =
       normalizedPrepareMintCount > 0
-        ? Math.ceil(
-            estimateTxVbytes(
-              1,
-              normalizedPrepareMintCount * ESTIMATED_PAYMENT_OUTPUT_VBYTES +
-                ESTIMATED_PAYMENT_OUTPUT_VBYTES,
-            ) * normalizedPrepareFeeRate,
+        ? estimateTxVbytes(
+            1,
+            normalizedPrepareMintCount * ESTIMATED_PAYMENT_OUTPUT_VBYTES +
+              ESTIMATED_PAYMENT_OUTPUT_VBYTES,
           )
         : 0;
+    const estimatedSplitFeeSats =
+      normalizedPrepareMintCount > 0
+        ? Math.ceil(estimatedSplitVbytes * normalizedPrepareFeeRate)
+        : 0;
     const estimatedTotalSats = totalPreparedSats + estimatedSplitFeeSats;
+    const registrySatsTotal = token.mintPriceSats * normalizedPrepareMintCount;
+    const futureReserveTotal =
+      normalizedPrepareFeeReserveSats * normalizedPrepareMintCount;
     const helperTokenSelected = selectedToken?.tokenId === token.tokenId;
     const helperCanPrepare = canPrepareMintUtxos && helperTokenSelected;
 
     return (
-      <details className="token-utxo-prep">
-        <summary>Prepare UTXOs for fast minting</summary>
+      <details className="token-utxo-prep" open>
+        <summary>Prepare UTXOs fee dashboard</summary>
         <form className="id-form" onSubmit={prepareMintUtxos}>
+          <div className="token-utxo-dashboard">
+            <div>
+              <span>Split tx fee rate</span>
+              <strong>{normalizedPrepareFeeRate.toLocaleString()} sat/vB</strong>
+              <p>
+                Miner fee for the one self-send transaction that creates mint
+                UTXOs.
+              </p>
+            </div>
+            <div>
+              <span>Estimated split size</span>
+              <strong>{estimatedSplitVbytes.toLocaleString()} vB</strong>
+              <p>
+                One funding input, {normalizedPrepareMintCount.toLocaleString()}{" "}
+                mint outputs, and one change output.
+              </p>
+            </div>
+            <div>
+              <span>Split miner fee</span>
+              <strong>{estimatedSplitFeeSats.toLocaleString()} sats</strong>
+              <p>This is paid to miners by the prepare transaction.</p>
+            </div>
+            <div>
+              <span>Total wallet needed</span>
+              <strong>{estimatedTotalSats.toLocaleString()} sats</strong>
+              <p>Outputs total plus the split transaction miner fee.</p>
+            </div>
+          </div>
           <div className="token-form-grid">
             <label>
               Mint txs
@@ -19365,6 +19398,18 @@ function TokenWorkspace({
               />
             </label>
           </div>
+          <div className="fee-presets token-split-fee-presets" aria-label="Split fee presets">
+            {[0.1, 0.25, 0.5, 1, 2, 5].map((preset) => (
+              <button
+                aria-pressed={prepareFeeRate === preset}
+                key={preset}
+                onClick={() => setPrepareFeeRate(preset)}
+                type="button"
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
           <div
             className="id-launch-stats token-utxo-stats"
             aria-label="Prepared UTXO preview"
@@ -19378,23 +19423,32 @@ function TokenWorkspace({
               <strong>{outputSats.toLocaleString()} sats</strong>
             </div>
             <div>
+              <span>Registry sats staged</span>
+              <strong>{registrySatsTotal.toLocaleString()} sats</strong>
+            </div>
+            <div>
+              <span>Future fee reserve</span>
+              <strong>{futureReserveTotal.toLocaleString()} sats</strong>
+            </div>
+            <div>
               <span>Outputs total</span>
               <strong>{totalPreparedSats.toLocaleString()} sats</strong>
             </div>
             <div>
-              <span>Est. split fee</span>
+              <span>Split tx miner fee</span>
               <strong>{estimatedSplitFeeSats.toLocaleString()} sats</strong>
             </div>
             <div>
-              <span>Est. total needed</span>
+              <span>Total needed now</span>
               <strong>{estimatedTotalSats.toLocaleString()} sats</strong>
             </div>
           </div>
           <p className="field-note">
-            Creates self-send outputs to your connected wallet. Each output is
-            sized for the {token.mintPriceSats.toLocaleString()} sat registry
-            payment plus a future-mint miner reserve. The prepare transaction
-            has its own fee rate and should confirm before burst minting.
+            This does not mint. It creates self-send outputs to your connected
+            wallet. Each output is sized for the{" "}
+            {token.mintPriceSats.toLocaleString()} sat registry payment plus a
+            future-mint miner reserve. The split transaction has its own fee
+            rate and should confirm before burst minting.
           </p>
           <button className="secondary" disabled={!helperCanPrepare} type="submit">
             <span className="button-content">

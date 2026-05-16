@@ -3238,6 +3238,38 @@ function activityAddressesFromMailTransactions(txs, network) {
   return addresses;
 }
 
+function cachedPay2SpeakPayload(network) {
+  return cachedPayload(
+    `payload:pay2speak:${network}`,
+    () => pay2SpeakPayload(network),
+    DERIVED_APP_CACHE_TTL_MS,
+    DERIVED_APP_CACHE_STALE_MS,
+  );
+}
+
+function cachedAkPayload(
+  network,
+  ownerFilter = "",
+  collectionId = "",
+  operatorAddressInput = "",
+) {
+  return cachedPayload(
+    `payload:nft:${network}:${collectionId}:${operatorAddressInput}:${ownerFilter}`,
+    () => akPayload(network, ownerFilter, collectionId, operatorAddressInput),
+    DERIVED_APP_CACHE_TTL_MS,
+    DERIVED_APP_CACHE_STALE_MS,
+  );
+}
+
+function cachedTokenPayload(network) {
+  return cachedPayload(
+    `payload:token:${network}`,
+    () => tokenPayload(network),
+    DERIVED_APP_CACHE_TTL_MS,
+    DERIVED_APP_CACHE_STALE_MS,
+  );
+}
+
 async function globalActivityPayload(network) {
   const cacheKey = network;
   const cached = GLOBAL_ACTIVITY_CACHE.get(cacheKey);
@@ -3311,9 +3343,9 @@ async function globalActivityPayload(network) {
 
   const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
   const [pay2SpeakState, akState, tokenState] = await Promise.all([
-    pay2SpeakPayload(network).catch(() => null),
-    akPayload(network).catch(() => null),
-    tokenPayload(network).catch(() => null),
+    cachedPay2SpeakPayload(network).catch(() => null),
+    cachedAkPayload(network).catch(() => null),
+    cachedTokenPayload(network).catch(() => null),
   ]);
   const pay2SpeakActivity = pay2SpeakState
     ? pay2SpeakActivityItemsFromState(
@@ -5159,7 +5191,7 @@ async function handleRequest(request, response) {
       await cachedJsonResponse(
         response,
         `pay2speak:${network}`,
-        () => pay2SpeakPayload(network),
+        () => cachedPay2SpeakPayload(network),
         READ_CACHE_CONTROL,
       );
       return;
@@ -5172,7 +5204,7 @@ async function handleRequest(request, response) {
       await cachedJsonResponse(
         response,
         `nft:${network}:${collection}:${operator}:${owner}`,
-        () => akPayload(network, owner, collection, operator),
+        () => cachedAkPayload(network, owner, collection, operator),
         EXPENSIVE_READ_CACHE_CONTROL,
         DERIVED_APP_CACHE_TTL_MS,
         DERIVED_APP_CACHE_STALE_MS,
@@ -5184,7 +5216,7 @@ async function handleRequest(request, response) {
       await cachedJsonResponse(
         response,
         `token:${network}`,
-        () => tokenPayload(network),
+        () => cachedTokenPayload(network),
         EXPENSIVE_READ_CACHE_CONTROL,
         DERIVED_APP_CACHE_TTL_MS,
         DERIVED_APP_CACHE_STALE_MS,

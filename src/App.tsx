@@ -92,7 +92,7 @@ type SortMode =
   | "largest"
   | "filetype"
   | "sender";
-type FileFilter = "all" | "image" | "pdf" | "document" | "other";
+type FileFilter = "all" | "image" | "pdf" | "document" | "nft" | "other";
 type ThemeMode = "light" | "dark";
 type BroadcastStatus = "pending" | "confirmed" | "dropped" | "unknown";
 type BroadcastSource = "mempool" | "slipstream" | "wallet";
@@ -751,6 +751,11 @@ type MailMessage =
   | (SentMessage & {
       folder: "sent";
     });
+type FileSurfaceMessage = MailMessage & {
+  attachment: MailAttachment;
+  fileKind?: "nft";
+  nftMint?: AkMintRecord;
+};
 
 type ProtocolMessage = {
   memo: string;
@@ -1044,6 +1049,7 @@ const WORK_TOKEN_REGISTRY_RECORD: PowIdRecord = {
   txid: WORK_TOKEN_REGISTRY_TXID,
 };
 const ESTIMATED_INPUT_VBYTES = 160;
+const ESTIMATED_PAYMENT_OUTPUT_VBYTES = 31;
 const DUST_SATS = 546;
 const DEFAULT_AMOUNT_SATS = 546;
 const DEFAULT_FEE_RATE = 0.1;
@@ -3363,6 +3369,19 @@ function attachmentKind(attachment: MailAttachment): FileFilter {
   return "other";
 }
 
+function isNftFileMessage(
+  message: MailMessage,
+): message is FileSurfaceMessage & { fileKind: "nft"; nftMint: AkMintRecord } {
+  return (
+    (message as Partial<FileSurfaceMessage>).fileKind === "nft" &&
+    Boolean((message as Partial<FileSurfaceMessage>).nftMint)
+  );
+}
+
+function fileKindForMessage(message: MailMessage & { attachment: MailAttachment }) {
+  return isNftFileMessage(message) ? "nft" : attachmentKind(message.attachment);
+}
+
 function isImageAttachment(attachment: MailAttachment) {
   return attachment.mime.toLowerCase().startsWith("image/");
 }
@@ -3484,6 +3503,10 @@ function fileFilterLabel(filter: FileFilter) {
 
   if (filter === "document") {
     return "Documents";
+  }
+
+  if (filter === "nft") {
+    return "NFTs";
   }
 
   return filter === "other" ? "Other" : "All files";
@@ -7560,9 +7583,7 @@ function canonicalWelcomeAttachment(): MailAttachment {
   };
 }
 
-function canonicalWelcomeFileMessage(): MailMessage & {
-  attachment: MailAttachment;
-} {
+function canonicalWelcomeFileMessage(): FileSurfaceMessage {
   return {
     amountSats: DEFAULT_AMOUNT_SATS,
     attachment: canonicalWelcomeAttachment(),
@@ -7587,7 +7608,7 @@ function canonicalWelcomeFileMessage(): MailMessage & {
 }
 
 function withCanonicalWelcomeFile(
-  messages: MailMessage[],
+  messages: FileSurfaceMessage[],
   network: BitcoinNetwork,
 ) {
   if (network !== "livenet") {
@@ -7600,13 +7621,68 @@ function withCanonicalWelcomeFile(
   return [canonicalWelcomeFileMessage(), ...withoutExistingWelcome];
 }
 
-function fileSurfaceMessages(messages: MailMessage[]) {
+function nftMintAttachment(mint: AkMintRecord): MailAttachment {
+  const imageBase64 = akImageBase64(mint.imageDataUrl || mint.imageBase64);
+  const bytes = new Uint8Array(Buffer.from(imageBase64, "base64"));
+  const collectionName = (mint.collectionName || mint.collectionId || "NFT")
+    .trim()
+    .replace(/[^\w.-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 48) || "NFT";
+  const tokenName = mint.tokenIdentifier
+    .replace(/[^\w.-]+/gu, "-")
+    .slice(0, 44);
+
+  return {
+    data: base64UrlFromBase64(imageBase64),
+    mime: "image/png",
+    name: `${collectionName}-${tokenName}.png`,
+    sha256: sha256Hex(bytes),
+    size: bytes.byteLength,
+  };
+}
+
+function nftMintFileMessage(mint: AkMintRecord): FileSurfaceMessage {
+  const collectionName = mint.collectionName || mint.collectionId || "NFT";
+
+  return {
+    amountSats: mint.operatorSats,
+    attachment: nftMintAttachment(mint),
+    confirmed: mint.confirmed,
+    createdAt: mint.createdAt,
+    fileKind: "nft",
+    folder: "inbox",
+    from: mint.operatorAddress,
+    memo: `${collectionName} NFT mint ${mint.tokenIdentifier}`,
+    network: mint.network,
+    nftMint: mint,
+    recipients: [
+      {
+        address: mint.ownerAddress,
+        amountSats: mint.operatorSats,
+        display: shortAddress(mint.ownerAddress),
+      },
+    ],
+    replyTo: mint.operatorAddress,
+    subject: `${collectionName} NFT ${shortAddress(mint.tokenIdentifier)}`,
+    to: mint.ownerAddress,
+    txid: mint.txid,
+  };
+}
+
+function nftFileSurfaceMessages(mints: AkMintRecord[]) {
+  return mints
+    .filter((mint) => mint.confirmed)
+    .map(nftMintFileMessage);
+}
+
+function fileSurfaceMessages(messages: MailMessage[]): FileSurfaceMessage[] {
   return messages
     .filter(
       (message) =>
         Boolean(message.attachment) || isBrowserHtmlMessageBody(message.memo),
     )
-    .map((message): MailMessage & { attachment: MailAttachment } =>
+    .map((message): FileSurfaceMessage =>
       message.attachment
         ? { ...message, attachment: message.attachment }
         : {
@@ -8955,6 +9031,7 @@ async function fetchAkState(
   targetNetwork: BitcoinNetwork,
   collection: NftCollectionDefinition = NFT_COLLECTIONS[0],
   operatorAddress = collection.defaultOperatorAddress,
+  ownerAddress = "",
 ): Promise<AkState> {
   if (targetNetwork !== "livenet") {
     return { collection, collections: [], mints: [], operatorAddress };
@@ -8964,6 +9041,9 @@ async function fetchAkState(
     const params = new URLSearchParams();
     params.set("collection", collection.id);
     params.set("operator", operatorAddress);
+    if (ownerAddress.trim()) {
+      params.set("owner", ownerAddress.trim());
+    }
     const payload = await fetchProofApiJson<AkApiResponse>(
       `/api/v1/nft?${params.toString()}`,
       targetNetwork,
@@ -8998,17 +9078,51 @@ async function fetchAkState(
       item.name.toLowerCase() === collection.name.toLowerCase() &&
       item.operatorAddress.toLowerCase() === operatorAddress.toLowerCase(),
   );
+  const state = akStateFromTransactions(
+    mintTxs,
+    targetNetwork,
+    deployedCollection
+      ? nftCollectionDefinitionFromRecord(deployedCollection)
+      : collection,
+    operatorAddress,
+  );
+  const normalizedOwner = ownerAddress.trim().toLowerCase();
+  const mints = normalizedOwner
+    ? state.mints.filter(
+        (mint) => mint.ownerAddress.toLowerCase() === normalizedOwner,
+      )
+    : state.mints;
+
   return {
-    ...akStateFromTransactions(
-      mintTxs,
-      targetNetwork,
-      deployedCollection
-        ? nftCollectionDefinitionFromRecord(deployedCollection)
-        : collection,
-      operatorAddress,
-    ),
+    ...state,
     collections: mergedCollections,
+    mints,
+    stats: {
+      confirmed: mints.filter((mint) => mint.confirmed).length,
+      pending: mints.filter((mint) => !mint.confirmed).length,
+      total: mints.length,
+    },
   };
+}
+
+async function fetchOwnedNftMints(
+  ownerAddress: string,
+  targetNetwork: BitcoinNetwork,
+) {
+  if (
+    targetNetwork !== "livenet" ||
+    !isValidBitcoinAddress(ownerAddress, targetNetwork)
+  ) {
+    return [];
+  }
+
+  const state = await fetchAkState(
+    targetNetwork,
+    NFT_COLLECTIONS[0],
+    NFT_COLLECTIONS[0].defaultOperatorAddress,
+    ownerAddress,
+  );
+  return state.mints;
 }
 
 async function fetchTokenState(
@@ -10788,6 +10902,7 @@ export default function App() {
     useState(5460);
   const [pay2SpeakQuestion, setPay2SpeakQuestion] = useState("");
   const [akMints, setAkMints] = useState<AkMintRecord[]>([]);
+  const [nftOwnedMints, setNftOwnedMints] = useState<AkMintRecord[]>([]);
   const [nftCollections, setNftCollections] = useState<NftCollectionRecord[]>(
     [],
   );
@@ -10844,6 +10959,8 @@ export default function App() {
   const [tokenPrepareFeeReserveSats, setTokenPrepareFeeReserveSats] = useState(
     TOKEN_PREPARE_DEFAULT_FEE_RESERVE_SATS,
   );
+  const [tokenPrepareFeeRate, setTokenPrepareFeeRate] =
+    useState(DEFAULT_FEE_RATE);
   const [tokenAction, setTokenAction] = useState<
     "" | "create" | "mint" | "split"
   >("");
@@ -11047,14 +11164,17 @@ export default function App() {
   const allFileMessages = useMemo(
     () =>
       withCanonicalWelcomeFile(
-        fileSurfaceMessages(
-          allMail.filter(
-            (message) => message.folder !== "inbox" || message.confirmed,
+        [
+          ...fileSurfaceMessages(
+            allMail.filter(
+              (message) => message.folder !== "inbox" || message.confirmed,
+            ),
           ),
-        ),
+          ...nftFileSurfaceMessages(nftOwnedMints),
+        ],
         network,
       ),
-    [allMail, network],
+    [allMail, network, nftOwnedMints],
   );
   const desktopFileMessages = useMemo(
     () => desktopMail.filter(hasAttachment),
@@ -11066,7 +11186,7 @@ export default function App() {
         (message) =>
           message.attachment &&
           (fileFilter === "all" ||
-            attachmentKind(message.attachment) === fileFilter),
+            fileKindForMessage(message) === fileFilter),
       ),
     [allFileMessages, fileFilter],
   );
@@ -11586,6 +11706,10 @@ export default function App() {
   )
     ? Math.floor(tokenPrepareFeeReserveSats)
     : 0;
+  const tokenPrepareFeeRateValue =
+    Number.isFinite(tokenPrepareFeeRate) && tokenPrepareFeeRate > 0
+      ? tokenPrepareFeeRate
+      : DEFAULT_FEE_RATE;
   const tokenPrepareOutputSats = selectedToken
     ? Math.max(
         DUST_SATS,
@@ -11661,6 +11785,7 @@ export default function App() {
       tokenPrepareMintCountValue >= 1 &&
       tokenPrepareMintCountValue <= TOKEN_PREPARE_MAX_MINT_COUNT &&
       tokenPrepareFeeReserveValue >= 0 &&
+      tokenPrepareFeeRateValue > 0 &&
       tokenPrepareOutputSats >= DUST_SATS,
     ) && !busy;
   const canCreateToken =
@@ -12216,6 +12341,7 @@ export default function App() {
       setNetwork(nextNetwork);
       setInbox([]);
       setChainSent([]);
+      setNftOwnedMints([]);
       setSelectedKey("");
       setActiveFolder(
         pay2SpeakMode
@@ -12259,6 +12385,13 @@ export default function App() {
             nftSelectedOperatorAddress,
           );
           setAkMints(state.mints);
+          setNftOwnedMints(
+            state.mints.filter(
+              (mint) =>
+                mint.ownerAddress.toLowerCase() ===
+                nextAddress.toLowerCase(),
+            ),
+          );
           setNftCollections(state.collections ?? []);
           setStatus({
             tone: "good",
@@ -12295,12 +12428,14 @@ export default function App() {
           return;
         }
 
-        const { inboxMessages, sentMessages } = await fetchAddressMail(
-          nextAddress,
-          nextNetwork,
-        );
+        const [mailState, ownedNfts] = await Promise.all([
+          fetchAddressMail(nextAddress, nextNetwork),
+          fetchOwnedNftMints(nextAddress, nextNetwork).catch(() => []),
+        ]);
+        const { inboxMessages, sentMessages } = mailState;
         setInbox(inboxMessages);
         setChainSent(sentMessages);
+        setNftOwnedMints(ownedNfts);
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
         setStatus({
           tone: "good",
@@ -12924,12 +13059,16 @@ export default function App() {
         return;
       }
 
-      const { inboxMessages, sentMessages } = await fetchAddressMail(
-        resolved.paymentAddress,
-        network,
-      );
+      const [mailState, ownedNfts] = await Promise.all([
+        fetchAddressMail(resolved.paymentAddress, network),
+        fetchOwnedNftMints(resolved.paymentAddress, network).catch(() => []),
+      ]);
+      const { inboxMessages, sentMessages } = mailState;
       const publicMail = withCanonicalWelcomeFile(
-        fileSurfaceMessages(publicDesktopMail(inboxMessages, sentMessages)),
+        [
+          ...fileSurfaceMessages(publicDesktopMail(inboxMessages, sentMessages)),
+          ...nftFileSurfaceMessages(ownedNfts),
+        ],
         network,
       );
       const files = publicMail.filter(hasAttachment);
@@ -13114,6 +13253,7 @@ export default function App() {
   async function refreshAk(silent = false) {
     if (network !== "livenet") {
       setAkMints([]);
+      setNftOwnedMints([]);
       setNftCollections([]);
       if (!silent) {
         setStatus({
@@ -13136,6 +13276,14 @@ export default function App() {
         nftSelectedOperatorAddress,
       );
       setAkMints(state.mints);
+      if (address) {
+        setNftOwnedMints(
+          state.mints.filter(
+            (mint) =>
+              mint.ownerAddress.toLowerCase() === address.toLowerCase(),
+          ),
+        );
+      }
       setNftCollections(state.collections ?? []);
       if (!silent) {
         const confirmed = state.mints.filter((mint) => mint.confirmed).length;
@@ -13311,6 +13459,7 @@ export default function App() {
     setAddress("");
     setInbox([]);
     setChainSent([]);
+    setNftOwnedMints([]);
     setSavedDraft(undefined);
     setSelectedKey("");
     setActiveFolder("inbox");
@@ -13375,6 +13524,7 @@ export default function App() {
       setAddress(firstAddress);
       setInbox([]);
       setChainSent([]);
+      setNftOwnedMints([]);
       setSelectedKey("");
       setActiveFolder(
         pay2SpeakMode
@@ -13406,15 +13556,22 @@ export default function App() {
 
         if (nftMode) {
           const state = await fetchAkState(
-          "livenet",
-          nftSelectedCollection,
-          nftSelectedOperatorAddress,
+            "livenet",
+            nftSelectedCollection,
+            nftSelectedOperatorAddress,
           );
           setAkMints(state.mints);
+          setNftOwnedMints(
+            state.mints.filter(
+              (mint) =>
+                mint.ownerAddress.toLowerCase() ===
+                firstAddress.toLowerCase(),
+            ),
+          );
           setNftCollections(state.collections ?? []);
           setStatus({
             tone: "good",
-          text: `UniSat connected. NFT mint ready.`,
+            text: `UniSat connected. NFT mint ready.`,
           });
           return;
         }
@@ -13445,12 +13602,15 @@ export default function App() {
           return;
         }
 
-        const { inboxMessages, sentMessages } = await fetchAddressMail(
-          firstAddress,
-          walletNetwork ?? network,
-        );
+        const scanNetwork = walletNetwork ?? network;
+        const [mailState, ownedNfts] = await Promise.all([
+          fetchAddressMail(firstAddress, scanNetwork),
+          fetchOwnedNftMints(firstAddress, scanNetwork).catch(() => []),
+        ]);
+        const { inboxMessages, sentMessages } = mailState;
         setInbox(inboxMessages);
         setChainSent(sentMessages);
+        setNftOwnedMints(ownedNfts);
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
         setStatus({
           tone: "good",
@@ -13498,6 +13658,7 @@ export default function App() {
     setNetwork(nextNetwork);
     setInbox([]);
     setChainSent([]);
+    setNftOwnedMints([]);
     setSelectedKey("");
 
     if (!window.unisat?.switchChain && !window.unisat?.switchNetwork) {
@@ -13536,12 +13697,14 @@ export default function App() {
         return;
       }
 
-      const { inboxMessages, sentMessages } = await fetchAddressMail(
-        nextAddress,
-        activeWalletNetwork,
-      );
+      const [mailState, ownedNfts] = await Promise.all([
+        fetchAddressMail(nextAddress, activeWalletNetwork),
+        fetchOwnedNftMints(nextAddress, activeWalletNetwork).catch(() => []),
+      ]);
+      const { inboxMessages, sentMessages } = mailState;
       setInbox(inboxMessages);
       setChainSent(sentMessages);
+      setNftOwnedMints(ownedNfts);
       setSelectedKey(selectedInboundKey("inbox", inboxMessages));
       setStatus({
         tone: "good",
@@ -15130,10 +15293,11 @@ export default function App() {
     });
 
     try {
-      const { inboxMessages, sentMessages } = await fetchAddressMail(
-        address,
-        network,
-      );
+      const [mailState, ownedNfts] = await Promise.all([
+        fetchAddressMail(address, network),
+        fetchOwnedNftMints(address, network).catch(() => []),
+      ]);
+      const { inboxMessages, sentMessages } = mailState;
       const targets = broadcastTargetsFor(
         address,
         network,
@@ -15149,6 +15313,7 @@ export default function App() {
 
       setInbox(inboxMessages);
       setChainSent(checkedSentMessages);
+      setNftOwnedMints(ownedNfts);
       if (summary) {
         setAllSent((current) => applyBroadcastCheckResults(current, summary));
       }
@@ -15969,6 +16134,7 @@ export default function App() {
 
     const mintCount = tokenPrepareMintCountValue;
     const feeReserveSats = Math.max(0, tokenPrepareFeeReserveValue);
+    const prepareFeeRate = tokenPrepareFeeRateValue;
     const outputSats = Math.max(
       DUST_SATS,
       selectedToken.mintPriceSats + feeReserveSats,
@@ -16005,7 +16171,7 @@ export default function App() {
       }
 
       const paymentPsbt = await buildPaymentPsbt({
-        feeRate,
+        feeRate: prepareFeeRate,
         fromAddress: address,
         network: "livenet",
         payments: Array.from({ length: mintCount }, () => ({
@@ -16018,7 +16184,7 @@ export default function App() {
       if (
         !confirmDustFeeAbsorption({
           dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
+          feeRate: prepareFeeRate,
           feeSats: paymentPsbt.feeSats,
         })
       ) {
@@ -16034,7 +16200,7 @@ export default function App() {
       });
       setStatus({
         tone: "good",
-        text: `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Wait for confirmation before burst minting.`,
+        text: `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Split fee ${paymentPsbt.feeSats.toLocaleString()} sats at ${prepareFeeRate} sat/vB. Wait for confirmation before burst minting.`,
       });
     } catch (error) {
       setStatus({
@@ -16287,6 +16453,7 @@ export default function App() {
         mintingToken={tokenAction === "mint"}
         mints={selectedTokenLedger.mints}
         pendingSupply={selectedTokenLedger.pendingSupply}
+        prepareFeeRate={tokenPrepareFeeRate}
         prepareFeeReserveSats={tokenPrepareFeeReserveSats}
         prepareMintCount={tokenPrepareMintCount}
         prepareMintUtxos={prepareTokenMintUtxos}
@@ -16294,6 +16461,7 @@ export default function App() {
         selectedToken={selectedToken}
         selectedTokenId={selectedToken?.tokenId ?? ""}
         setFeeRate={setFeeRate}
+        setPrepareFeeRate={setTokenPrepareFeeRate}
         setCreateMaxSupply={setTokenCreateMaxSupply}
         setCreateMintAmount={setTokenCreateMintAmount}
         setCreateMintPriceSats={setTokenCreateMintPriceSats}
@@ -17075,6 +17243,7 @@ export default function App() {
             mintingToken={tokenAction === "mint"}
             mints={selectedTokenLedger.mints}
             pendingSupply={selectedTokenLedger.pendingSupply}
+            prepareFeeRate={tokenPrepareFeeRate}
             prepareFeeReserveSats={tokenPrepareFeeReserveSats}
             prepareMintCount={tokenPrepareMintCount}
             prepareMintUtxos={prepareTokenMintUtxos}
@@ -17082,6 +17251,7 @@ export default function App() {
             selectedToken={selectedToken}
             selectedTokenId={selectedToken?.tokenId ?? ""}
             setFeeRate={setFeeRate}
+            setPrepareFeeRate={setTokenPrepareFeeRate}
             setCreateMaxSupply={setTokenCreateMaxSupply}
             setCreateMintAmount={setTokenCreateMintAmount}
             setCreateMintPriceSats={setTokenCreateMintPriceSats}
@@ -18705,6 +18875,7 @@ type TokenAppProps = {
   mintBytes: number;
   mintingToken: boolean;
   mints: PowTokenMint[];
+  prepareFeeRate: number;
   pendingSupply: number;
   prepareFeeReserveSats: number;
   prepareMintCount: number;
@@ -18713,6 +18884,7 @@ type TokenAppProps = {
   selectedToken: PowTokenDefinition | undefined;
   selectedTokenId: string;
   setFeeRate: (value: number) => void;
+  setPrepareFeeRate: (value: number) => void;
   setCreateMaxSupply: (value: number) => void;
   setCreateMintAmount: (value: number) => void;
   setCreateMintPriceSats: (value: number) => void;
@@ -18868,6 +19040,7 @@ function TokenWorkspace({
   mintingToken,
   mints,
   pendingSupply,
+  prepareFeeRate,
   prepareFeeReserveSats,
   prepareMintCount,
   prepareMintUtxos,
@@ -18875,6 +19048,7 @@ function TokenWorkspace({
   selectedToken,
   selectedTokenId,
   setFeeRate,
+  setPrepareFeeRate,
   setCreateMaxSupply,
   setCreateMintAmount,
   setCreateMintPriceSats,
@@ -19096,6 +19270,10 @@ function TokenWorkspace({
   const normalizedPrepareFeeReserveSats = Number.isFinite(prepareFeeReserveSats)
     ? Math.max(0, Math.floor(prepareFeeReserveSats))
     : 0;
+  const normalizedPrepareFeeRate =
+    Number.isFinite(prepareFeeRate) && prepareFeeRate > 0
+      ? prepareFeeRate
+      : DEFAULT_FEE_RATE;
   const renderMintUtxoPrep = (token: PowTokenDefinition | undefined) => {
     if (!token) {
       return null;
@@ -19106,6 +19284,17 @@ function TokenWorkspace({
       token.mintPriceSats + normalizedPrepareFeeReserveSats,
     );
     const totalPreparedSats = outputSats * normalizedPrepareMintCount;
+    const estimatedSplitFeeSats =
+      normalizedPrepareMintCount > 0
+        ? Math.ceil(
+            estimateTxVbytes(
+              1,
+              normalizedPrepareMintCount * ESTIMATED_PAYMENT_OUTPUT_VBYTES +
+                ESTIMATED_PAYMENT_OUTPUT_VBYTES,
+            ) * normalizedPrepareFeeRate,
+          )
+        : 0;
+    const estimatedTotalSats = totalPreparedSats + estimatedSplitFeeSats;
     const helperTokenSelected = selectedToken?.tokenId === token.tokenId;
     const helperCanPrepare = canPrepareMintUtxos && helperTokenSelected;
 
@@ -19127,7 +19316,7 @@ function TokenWorkspace({
               />
             </label>
             <label>
-              Miner reserve / UTXO
+              Future mint reserve / UTXO
               <input
                 min={0}
                 onChange={(event) =>
@@ -19135,6 +19324,18 @@ function TokenWorkspace({
                 }
                 type="number"
                 value={prepareFeeReserveSats || ""}
+              />
+            </label>
+            <label>
+              Split fee sat/vB
+              <input
+                min={0.01}
+                onChange={(event) =>
+                  setPrepareFeeRate(Number(event.target.value))
+                }
+                step={0.01}
+                type="number"
+                value={prepareFeeRate || ""}
               />
             </label>
           </div>
@@ -19155,15 +19356,19 @@ function TokenWorkspace({
               <strong>{totalPreparedSats.toLocaleString()} sats</strong>
             </div>
             <div>
-              <span>Use after</span>
-              <strong>1 confirm</strong>
+              <span>Est. split fee</span>
+              <strong>{estimatedSplitFeeSats.toLocaleString()} sats</strong>
+            </div>
+            <div>
+              <span>Est. total needed</span>
+              <strong>{estimatedTotalSats.toLocaleString()} sats</strong>
             </div>
           </div>
           <p className="field-note">
             Creates self-send outputs to your connected wallet. Each output is
             sized for the {token.mintPriceSats.toLocaleString()} sat registry
-            payment plus a miner-fee reserve for one later mint. The split
-            transaction fee uses the current fee rate.
+            payment plus a future-mint miner reserve. The prepare transaction
+            has its own fee rate and should confirm before burst minting.
           </p>
           <button className="secondary" disabled={!helperCanPrepare} type="submit">
             <span className="button-content">
@@ -27013,7 +27218,7 @@ function DesktopWorkspace({
     fileSurfaceMessages(messages).filter(
       (message) =>
         fileFilter === "all" ||
-        attachmentKind(message.attachment) === fileFilter,
+        fileKindForMessage(message) === fileFilter,
     ),
     sortMode,
   ).filter(hasAttachment);
@@ -27157,8 +27362,8 @@ function DesktopWorkspace({
           </div>
           <h3>No public files</h3>
           <p>
-            {profile.label} has no confirmed ProofOfWork.Me attachments on this
-            network.
+            {profile.label} has no confirmed ProofOfWork.Me files or NFTs on
+            this network.
           </p>
         </div>
       ) : (
@@ -27251,8 +27456,8 @@ function FilesWorkspace({
               : "Connect to view files"}
           </h3>
           <p>
-            Attachments from Inbox and Sent will appear here as a desktop-style
-            file space.
+            Attachments from Inbox, Sent, and owned NFT mints will appear here
+            as a desktop-style file space.
           </p>
           <button
             className="secondary small"
@@ -27329,8 +27534,8 @@ function FilesToolbar({
       <div>
         <h2>Files</h2>
         <span>
-          {fileCount.toLocaleString()} attachment{fileCount === 1 ? "" : "s"}{" "}
-          across mail
+          {fileCount.toLocaleString()} file{fileCount === 1 ? "" : "s"} across
+          mail and NFTs
         </span>
       </div>
       <label className="sort-control">
@@ -27343,6 +27548,7 @@ function FilesToolbar({
           <option value="image">Images</option>
           <option value="pdf">PDFs</option>
           <option value="document">Documents</option>
+          <option value="nft">NFTs</option>
           <option value="other">Other</option>
         </select>
       </label>
@@ -27401,7 +27607,7 @@ function FileTile({
       <strong title={attachment.name}>{attachment.name}</strong>
       <span>
         {formatBytes(attachment.size)} ·{" "}
-        {fileFilterLabel(attachmentKind(attachment)).replace(/s$/u, "")}
+        {fileFilterLabel(fileKindForMessage(message)).replace(/s$/u, "")}
       </span>
       <div className="file-tile-meta">
         <span>{message.amountSats.toLocaleString()} sats</span>
@@ -27574,6 +27780,7 @@ function FileInspector({
   const attachment = message.attachment;
   const peer = peerAddress(message);
   const explorerNetwork = explorerNetworkFor(message.network, activeNetwork);
+  const nftMint = isNftFileMessage(message) ? message.nftMint : undefined;
 
   return (
     <aside className="file-inspector">
@@ -27606,7 +27813,7 @@ function FileInspector({
             <span>Download</span>
           </span>
         </a>
-        {onOpenMessage ? (
+        {onOpenMessage && !nftMint ? (
           <button
             className="secondary"
             onClick={() => onOpenMessage(message)}
@@ -27631,6 +27838,32 @@ function FileInspector({
         </a>
       </div>
       <dl className="file-detail-list">
+        {nftMint ? (
+          <>
+            <div>
+              <dt>Kind</dt>
+              <dd>NFT</dd>
+            </div>
+            <div>
+              <dt>Owner</dt>
+              <dd>{shortAddress(nftMint.ownerAddress)}</dd>
+            </div>
+            <div>
+              <dt>Operator</dt>
+              <dd>{shortAddress(nftMint.operatorAddress)}</dd>
+            </div>
+            <div>
+              <dt>Token</dt>
+              <dd>{nftMint.tokenIdentifier}</dd>
+            </div>
+            {nftMint.genesisTag ? (
+              <div>
+                <dt>Genesis Tag</dt>
+                <dd>{nftMint.genesisTag}</dd>
+              </div>
+            ) : null}
+          </>
+        ) : null}
         <div>
           <dt>Size</dt>
           <dd>{formatBytes(attachment.size)}</dd>

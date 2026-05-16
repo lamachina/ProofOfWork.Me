@@ -200,6 +200,7 @@ Current production behavior:
 - Token surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per token and per mint from BTC/USD.
 - `work.proofofwork.me` shows only the WORK dashboard: mint progress, holders, token facts, mint action, and mint log. `token.proofofwork.me` stays focused on token creation and mint selection.
 - WORK defaults are 21,000,000 max supply, 1,000 WORK per mint, 1,000 sats per mint, and the `work@proofofwork.me` registry address. The launch price is exactly 1 sat per WORK. These are editable create-form defaults, not hardcoded limits for other tokens.
+- `scripts/stream-console.mjs` is the local-only registry UTXO consolidation console. It talks to a local Bitcoin Core wallet over RPC, plans large-wallet batches, writes PSBT/hex artifacts, runs `testmempoolaccept`, and only broadcasts when explicitly run with `broadcast --yes`. It exists for high-UTXO registry wallets such as WORK and keeps signing on the local machine.
 - The NFT API indexes deploy records and supported collection operators. Deploy records derive the operator from `vin0`, require at least 1,000 sats to `bc1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk7whapn`, and canonical collection subpages use `collection=<name>&operator=<operator-address>` because collection names are not globally unique. Public NFT docs and launch copy credit `machina@proofofwork.me`; this credit is provenance, not a protocol validation field.
 - The log API exposes a normalized Bitcoin Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT deploys/mints, token creations, and token mints. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
 - Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside carrier; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
@@ -217,6 +218,27 @@ Important launch invariant:
 Confirmed history is canonical. Pending mempool visibility is best-effort.
 Every app-created broadcast spends confirmed inputs only.
 ```
+
+## Stream Console
+
+Large registry wallets can accumulate hundreds or thousands of small UTXOs. Public explorer UTXO endpoints, UniSat, and Electrum UI may fail on those wallets. Stream Console is the local consolidation path.
+
+It must run against a local Bitcoin Core wallet that controls the source address. It never asks for a seed phrase and it never sends signing material to production servers.
+
+```bash
+npm run stream:console -- plan --source work --destination bitcoin --wallet <local-wallet>
+npm run stream:console -- build --source work --destination bitcoin --fee-rate 0.5 --batch-size 100 --wallet <local-wallet>
+npm run stream:console -- broadcast --yes --source work --destination bitcoin --fee-rate 0.5 --batch-size 50 --wallet <local-wallet>
+```
+
+Defaults:
+
+```text
+source work -> 1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV
+destination bitcoin -> 1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv
+```
+
+Use `plan` first. Use `build` to write PSBT/hex artifacts under `output/stream-console/`. Use `broadcast --yes` only after reviewing the plan and mempool acceptance result.
 
 ## OP_RETURN Protocol
 

@@ -10,6 +10,7 @@
     "audit:ids": "node scripts/audit-id-registry.mjs",
     "deck:general": "node scripts/build-general-deck.mjs",
     "rank:powids": "node scripts/rank-powid-transactions.mjs",
+    "stream:console": "node scripts/stream-console.mjs",
     "proof-api": "node server/proof-api.mjs"
   },
   "dependencies": {

@@ -19359,6 +19359,8 @@ function TokenWorkspace({
       normalizedPrepareFeeReserveSats * normalizedPrepareMintCount;
     const helperTokenSelected = selectedToken?.tokenId === token.tokenId;
     const helperCanPrepare = canPrepareMintUtxos && helperTokenSelected;
+    const showStreamConsole = token.registryAddress === WORK_TOKEN_REGISTRY_ADDRESS;
+    const streamConsoleCommand = `npm run stream:console -- build --source work --destination bitcoin --fee-rate ${normalizedPrepareFeeRate} --batch-size 100 --wallet <local-wallet>`;
 
     return (
       <details className="token-utxo-prep" open>
@@ -19481,6 +19483,21 @@ function TokenWorkspace({
             future-mint miner reserve. The split transaction has its own fee
             rate and should confirm before burst minting.
           </p>
+          {showStreamConsole ? (
+            <div className="token-stream-console">
+              <strong>Stream Console for registry cleanup</strong>
+              <p>
+                Mint UTXO prep creates outputs. Stream Console does the opposite:
+                it consolidates large registry wallets through your local Bitcoin
+                Core wallet, then can test and broadcast one batch at a time.
+              </p>
+              <code>{streamConsoleCommand}</code>
+              <p>
+                Use <code>plan</code> first. Use <code>broadcast --yes</code> only
+                after reviewing the PSBT and mempool acceptance result.
+              </p>
+            </div>
+          ) : null}
           <button className="secondary" disabled={!helperCanPrepare} type="submit">
             <span className="button-content">
               <Wallet size={16} />

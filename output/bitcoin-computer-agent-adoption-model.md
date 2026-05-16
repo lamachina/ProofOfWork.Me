@@ -373,6 +373,27 @@ work_floor_sats =
 
 For price-per-token displays, use `confirmed_bitcoin_computer_value_sats / 21,000,000`. The inverse, `21,000,000 / confirmed_bitcoin_computer_value_sats`, is the WORK-per-sat ratio. Pending mempool records are useful visibility but do not change the canonical floor until confirmed.
 
+Historical WORK floor announcement:
+
+```text
+txid: cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c
+subject: $work now has a permanent Bitcoin Computer floor.
+message:
+Formula:
+confirmed network value / 21,000,000 WORK
+
+Current live floor:
+74,499,503 sats / 21,000,000 = 3.5476 sats per WORK
+~$0.00277 per WORK at current BTC/USD
+
+Pending mints are visible, but only confirmed Bitcoin history moves the canonical floor.
+
+As ProofOfWork.Me grows, the network value grows.
+As network value grows, the $work floor rises.
+```
+
+The tx status is intentionally not hardcoded here. The chain/API is the oracle for whether the announcement is pending or confirmed at read time.
+
 ## Canonical Product Growth
 
 This is the canonical lowest-fee success path at 0.00001 sat/vB.

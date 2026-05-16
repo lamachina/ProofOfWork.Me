@@ -54,7 +54,7 @@ Mail organization features that are already implemented in the full app:
 
 Future developers should keep `id.proofofwork.me` narrow. Do not pull the full mailbox UI into the Phase 1 registry launch unless the launch scope explicitly changes.
 Marketplace actions should stay outside the mailbox folders. Keep ID trading in the Computer Marketplace workspace and `marketplace.proofofwork.me`, while mail organization remains focused on messages, files, contacts, drafts, and local folders.
-Log is not a mailbox folder. It is a read-only Bitcoin Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT mints, token creations, and token mints.
+Log is not a mailbox folder. It is a read-only Bitcoin Computer audit surface for every tx-backed app action the indexer can discover: registry events, marketplace events, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT deploys/mints, token creations, and token mints.
 Growth is not a mailbox folder. It is a read-only model surface that compares confirmed chain-derived network value with the canonical Bitcoin Computer growth model in sats and USD. Merged apps such as Pay2Speak, NFT, and Tokens should appear as normal app surfaces, Computer workspaces when useful, and first-class Growth inputs.
 Browser is not a mailbox folder. It is an HTML renderer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. Browser-rendered HTML stays separate from wallet signing. Browser should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
 

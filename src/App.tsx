@@ -522,6 +522,7 @@ type PowActivityKind =
   | "file"
   | "pay2speak-campaign"
   | "pay2speak-funding"
+  | "ak-deploy"
   | "ak-mint"
   | "token-create"
   | "token-mint";
@@ -13187,17 +13188,29 @@ export default function App() {
     }
 
     try {
-      const [registryState, pay2SpeakState, akState, tokenState] = await Promise.all([
+      const [
+        registryState,
+        computerActivity,
+        pay2SpeakState,
+        akState,
+        tokenState,
+      ] = await Promise.all([
         fetchIdRegistryState("livenet"),
+        fetchGlobalActivity("livenet").catch(() => []),
         fetchPay2SpeakState("livenet"),
         fetchAkState("livenet"),
         fetchTokenState("livenet"),
       ]);
+      const deployedNftCollections = (akState.collections ?? []).filter(
+        (collection) => collection.txid,
+      );
       setIdRegistry(registryState.records);
       setIdListings(registryState.listings);
       setIdPendingEvents(registryState.pendingEvents);
       setIdSales(registryState.sales);
-      setIdActivity(registryState.activity);
+      setIdActivity(
+        computerActivity.length > 0 ? computerActivity : registryState.activity,
+      );
       setPay2SpeakCampaigns(pay2SpeakState.campaigns);
       setPay2SpeakFunding(pay2SpeakState.funding);
       setPay2SpeakQuestions(pay2SpeakState.questions);
@@ -13209,7 +13222,7 @@ export default function App() {
       if (!silent) {
         setStatus({
           tone: "good",
-          text: `Growth metrics loaded. ${registryState.records.filter((record) => record.confirmed).length.toLocaleString()} IDs, ${pay2SpeakState.campaigns.length.toLocaleString()} Pay2Speak campaign${pay2SpeakState.campaigns.length === 1 ? "" : "s"}, ${akState.mints.length.toLocaleString()} AK mint${akState.mints.length === 1 ? "" : "s"}, ${tokenState.tokens.length.toLocaleString()} token${tokenState.tokens.length === 1 ? "" : "s"}.`,
+          text: `Growth metrics loaded. ${registryState.records.filter((record) => record.confirmed).length.toLocaleString()} IDs, ${computerActivity.length.toLocaleString()} computer action${computerActivity.length === 1 ? "" : "s"}, ${pay2SpeakState.campaigns.length.toLocaleString()} Pay2Speak campaign${pay2SpeakState.campaigns.length === 1 ? "" : "s"}, ${deployedNftCollections.length.toLocaleString()} NFT collection${deployedNftCollections.length === 1 ? "" : "s"}, ${akState.mints.length.toLocaleString()} NFT mint${akState.mints.length === 1 ? "" : "s"}, ${tokenState.tokens.length.toLocaleString()} token${tokenState.tokens.length === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -16343,6 +16356,9 @@ export default function App() {
         akMints={akMints.filter((mint) => mint.network === "livenet")}
         busy={busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
+        nftCollections={nftCollections.filter(
+          (collection) => collection.network === "livenet",
+        )}
         pay2SpeakCampaigns={pay2SpeakCampaigns.filter(
           (campaign) => campaign.network === "livenet",
         )}
@@ -18423,8 +18439,8 @@ function ActivityWorkspace({
           <h2>Every ProofOfWork action with a txid.</h2>
           <p>
             Messages, replies, files, ID registry events, listings, seals,
-            delistings, purchases, Pay2Speak records, and token events in one
-            chain-readable log.
+            delistings, purchases, Pay2Speak records, NFT events, and token
+            events in one chain-readable log.
           </p>
         </div>
         <form className="desktop-search activity-search" onSubmit={onSearch}>
@@ -22210,6 +22226,7 @@ function growthActualNetworkValue(
   sales: PowIdMarketplaceSale[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  nftCollections: NftCollectionRecord[],
   akMints: AkMintRecord[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
@@ -22231,6 +22248,12 @@ function growthActualNetworkValue(
   const confirmedPay2SpeakFunding = pay2SpeakFunding.filter(
     (funding) =>
       funding.confirmed && Date.parse(funding.createdAt) <= cutoffMs,
+  );
+  const confirmedNftCollections = nftCollections.filter(
+    (collection) =>
+      collection.confirmed &&
+      collection.txid &&
+      Date.parse(collection.createdAt) <= cutoffMs,
   );
   const confirmedAkMints = akMints.filter(
     (mint) => mint.confirmed && Date.parse(mint.createdAt) <= cutoffMs,
@@ -22268,10 +22291,18 @@ function growthActualNetworkValue(
       (total, funding) => total + funding.grossSats,
       0,
     );
-  const akFlowSats = confirmedAkMints.reduce(
-    (total, mint) => total + mint.operatorSats,
-    0,
-  );
+  const detailedAkFlowSats =
+    confirmedNftCollections.reduce(
+      (total, collection) => total + collection.deployFeeSats,
+      0,
+    ) +
+    confirmedAkMints.reduce((total, mint) => total + mint.operatorSats, 0);
+  const loggedAkFlowSats = confirmedActivity
+    .filter(
+      (item) => item.kind === "ak-deploy" || item.kind === "ak-mint",
+    )
+    .reduce((total, item) => total + (item.amountSats ?? 0), 0);
+  const akFlowSats = Math.max(detailedAkFlowSats, loggedAkFlowSats);
   const tokenCreationFlowSats = confirmedTokens.reduce(
     (total, token) => total + token.creationFeeSats,
     0,
@@ -22334,6 +22365,7 @@ function growthActualValuePoints(
   sales: PowIdMarketplaceSale[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  nftCollections: NftCollectionRecord[],
   akMints: AkMintRecord[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
@@ -22379,6 +22411,15 @@ function growthActualValuePoints(
     }
   }
 
+  for (const collection of nftCollections) {
+    if (collection.confirmed && collection.txid) {
+      addEventTime(
+        collection.createdAt,
+        `${collection.displayName} NFT collection`,
+      );
+    }
+  }
+
   for (const mint of akMints) {
     if (mint.confirmed) {
       addEventTime(mint.createdAt, `AK ${shortAddress(mint.txid)}`);
@@ -22404,6 +22445,7 @@ function growthActualValuePoints(
     sales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    nftCollections,
     akMints,
     tokenDefinitions,
     tokenMints,
@@ -22425,6 +22467,7 @@ function growthActualValuePoints(
       sales,
       pay2SpeakCampaigns,
       pay2SpeakFunding,
+      nftCollections,
       akMints,
       tokenDefinitions,
       tokenMints,
@@ -22451,6 +22494,7 @@ function growthActualValuePoints(
     sales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    nftCollections,
     akMints,
     tokenDefinitions,
     tokenMints,
@@ -22539,8 +22583,8 @@ function growthActivityKindLabel(kind: PowActivityKind) {
     return "Pay2Speak";
   }
 
-  if (kind === "ak-mint") {
-    return "AK";
+  if (kind === "ak-deploy" || kind === "ak-mint") {
+    return "NFT";
   }
 
   if (kind === "token-create" || kind === "token-mint") {
@@ -22555,6 +22599,7 @@ function confirmedComputerActionCount(
   idActivity: PowActivityItem[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  nftCollections: NftCollectionRecord[],
   akMints: AkMintRecord[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
@@ -22572,6 +22617,9 @@ function confirmedComputerActionCount(
     add(campaign.confirmed, campaign.txid),
   );
   pay2SpeakFunding.forEach((funding) => add(funding.confirmed, funding.txid));
+  nftCollections.forEach((collection) =>
+    add(collection.confirmed, collection.txid),
+  );
   akMints.forEach((mint) => add(mint.confirmed, mint.txid));
   tokenDefinitions.forEach((token) => add(token.confirmed, token.txid));
   tokenMints.forEach((mint) => add(mint.confirmed, mint.txid));
@@ -22585,6 +22633,7 @@ function growthRealEventItems(
   sales: PowIdMarketplaceSale[],
   pay2SpeakCampaigns: Pay2SpeakCampaign[],
   pay2SpeakFunding: Pay2SpeakFunding[],
+  nftCollections: NftCollectionRecord[],
   akMints: AkMintRecord[],
   tokenDefinitions: PowTokenDefinition[],
   tokenMints: PowTokenMint[],
@@ -22680,6 +22729,25 @@ function growthRealEventItems(
       network: funding.network,
       title: funding.question ? "Funded question" : "Campaign funding",
       txid: funding.txid,
+    });
+  }
+
+  for (const collection of nftCollections) {
+    if (!collection.confirmed || !collection.txid) {
+      continue;
+    }
+
+    setEvent({
+      amountLabel: `${collection.deployFeeSats.toLocaleString()} deploy sats`,
+      createdAt: collection.createdAt,
+      detail: collection.genesisTag
+        ? `Genesis Tag: ${collection.genesisTag}`
+        : `${collection.maxSupply.toLocaleString()} max supply from ${shortAddress(collection.operatorAddress)}.`,
+      key: collection.txid,
+      kind: "NFT",
+      network: collection.network,
+      title: `${collection.displayName} collection deployed`,
+      txid: collection.txid,
     });
   }
 
@@ -22945,6 +23013,7 @@ function GrowthApp({
   akMints,
   busy,
   idActivity,
+  nftCollections,
   pay2SpeakCampaigns,
   pay2SpeakFunding,
   registryListings,
@@ -22960,6 +23029,7 @@ function GrowthApp({
   akMints: AkMintRecord[];
   busy: boolean;
   idActivity: PowActivityItem[];
+  nftCollections: NftCollectionRecord[];
   pay2SpeakCampaigns: Pay2SpeakCampaign[];
   pay2SpeakFunding: Pay2SpeakFunding[];
   registryListings: PowIdListing[];
@@ -23016,6 +23086,7 @@ function GrowthApp({
         akMints={akMints}
         busy={busy}
         idActivity={idActivity}
+        nftCollections={nftCollections}
         pay2SpeakCampaigns={pay2SpeakCampaigns}
         pay2SpeakFunding={pay2SpeakFunding}
         registryListings={registryListings}
@@ -23035,6 +23106,7 @@ function GrowthWorkspace({
   akMints,
   busy,
   idActivity,
+  nftCollections,
   pay2SpeakCampaigns,
   pay2SpeakFunding,
   registryListings,
@@ -23047,6 +23119,7 @@ function GrowthWorkspace({
   akMints: AkMintRecord[];
   busy: boolean;
   idActivity: PowActivityItem[];
+  nftCollections: NftCollectionRecord[];
   pay2SpeakCampaigns: Pay2SpeakCampaign[];
   pay2SpeakFunding: Pay2SpeakFunding[];
   registryListings: PowIdListing[];
@@ -23064,6 +23137,7 @@ function GrowthWorkspace({
     registrySales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    nftCollections,
     akMints,
     tokenDefinitions,
     tokenMints,
@@ -23074,6 +23148,7 @@ function GrowthWorkspace({
     registrySales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    nftCollections,
     akMints,
     tokenDefinitions,
     tokenMints,
@@ -23084,6 +23159,7 @@ function GrowthWorkspace({
     registrySales,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    nftCollections,
     akMints,
     tokenDefinitions,
     tokenMints,
@@ -23103,6 +23179,7 @@ function GrowthWorkspace({
     idActivity,
     pay2SpeakCampaigns,
     pay2SpeakFunding,
+    nftCollections,
     akMints,
     tokenDefinitions,
     tokenMints,
@@ -23121,6 +23198,9 @@ function GrowthWorkspace({
     (funding) => funding.confirmed,
   ).length;
   const confirmedAkMints = akMints.filter((mint) => mint.confirmed).length;
+  const confirmedNftCollections = nftCollections.filter(
+    (collection) => collection.confirmed && collection.txid,
+  ).length;
   const confirmedTokenDefinitions = tokenDefinitions.filter(
     (token) => token.confirmed,
   ).length;
@@ -23245,8 +23325,9 @@ function GrowthWorkspace({
           <h3>Blue is the success case. Green is Bitcoin history.</h3>
           <p>
             The model asks what the Bitcoin Computer can become if IDs, Mail,
-            Drive, Marketplace, Browser, Pay2Speak, and Tokens compound together. The
-            real line only counts confirmed mainnet records that already exist.
+            Drive, Marketplace, Browser, Pay2Speak, NFT, and Tokens compound
+            together. The real line only counts confirmed mainnet records that
+            already exist.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -23254,8 +23335,9 @@ function GrowthWorkspace({
           <h3>Everything is valued in sats first.</h3>
           <p>
             IDs use n squared network value. Mail, Drive, Marketplace, Browser,
-            Pay2Speak, and Tokens use confirmed payment flow multiplied by the same
-            value multiple, then translated to USD with the Bitcoin benchmark.
+            Pay2Speak, NFT, and Tokens use confirmed payment flow multiplied by
+            the same value multiple, then translated to USD with the Bitcoin
+            benchmark.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -23264,8 +23346,9 @@ function GrowthWorkspace({
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
             buyer-funded marketplace sales, Pay2Speak campaigns, funded
-            questions, token creations, and token mints are pulled from live
-            endpoints. Pending mempool events wait until they confirm.
+            questions, NFT deploys, NFT mints, token creations, and token mints
+            are pulled from live endpoints. Pending mempool events wait until
+            they confirm.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -23492,7 +23575,7 @@ function GrowthWorkspace({
           />
           <GrowthProductCard
             actual={growthSats(actualValue.akSats)}
-            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.akSats, elapsedYears))} · ${actualValue.akFlowSats.toLocaleString()} operator sats · ${confirmedAkMints.toLocaleString()} mints`}
+            actualLabel={`${growthUsd(growthSatsToUsdAtYears(actualValue.akSats, elapsedYears))} · ${actualValue.akFlowSats.toLocaleString()} NFT sats · ${confirmedNftCollections.toLocaleString()} collections · ${confirmedAkMints.toLocaleString()} mints`}
             icon={<Star size={24} />}
             modelFiveYear={growthSats(fiveYear.akSats)}
             modelFiveYearLabel={growthUsd(
@@ -23503,8 +23586,8 @@ function GrowthWorkspace({
             modelOneYearLabel={growthUsd(
               growthSatsToUsdAtYears(oneYear.akSats, oneYear.years),
             )}
-            name="AK"
-            note="Wallet-signed NFT mints become chain-readable visual work."
+            name="NFT"
+            note="Collection deploys and wallet-signed NFT mints become chain-readable visual work."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}

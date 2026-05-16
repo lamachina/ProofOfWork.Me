@@ -3062,7 +3062,36 @@ function pay2SpeakActivityItemsFromState(state, registryAddress) {
 }
 
 function akActivityItemsFromState(state) {
-  return (state.mints ?? []).map((mint) => ({
+  const deploys = (state.collections ?? [])
+    .filter((collection) => collection?.txid)
+    .map((collection) => ({
+      amountSats: collection.deployFeeSats,
+      actor: collection.operatorAddress ?? collection.defaultOperatorAddress,
+      confirmed: collection.confirmed,
+      counterparty: NFT_DEPLOY_FEE_ADDRESS,
+      createdAt: collection.createdAt,
+      dataBytes: collection.dataBytes,
+      description: `${collection.displayName ?? collection.name ?? "NFT"} NFT collection deployed by ${shortAddress(collection.operatorAddress ?? collection.defaultOperatorAddress)}.`,
+      detail: collection.genesisTag
+        ? `Genesis Tag: ${compactText(collection.genesisTag, 120)}`
+        : `${Number(collection.maxSupply ?? 0).toLocaleString()} max supply`,
+      kind: "ak-deploy",
+      network: collection.network,
+      tags: [
+        activityStatusTag(collection.confirmed),
+        networkLabel(collection.network),
+        "AK",
+        "NFT",
+        "Deploy",
+        `${Number(collection.deployFeeSats ?? 0).toLocaleString()} deploy sats`,
+      ],
+      title: collection.confirmed
+        ? "NFT collection deployed"
+        : "NFT collection deploy pending",
+      txid: collection.txid,
+    }));
+
+  const mints = (state.mints ?? []).map((mint) => ({
     amountSats: mint.operatorSats,
     actor: mint.ownerAddress,
     confirmed: mint.confirmed,
@@ -3085,6 +3114,8 @@ function akActivityItemsFromState(state) {
     title: mint.confirmed ? "AK minted" : "AK mint pending",
     txid: mint.txid,
   }));
+
+  return [...deploys, ...mints];
 }
 
 function tokenActivityItemsFromState(state, indexAddress) {
@@ -3304,7 +3335,9 @@ async function globalActivityPayload(network) {
   const tokenActions = activity.filter((item) =>
     String(item.kind).startsWith("token-"),
   ).length;
-  const akActions = activity.filter((item) => item.kind === "ak-mint").length;
+  const akActions = activity.filter((item) =>
+    String(item.kind).startsWith("ak-"),
+  ).length;
 
   const payload = {
     activity,

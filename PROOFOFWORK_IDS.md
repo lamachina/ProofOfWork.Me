@@ -118,7 +118,7 @@ growth.proofofwork.me       public growth model dashboard
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
 The Marketplace subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers.
-The Log subdomain is read-only. It exposes a unified Bitcoin Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT mints, token creations, and token mints.
+The Log subdomain is read-only. It exposes a unified Bitcoin Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, Pay2Speak campaigns/funding, NFT deploys/mints, token creations, and token mints.
 The Token subdomain creates and mints mint-first `pwt1:` tokens. The `tokens` subdomain redirects to Token. The WORK subdomain is the dedicated WORK token dashboard.
 The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/Marketplace/Pay2Speak/NFT/Token network-value model with confirmed registry, log, file, marketplace, Pay2Speak, NFT, and token value metrics in sats and USD.
 
